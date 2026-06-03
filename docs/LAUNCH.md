@@ -75,10 +75,29 @@ In the Supabase dashboard for the project you chose in step 0:
 
 - [ ] Import the GitHub repo into Vercel (framework auto-detected: Next.js).
 - [ ] Add **all** environment variables from the table in §9 (Production scope).
-- [ ] Set `CRON_SECRET` to a long random string. The hourly cron is already configured in `vercel.json`
-      (`/api/cron`, drives abandoned-cart reminders, birthday rewards, and seasonal-drop go-live);
-      Vercel sends `CRON_SECRET` as a Bearer token automatically — no extra setup.
+- [ ] Set `CRON_SECRET` to a long random string. The scheduled job at `/api/cron` (abandoned-cart
+      reminders, birthday rewards, and seasonal-drop go-live) requires it as a Bearer token. Scheduling
+      is **not** done by Vercel — its free Hobby plan only allows one cron run per day, so `vercel.json`
+      was removed and an external scheduler pings the endpoint hourly instead. See §5b.
 - [ ] Deploy. Confirm the build succeeds in Vercel.
+
+## 5b. ⭐ Scheduled jobs — external hourly trigger
+
+Vercel's free Hobby plan only permits **one cron run per day**, so the hourly schedule was moved off
+Vercel (`vercel.json` was removed). The `/api/cron` endpoint is unchanged and still protected by the
+`CRON_SECRET` bearer token — any scheduler that sends the header can drive it. Set up one of these (free):
+
+- **cron-job.org (simplest):** create a cron job → URL `https://<your-domain>/api/cron` → interval
+  **every 1 hour** → in the job's request/headers settings add a custom header
+  `Authorization: Bearer <your CRON_SECRET>` → save & enable.
+- **GitHub Actions (keeps it in the repo):** add a workflow with `on: { schedule: [{ cron: "0 * * * *" }] }`
+  that runs `curl -fsS -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" https://<your-domain>/api/cron`,
+  storing `CRON_SECRET` as a repo **Actions secret**. (Free-tier scheduled runs can lag a few minutes.)
+
+Security: the endpoint returns **401** without the correct token, so the URL is safe to register
+anywhere — only the secret grants access. If you later upgrade to **Vercel Pro**, you can instead restore
+a `vercel.json` containing `{"crons":[{"path":"/api/cron","schedule":"0 * * * *"}]}` and remove the
+external job.
 
 ## 6. ⭐ Custom domain
 
