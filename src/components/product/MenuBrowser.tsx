@@ -107,6 +107,10 @@ export function MenuBrowser({
           Showing your saved dietary preferences. Tap a chip to change what you see.
         </p>
       )}
+      <p className="mt-3 text-sm text-muted">
+        Many treats can be made to suit dietary needs. Filter to browse what already fits, or add a
+        note with your order.
+      </p>
 
       {filtered.length === 0 ? (
         <p className="mt-16 text-center text-muted">

@@ -24,6 +24,10 @@ const faqs = [
     a: "Each product lists its allergens and full ingredients. Our kitchen handles gluten, dairy, eggs, nuts and soy, so we can't guarantee an allergen-free environment. If in doubt, message us before ordering.",
   },
   {
+    q: "Can treats be made for dietary needs, like no pork, vegetarian, or gluten free?",
+    a: "Many can. Lots of treats are already vegetarian, eggless, or gluten free, and you can filter the menu by dietary tag to find them. Some can also be adapted on request. The jelly cheesecake and panna cotta can be made with no-pork beef gelatine, our Basque cheesecake is crustless and gluten free, and the agar fruit jelly is fully vegan and pork free. Just add a note with your order and we will sort it out.",
+  },
+  {
     q: "Can I cancel or change my order?",
     a: "Because we bake to order, please reach out as early as possible and we'll do our best to help.",
   },

@@ -27,7 +27,10 @@ export function OptionPicker({
   const [selected, setSelected] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {};
     for (const option of product.options) {
-      if (option.values[0]) initial[option.id] = option.values[0].id;
+      // Pre-select the first available value, so a sold-out flavour is never
+      // the default pick. Fall back to the first value if all are sold out.
+      const firstPick = option.values.find((v) => v.isAvailable !== false) ?? option.values[0];
+      if (firstPick) initial[option.id] = firstPick.id;
     }
     return initial;
   });
@@ -46,8 +49,15 @@ export function OptionPicker({
     (option) => !option.required || selected[option.id],
   );
 
+  // Every chosen value must still be in stock, in case a flavour sold out while
+  // the popover was open or all values of a group are unavailable.
+  const selectionAvailable = product.options.every((option) => {
+    const value = option.values.find((v) => v.id === selected[option.id]);
+    return !value || value.isAvailable !== false;
+  });
+
   function handleAdd() {
-    if (!product.isAvailable || !allRequiredChosen) return;
+    if (!product.isAvailable || !allRequiredChosen || !selectionAvailable) return;
 
     const selectedOptions: SelectedOption[] = product.options.map((option) => {
       const value = option.values.find((v) => v.id === selected[option.id]);
@@ -145,12 +155,14 @@ export function OptionPicker({
 
       <Button
         onClick={handleAdd}
-        disabled={!product.isAvailable || !allRequiredChosen}
+        disabled={!product.isAvailable || !allRequiredChosen || !selectionAvailable}
         className="w-full"
       >
-        {product.isAvailable
-          ? `Add to cart · ${formatPrice(unitPriceCents * quantity)}`
-          : "Sold out"}
+        {!product.isAvailable
+          ? "Sold out"
+          : !selectionAvailable
+            ? "Flavour sold out"
+            : `Add to cart · ${formatPrice(unitPriceCents * quantity)}`}
       </Button>
     </div>
   );

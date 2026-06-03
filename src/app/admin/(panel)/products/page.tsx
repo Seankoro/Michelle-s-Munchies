@@ -209,6 +209,64 @@ function ProductFormModal({
     return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
   }
 
+  // ---- Option group + flavour editing ----
+  function addOption() {
+    setDraft((prev) => ({
+      ...prev,
+      options: [
+        ...prev.options,
+        { id: `o-${crypto.randomUUID()}`, name: "", required: true, values: [] },
+      ],
+    }));
+  }
+  function updateOption(index: number, patch: Partial<Product["options"][number]>) {
+    setDraft((prev) => ({
+      ...prev,
+      options: prev.options.map((o, i) => (i === index ? { ...o, ...patch } : o)),
+    }));
+  }
+  function removeOption(index: number) {
+    setDraft((prev) => ({ ...prev, options: prev.options.filter((_, i) => i !== index) }));
+  }
+  function addValue(optionIndex: number) {
+    setDraft((prev) => ({
+      ...prev,
+      options: prev.options.map((o, i) =>
+        i === optionIndex
+          ? {
+              ...o,
+              values: [
+                ...o.values,
+                { id: `v-${crypto.randomUUID()}`, label: "", priceDeltaCents: 0, isAvailable: true },
+              ],
+            }
+          : o,
+      ),
+    }));
+  }
+  function updateValue(
+    optionIndex: number,
+    valueIndex: number,
+    patch: Partial<Product["options"][number]["values"][number]>,
+  ) {
+    setDraft((prev) => ({
+      ...prev,
+      options: prev.options.map((o, i) =>
+        i === optionIndex
+          ? { ...o, values: o.values.map((v, j) => (j === valueIndex ? { ...v, ...patch } : v)) }
+          : o,
+      ),
+    }));
+  }
+  function removeValue(optionIndex: number, valueIndex: number) {
+    setDraft((prev) => ({
+      ...prev,
+      options: prev.options.map((o, i) =>
+        i === optionIndex ? { ...o, values: o.values.filter((_, j) => j !== valueIndex) } : o,
+      ),
+    }));
+  }
+
   function handleSave() {
     const cents = Math.max(0, Math.round(parseFloat(priceText || "0") * 100));
     const slug = draft.slug.trim() || slugify(draft.name);
@@ -434,12 +492,108 @@ function ProductFormModal({
             </div>
           </div>
 
-          {draft.options.length > 0 && (
-            <p className="rounded-xl bg-marble/40 px-3 py-2 text-xs text-muted">
-              This product has {draft.options.length} option group(s). Editing options inline
-              arrives with the Supabase wiring.
+          <fieldset>
+            <legend className="text-sm font-semibold">Options and flavours</legend>
+            <p className="mt-1 text-xs text-muted">
+              Add a group like Flavour or Size, then its choices. Turn a choice off to mark it sold
+              out on the menu without removing it.
             </p>
-          )}
+            <div className="mt-3 flex flex-col gap-4">
+              {draft.options.map((option, optionIndex) => (
+                <div key={option.id} className="rounded-xl border border-line p-3">
+                  <div className="flex items-center gap-2">
+                    <input
+                      className={inputClass}
+                      value={option.name}
+                      onChange={(e) => updateOption(optionIndex, { name: e.target.value })}
+                      placeholder="Group name, e.g. Flavour"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeOption(optionIndex)}
+                      aria-label="Remove group"
+                      className="rounded-full p-2 text-muted transition hover:bg-blush-soft active:scale-90"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <label className="mt-2 flex items-center gap-2 text-xs font-semibold">
+                    <Toggle
+                      checked={option.required}
+                      onChange={(v) => updateOption(optionIndex, { required: v })}
+                      label="Required choice"
+                    />
+                    Required choice
+                  </label>
+
+                  <div className="mt-3 flex flex-col gap-2">
+                    {option.values.map((value, valueIndex) => (
+                      <div key={value.id} className="flex flex-wrap items-center gap-2">
+                        <input
+                          className={cn(inputClass, "min-w-32 flex-1")}
+                          value={value.label}
+                          onChange={(e) =>
+                            updateValue(optionIndex, valueIndex, { label: e.target.value })
+                          }
+                          placeholder="Choice, e.g. Pistachio"
+                        />
+                        <div className="flex items-center gap-1 text-sm">
+                          <span className="text-muted">+ S$</span>
+                          <input
+                            type="number"
+                            step="0.5"
+                            min="0"
+                            className={cn(inputClass, "w-20")}
+                            value={value.priceDeltaCents / 100}
+                            onChange={(e) =>
+                              updateValue(optionIndex, valueIndex, {
+                                priceDeltaCents: Math.max(
+                                  0,
+                                  Math.round((parseFloat(e.target.value) || 0) * 100),
+                                ),
+                              })
+                            }
+                          />
+                        </div>
+                        <label className="flex items-center gap-1 text-xs font-semibold">
+                          <Toggle
+                            checked={value.isAvailable !== false}
+                            onChange={(v) =>
+                              updateValue(optionIndex, valueIndex, { isAvailable: v })
+                            }
+                            label={`In stock ${value.label || "choice"}`}
+                          />
+                          In stock
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => removeValue(optionIndex, valueIndex)}
+                          aria-label="Remove choice"
+                          className="rounded-full p-1.5 text-muted transition hover:bg-blush-soft active:scale-90"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => addValue(optionIndex)}
+                      className="self-start rounded-full border border-line px-3 py-1.5 text-xs font-semibold transition hover:border-rose active:scale-95"
+                    >
+                      + Add choice
+                    </button>
+                  </div>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={addOption}
+                className="self-start rounded-full border border-dashed border-blush px-4 py-2 text-xs font-semibold text-rose-deep transition hover:border-rose active:scale-95"
+              >
+                + Add option group
+              </button>
+            </div>
+          </fieldset>
         </div>
 
         <div className="mt-6 flex gap-3">

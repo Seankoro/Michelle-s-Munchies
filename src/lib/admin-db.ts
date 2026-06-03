@@ -1,4 +1,5 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendStatusEmail, sendLowStockEmail } from "@/lib/email";
 import { notifyCustomerStatus } from "@/lib/sms";
@@ -375,7 +376,76 @@ function toProductColumns(patch: Partial<Product>) {
   return columns;
 }
 
-/** Insert a new product (DB generates the id). Options aren't edited in MVP admin. */
+/**
+ * Replace a product's option groups + values wholesale. The flavour editor
+ * sends the full desired set, so we clear the existing groups (values cascade)
+ * and reinsert with fresh ids. Returns the saved shape with those ids.
+ */
+async function replaceProductOptions(
+  supabase: ReturnType<typeof createAdminClient>,
+  productId: string,
+  options: Product["options"],
+): Promise<Product["options"]> {
+  const { error: clearError } = await supabase
+    .from("product_options")
+    .delete()
+    .eq("product_id", productId);
+  if (clearError) throw new Error(`Failed to clear options: ${clearError.message}`);
+
+  if (options.length === 0) return [];
+
+  const optionRows: {
+    id: string;
+    product_id: string;
+    name: string;
+    required: boolean;
+    sort_order: number;
+  }[] = [];
+  const valueRows: {
+    id: string;
+    option_id: string;
+    label: string;
+    price_delta_cents: number;
+    is_available: boolean;
+    sort_order: number;
+  }[] = [];
+  const saved: Product["options"] = [];
+
+  options.forEach((option, optionIndex) => {
+    const optionId = randomUUID();
+    optionRows.push({
+      id: optionId,
+      product_id: productId,
+      name: option.name,
+      required: option.required,
+      sort_order: optionIndex,
+    });
+    const values = option.values.map((value, valueIndex) => {
+      const valueId = randomUUID();
+      const isAvailable = value.isAvailable !== false;
+      valueRows.push({
+        id: valueId,
+        option_id: optionId,
+        label: value.label,
+        price_delta_cents: value.priceDeltaCents,
+        is_available: isAvailable,
+        sort_order: valueIndex,
+      });
+      return { id: valueId, label: value.label, priceDeltaCents: value.priceDeltaCents, isAvailable };
+    });
+    saved.push({ id: optionId, name: option.name, required: option.required, values });
+  });
+
+  const { error: optionError } = await supabase.from("product_options").insert(optionRows);
+  if (optionError) throw new Error(`Failed to save options: ${optionError.message}`);
+  if (valueRows.length > 0) {
+    const { error: valueError } = await supabase.from("product_option_values").insert(valueRows);
+    if (valueError) throw new Error(`Failed to save option values: ${valueError.message}`);
+  }
+  return saved;
+}
+
+/** Insert a new product with its option groups (DB generates the product id). */
 export async function createProduct(product: Product): Promise<Product> {
   const supabase = createAdminClient();
   const { data, error } = await supabase
@@ -384,16 +454,25 @@ export async function createProduct(product: Product): Promise<Product> {
     .select("id, slug")
     .single();
   if (error) throw new Error(`Failed to create product: ${error.message}`);
-  return { ...product, id: (data as { id: string }).id, options: [] };
+  const id = (data as { id: string }).id;
+  const options = await replaceProductOptions(supabase, id, product.options ?? []);
+  return { ...product, id, options };
 }
 
 export async function updateProduct(id: string, patch: Partial<Product>) {
   const supabase = createAdminClient();
-  const { error } = await supabase
-    .from("products")
-    .update({ ...toProductColumns(patch), updated_at: new Date().toISOString() })
-    .eq("id", id);
-  if (error) throw new Error(`Failed to update product: ${error.message}`);
+  const columns = toProductColumns(patch);
+  if (Object.keys(columns).length > 0) {
+    const { error } = await supabase
+      .from("products")
+      .update({ ...columns, updated_at: new Date().toISOString() })
+      .eq("id", id);
+    if (error) throw new Error(`Failed to update product: ${error.message}`);
+  }
+  // The flavour editor includes the full options set; replace them when present.
+  if (patch.options !== undefined) {
+    await replaceProductOptions(supabase, id, patch.options);
+  }
   // When a product is switched back to available, email anyone waiting for it.
   if (patch.isAvailable === true) {
     await notifySubscribers(id);

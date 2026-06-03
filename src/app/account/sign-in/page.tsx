@@ -103,6 +103,9 @@ export default function SignInPage() {
         </div>
 
         <div className="mt-4 flex flex-col gap-3">
+          <p className="text-center text-xs text-muted">
+            Signed up with Google? Use the Continue with Google button below.
+          </p>
           <GoogleButton />
           <button
             type="button"
