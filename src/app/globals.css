@@ -1,0 +1,232 @@
+@import "tailwindcss";
+
+/*
+  Michelle's Munchies — "Pastel Patisserie" design tokens.
+  Aesthetic: Sylveon x clean marble, "playful elegance" dial.
+  Tailwind v4 reads these tokens and generates utilities automatically
+  (e.g. --color-blush -> bg-blush / text-blush, --font-display -> font-display).
+*/
+
+/* Font families are wired to the next/font CSS variables set in layout.tsx.
+   `inline` makes the utilities reference the variable rather than freezing a
+   value at build time. */
+@theme inline {
+  --font-display: var(--font-fraunces);
+  --font-body: var(--font-nunito);
+}
+
+@theme {
+  /* --- Surfaces (marble) --- */
+  --color-cream: #fdf8f4; /* warm marble-white page background */
+  --color-marble: #f5eef0; /* soft pink-grey panel */
+  --color-white: #ffffff;
+
+  /* --- Blush pink (Sylveon body / primary) --- */
+  --color-blush: #f6b8cd; /* signature soft blush (decorative) */
+  --color-blush-soft: #fae3ea; /* pale pink wash for backgrounds */
+  --color-rose: #d8688f; /* mid rose for accents/links */
+  --color-rose-deep: #b8466f; /* CTA buttons (white text passes AA) */
+
+  /* --- Sky blue (Sylveon eyes / ribbon tips / secondary accent) --- */
+  --color-sky: #bfe3ec; /* pastel sky wash */
+  --color-sky-deep: #4f9bb5; /* accent / focus rings */
+
+  /* --- Ink & neutrals --- */
+  --color-ink: #4a3a40; /* warm near-black body text */
+  --color-muted: #8a767e; /* secondary text */
+  --color-line: #ece1e5; /* hairline borders */
+
+  /* --- Radii (soft, rounded — leans cute) --- */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.875rem;
+  --radius-lg: 1.25rem;
+  --radius-xl: 1.75rem;
+  --radius-2xl: 2.25rem;
+
+  /* --- Soft shadows --- */
+  --shadow-soft: 0 12px 30px -12px rgb(184 70 111 / 0.18);
+  --shadow-card: 0 8px 24px -16px rgb(74 58 64 / 0.35);
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /* Never allow a sideways scroll, whatever the viewport/zoom. `clip` (not
+       `hidden`) keeps the sticky header working since it doesn't create a
+       scroll container. */
+    overflow-x: clip;
+  }
+
+  body {
+    background-color: var(--color-cream);
+    color: var(--color-ink);
+    font-family: var(--font-body);
+    line-height: 1.6;
+    /* On-brand checkboxes, radios, and range inputs everywhere. */
+    accent-color: var(--color-rose-deep);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    color: var(--color-ink);
+    line-height: 1.12;
+    letter-spacing: -0.01em;
+  }
+
+  /* Visible, on-brand focus ring for keyboard users (accessibility) */
+  :focus-visible {
+    outline: 2px solid var(--color-sky-deep);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Honour reduced-motion globally — the ribbon-pull and other flourishes
+     must calm down for users who ask for it. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* A faint veined-marble wash used behind hero / feature sections. */
+  .marble-surface {
+    background-color: var(--color-cream);
+    background-image:
+      radial-gradient(120% 80% at 15% 10%, rgb(246 184 205 / 0.18), transparent 60%),
+      radial-gradient(120% 90% at 90% 0%, rgb(191 227 236 / 0.22), transparent 55%);
+  }
+
+  /* Animated variant: the marble wash drifts slowly for a living-but-calm hero. */
+  .marble-animated {
+    background-size: 160% 160%;
+    animation: gradient-drift 18s ease-in-out infinite;
+  }
+}
+
+@layer utilities {
+  /* Scroll-reveal. <Reveal> adds `.reveal` on mount (so no-JS still shows content),
+     then `.is-in` once the element scrolls into view. */
+  .reveal {
+    opacity: 0;
+    transform: translateY(16px);
+    will-change: opacity, transform;
+  }
+  .reveal.is-in {
+    animation: fade-up 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    animation-delay: var(--reveal-delay, 0ms);
+  }
+
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+  /* One-shot swipe hint for the recommendations rail. */
+  .animate-nudge {
+    animation: nudge 0.9s ease-in-out 1;
+  }
+  /* Quick scale pop for cart-count + "Added" feedback. */
+  .animate-pop {
+    animation: pop 0.4s ease-out 1;
+  }
+
+  /* Hide the scrollbar on the swipe rail (content still scrolls/swipes). */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes gradient-drift {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+@keyframes nudge {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  35% {
+    transform: translateX(-14px);
+  }
+  65% {
+    transform: translateX(0);
+  }
+}
+
+@keyframes pop {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.14);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Reduced-motion: never leave reveal content hidden (the global rule below also
+   collapses all animation durations to ~0). */
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
+
+/* Screen-reader-only utility (used for accessible allergen labels, etc.) */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
