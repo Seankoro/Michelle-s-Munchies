@@ -8,7 +8,7 @@ import { cn } from "@/lib/cn";
 /**
  * Recommendations carousel. On phone and tablet it is a native scroll-snap rail
  * you swipe through, with the next card peeking at the edge and dot indicators
- * tracking your place. On lg+ the same products render as a static grid, so
+ * tracking your place. On desktop the same products render as a static grid, so
  * desktop is not a mobile afterthought. No autoplay, for attention and accessibility.
  */
 export function RecommendationRail({ products }: { products: Product[] }) {
@@ -19,7 +19,7 @@ export function RecommendationRail({ products }: { products: Product[] }) {
   // One-shot swipe hint on small screens, unless the user prefers reduced motion.
   useEffect(() => {
     const prefersReduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    if (prefersReduced || window.innerWidth >= 1024) return;
+    if (prefersReduced || window.innerWidth >= 1280) return;
     const on = window.setTimeout(() => setNudge(true), 650);
     const off = window.setTimeout(() => setNudge(false), 1700);
     return () => {
@@ -72,14 +72,14 @@ export function RecommendationRail({ products }: { products: Product[] }) {
         ref={trackRef}
         className={cn(
           "relative -mx-6 flex gap-4 overflow-x-auto scroll-pl-6 px-6 pb-2 snap-x snap-mandatory no-scrollbar",
-          "lg:mx-0 lg:grid lg:grid-cols-4 lg:gap-6 lg:overflow-visible lg:px-0 lg:pb-0 lg:snap-none",
+          "xl:mx-0 xl:grid xl:grid-cols-4 xl:gap-6 xl:overflow-visible xl:px-0 xl:pb-0 xl:snap-none",
           nudge && "animate-nudge",
         )}
       >
         {products.map((product) => (
           <div
             key={product.id}
-            className="shrink-0 basis-[78%] snap-start sm:basis-[46%] lg:basis-auto"
+            className="shrink-0 basis-[78%] snap-start sm:basis-[46%] lg:basis-[31%] xl:basis-auto"
           >
             <ProductCard product={product} />
           </div>
@@ -87,7 +87,7 @@ export function RecommendationRail({ products }: { products: Product[] }) {
       </div>
 
       {products.length > 1 && (
-        <div className="mt-5 flex justify-center gap-2 lg:hidden">
+        <div className="mt-5 flex justify-center gap-2 xl:hidden">
           {products.map((product, index) => (
             <button
               key={product.id}

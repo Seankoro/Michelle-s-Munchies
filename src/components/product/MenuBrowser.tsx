@@ -7,22 +7,22 @@ import { ProductCard } from "@/components/product/ProductCard";
 import { cn } from "@/lib/cn";
 
 /**
- * One category's products as a horizontal scroll-snap rail on phones, so the
- * menu reads as short swipeable rows instead of one long vertical list, and a
- * plain grid on desktop. Pure CSS, no JS needed.
+ * One category's products as a horizontal scroll-snap rail on phones and tablets,
+ * so the menu reads as short swipeable rows instead of one long vertical list, and
+ * a plain grid on desktop. Pure CSS, no JS needed.
  */
 function ProductRail({ products }: { products: Product[] }) {
   return (
     <div
       className={cn(
         "-mx-6 flex gap-4 overflow-x-auto scroll-pl-6 px-6 pb-2 snap-x snap-mandatory no-scrollbar",
-        "lg:mx-0 lg:grid lg:grid-cols-3 lg:gap-6 lg:overflow-visible lg:px-0 lg:pb-0 lg:snap-none xl:grid-cols-4",
+        "xl:mx-0 xl:grid xl:grid-cols-4 xl:gap-6 xl:overflow-visible xl:px-0 xl:pb-0 xl:snap-none",
       )}
     >
       {products.map((product) => (
         <div
           key={product.id}
-          className="shrink-0 basis-[72%] snap-start sm:basis-[40%] lg:basis-auto"
+          className="shrink-0 basis-[72%] snap-start sm:basis-[40%] lg:basis-[31%] xl:basis-auto"
         >
           <ProductCard product={product} />
         </div>
@@ -175,7 +175,7 @@ export function MenuBrowser({
               <div className="flex items-baseline justify-between gap-3">
                 <h2 className="font-display text-2xl font-semibold">{section.cat}</h2>
                 {section.items.length > 1 && (
-                  <span className="text-sm text-rose lg:hidden">Swipe →</span>
+                  <span className="text-sm text-rose xl:hidden">Swipe →</span>
                 )}
               </div>
               <div className="mt-4">
