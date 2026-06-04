@@ -145,13 +145,12 @@ export default async function ProductDetailPage({ params }: Params) {
           ) : (
             <>
               <div className="mt-6">
-                <OptionPicker product={product} />
-              </div>
-              {product.isAvailable && (
-                <div className="mt-6">
+                {product.flavourBox ? (
                   <FlavourBoxPicker product={product} />
-                </div>
-              )}
+                ) : (
+                  <OptionPicker product={product} />
+                )}
+              </div>
               {!product.isAvailable && <NotifyBackInStock productId={product.id} />}
             </>
           )}

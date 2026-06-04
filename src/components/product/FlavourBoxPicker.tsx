@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import type { Product } from "@/lib/types";
 import { formatPrice } from "@/lib/catalog";
 import { useCart } from "@/components/cart/CartContext";
-import { useFeatures } from "@/components/features/FeaturesProvider";
 import { cn } from "@/lib/cn";
 
 /**
@@ -17,7 +16,6 @@ import { cn } from "@/lib/cn";
  */
 export function FlavourBoxPicker({ product }: { product: Product }) {
   const { addItem } = useCart();
-  const features = useFeatures();
   const config = product.flavourBox;
   const [sizeIndex, setSizeIndex] = useState(0);
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -28,7 +26,7 @@ export function FlavourBoxPicker({ product }: { product: Product }) {
     return option?.values ?? [];
   }, [product, config]);
 
-  if (!features.buildABox || !config || config.sizes.length === 0 || flavours.length === 0) {
+  if (!config || config.sizes.length === 0 || flavours.length === 0) {
     return null;
   }
 

@@ -60,6 +60,34 @@ export default async function TrackOrderPage({
   const cancelled = order.status === "cancelled";
   const firstName = order.customer_name.split(" ")[0];
 
+  // WhatsApp handoff. While an order is unpaid, offer a pre-filled message to the
+  // shop's WhatsApp so the customer can confirm and arrange PayNow. It disappears
+  // once an order is paid, the online payment path for when Stripe is switched on
+  // later.
+  const waNumber = (process.env.WHATSAPP_NUMBER ?? "").replace(/[^\d]/g, "");
+  const needsPayment =
+    !cancelled && order.payment_status !== "paid" && order.payment_status !== "refunded";
+  const waHref =
+    waNumber && needsPayment
+      ? `https://wa.me/${waNumber}?text=${encodeURIComponent(
+          [
+            `Hi Michelle's Munchies! I'd like to confirm my order ${order.order_number}.`,
+            "",
+            ...order.items.map(
+              (item) =>
+                `${item.quantity}x ${item.product_name}` +
+                (item.selected_options.length > 0
+                  ? ` (${item.selected_options.map((o) => o.valueLabel).join(", ")})`
+                  : ""),
+            ),
+            `Total: ${formatPrice(order.total_cents)}`,
+            "",
+            `Name: ${order.customer_name}`,
+            `${order.fulfillment_type === "pickup" ? "Pickup" : "Delivery"} on ${formatLongDate(order.scheduled_date)}${order.time_window ? ` ${order.time_window}` : ""}`,
+          ].join("\n"),
+        )}`
+      : null;
+
   return (
     <main className="mx-auto max-w-2xl px-6 py-12">
       <ClearCartOnMount />
@@ -74,6 +102,23 @@ export default async function TrackOrderPage({
           Bookmark this page to check your order status any time.
         </p>
       </div>
+
+      {waHref && (
+        <div className="mt-6 rounded-2xl border border-rose/30 bg-blush-soft/60 p-5 text-center">
+          <p className="font-display text-lg font-semibold text-rose-deep">One more step</p>
+          <p className="mt-1 text-sm text-rose-deep">
+            Send your order to us on WhatsApp to confirm it. We reply with PayNow to settle payment.
+          </p>
+          <a
+            href={waHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={buttonClasses({ size: "lg", className: "mt-4" })}
+          >
+            Send my order on WhatsApp
+          </a>
+        </div>
+      )}
 
       <RibbonDivider className="my-8" />
 

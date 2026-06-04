@@ -56,9 +56,6 @@ async function sanitizeSpecialLines(
       if ("error" in v) return { ok: false, error: v.error };
       out.push({ ...item, unitPriceCents: v.priceCents });
     } else if (item.productId.startsWith("fbox:")) {
-      if (!features.buildABox) {
-        return { ok: false, error: "Build-a-box isn’t available right now." };
-      }
       const productId = item.productId.slice("fbox:".length);
       // Cart key encodes the picks: fbox::<productId>::<count>::<label|label|...>
       const parts = item.key.split("::");

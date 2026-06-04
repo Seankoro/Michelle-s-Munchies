@@ -15,8 +15,8 @@ const steps = [
     icon: "🧁",
   },
   {
-    title: "Schedule & pay",
-    body: "Choose self-pickup or delivery, set a date, and pay with PayNow, card, or wallet.",
+    title: "Schedule & confirm",
+    body: "Choose self-pickup or delivery and a date, then confirm on WhatsApp where we arrange PayNow.",
     icon: "🎀",
   },
   {
@@ -43,8 +43,11 @@ export default async function HomePage() {
           <h1 className="font-display text-5xl font-semibold sm:text-6xl">
             Michelle&rsquo;s Munchies
           </h1>
-          <p className="mt-5 max-w-xl text-lg text-muted">
-            Freshly baked treats, made to order and finished with a ribbon.
+          <p className="mt-5 flex max-w-xl flex-wrap items-center justify-center gap-1.5 text-lg text-muted">
+            Freshly baked treats, made to order and finished with a
+            <span role="img" aria-label="ribbon" className="inline-flex">
+              <RibbonBow withTails={false} className="h-5 w-7" />
+            </span>
           </p>
           <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
             <Link href="/menu" className={buttonClasses({ size: "lg" })}>

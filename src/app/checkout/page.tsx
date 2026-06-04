@@ -781,8 +781,8 @@ export default function CheckoutPage() {
             </dl>
 
             <p className="mt-4 rounded-xl bg-marble/60 px-3 py-2 text-xs text-muted">
-              🔒 In this preview, payment is simulated. PayNow, cards, and Apple&nbsp;/&nbsp;Google
-              Pay (via Stripe) activate once keys are added.
+              No payment is taken here. Place your order, then send it to us on WhatsApp from the next
+              page and we will confirm and share PayNow details.
             </p>
 
             {dietaryConflicts.length > 0 && (

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { RibbonNav } from "./RibbonNav";
+import { MobileMenu } from "./MobileMenu";
 import { RibbonBow } from "@/components/ui/RibbonBow";
 import { CartButton } from "@/components/cart/CartButton";
 import { AccountNav } from "./AccountNav";
@@ -15,19 +16,25 @@ export function SiteHeader() {
   // Feature-gated storefront destinations, inserted after "Menu".
   const extraLinks = [
     features.bundles ? { href: "/bundles", label: "Bundles" } : null,
-    features.buildABox ? { href: "/build-a-box", label: "Build a box" } : null,
+    features.buildABox ? { href: "/build-a-box", label: "DIY" } : null,
   ].filter((l): l is { href: string; label: string } => l !== null);
 
   return (
-    <header className="sticky top-0 z-40 border-b border-line/70 bg-cream/85 backdrop-blur">
+    <header className="sticky top-0 z-40 border-b border-line bg-cream shadow-sm">
       <div className="mx-auto flex max-w-none items-center justify-between gap-4 px-6 py-3 lg:px-10">
-        <Link href="/" className="flex items-center gap-2" aria-label="Michelle's Munchies home">
-          <RibbonBow withTails={false} className="h-7 w-9" />
-          <span className="font-display text-xl font-semibold sm:text-2xl">
-            Michelle&rsquo;s Munchies
-          </span>
-        </Link>
+        {/* On mobile the left holds the side-bar menu trigger. On desktop the
+            ribbon is part of the home link. The wordmark always goes home. */}
+        <div className="flex items-center gap-2">
+          <MobileMenu />
+          <Link href="/" className="flex items-center gap-2" aria-label="Michelle's Munchies home">
+            <RibbonBow withTails={false} className="hidden h-7 w-9 md:block" />
+            <span className="font-display text-xl font-semibold sm:text-2xl">
+              Michelle&rsquo;s Munchies
+            </span>
+          </Link>
+        </div>
 
+        {/* Desktop inline nav */}
         <nav aria-label="Primary" className="hidden items-center gap-1 md:flex">
           {[...inlineLinks, ...extraLinks].map((link) => (
             <Link
@@ -41,9 +48,15 @@ export function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-2">
-          <AccountNav />
+          {/* Account and the desktop ribbon menu are desktop-only. Mobile uses
+              the left side bar, leaving just the cart here. */}
+          <div className="hidden md:block">
+            <AccountNav />
+          </div>
           <CartButton />
-          <RibbonNav />
+          <div className="hidden md:block">
+            <RibbonNav />
+          </div>
         </div>
       </div>
     </header>

@@ -50,7 +50,14 @@ export function MenuBrowser({
   return (
     <div>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by category">
+        {/* Categories as a solid, horizontally-scrolling tab strip so they never
+            clump on small screens, kept visually distinct from the lighter dietary
+            chips below. */}
+        <div
+          className="-mx-6 flex gap-2 overflow-x-auto px-6 pb-1 no-scrollbar sm:mx-0 sm:flex-wrap sm:px-0 sm:pb-0"
+          role="group"
+          aria-label="Filter by category"
+        >
           {allCategories.map((option) => (
             <button
               key={option}
@@ -58,9 +65,9 @@ export function MenuBrowser({
               onClick={() => setCategory(option)}
               aria-pressed={category === option}
               className={cn(
-                "rounded-full border px-4 py-2 text-sm font-semibold transition active:scale-95",
+                "shrink-0 rounded-full border px-4 py-2 text-sm font-semibold transition active:scale-95",
                 category === option
-                  ? "border-rose-deep bg-blush-soft text-rose-deep"
+                  ? "border-rose-deep bg-rose-deep text-white"
                   : "border-line bg-white text-ink hover:border-rose",
               )}
             >

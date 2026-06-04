@@ -17,6 +17,9 @@ import { createBrowserSupabase } from "@/lib/supabase/browser";
  *  - focus moves into the panel on open.
  * The "pull" is conveyed by a gentle tug on hover/press; the panel reveal and
  * tug both calm down automatically under prefers-reduced-motion (see globals.css).
+ *
+ * This is the desktop menu. On small screens the header hides it and shows the
+ * left side-bar menu (MobileMenu) instead.
  */
 export function RibbonNav() {
   const [open, setOpen] = useState(false);
