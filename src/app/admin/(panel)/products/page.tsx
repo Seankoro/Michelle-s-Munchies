@@ -5,7 +5,7 @@ import Image from "next/image";
 import { useAdmin } from "@/components/admin/AdminStore";
 import { uploadProductImageAction } from "@/lib/admin-actions";
 import { allergenMeta, dietaryMeta, formatPrice } from "@/lib/catalog";
-import type { Allergen, DietaryTag, Product } from "@/lib/types";
+import type { Allergen, DietaryTag, FlavourBoxConfig, Product } from "@/lib/types";
 import { cn } from "@/lib/cn";
 import { Toggle } from "@/components/ui/Toggle";
 import { useDialog } from "@/lib/useDialog";
@@ -43,6 +43,7 @@ function blankProduct(): Product {
     imageUrls: [],
     photoCount: 1,
     options: [],
+    flavourBox: null,
   };
 }
 
@@ -265,6 +266,43 @@ function ProductFormModal({
         i === optionIndex ? { ...o, values: o.values.filter((_, j) => j !== valueIndex) } : o,
       ),
     }));
+  }
+
+  // ---- Per-item build-your-own box sizes ----
+  function addBoxSize() {
+    setDraft((prev) => {
+      const fb = prev.flavourBox ?? { flavourOption: "Flavour", sizes: [] };
+      return {
+        ...prev,
+        flavourBox: { ...fb, sizes: [...fb.sizes, { label: "", count: 6, priceCents: 0 }] },
+      };
+    });
+  }
+  function updateBoxSize(index: number, patch: Partial<FlavourBoxConfig["sizes"][number]>) {
+    setDraft((prev) =>
+      prev.flavourBox
+        ? {
+            ...prev,
+            flavourBox: {
+              ...prev.flavourBox,
+              sizes: prev.flavourBox.sizes.map((s, i) => (i === index ? { ...s, ...patch } : s)),
+            },
+          }
+        : prev,
+    );
+  }
+  function removeBoxSize(index: number) {
+    setDraft((prev) =>
+      prev.flavourBox
+        ? {
+            ...prev,
+            flavourBox: {
+              ...prev.flavourBox,
+              sizes: prev.flavourBox.sizes.filter((_, i) => i !== index),
+            },
+          }
+        : prev,
+    );
   }
 
   function handleSave() {
@@ -593,6 +631,97 @@ function ProductFormModal({
                 + Add option group
               </button>
             </div>
+          </fieldset>
+
+          <fieldset className="rounded-xl bg-marble/40 p-3">
+            <legend className="px-1 text-sm font-semibold">Build your own box</legend>
+            <p className="text-xs text-muted">
+              A box of this one item where the customer picks their own flavours. Separate from the
+              Build a Box page, which mixes different treats.
+            </p>
+            <label className="mt-2 flex items-center gap-2 text-xs font-semibold">
+              <Toggle
+                checked={!!draft.flavourBox}
+                onChange={(v) =>
+                  set("flavourBox", v ? draft.flavourBox ?? { flavourOption: "Flavour", sizes: [] } : null)
+                }
+                label="Sell as a build-your-own box"
+              />
+              Let customers pick their own flavours
+            </label>
+            {draft.flavourBox && (
+              <div className="mt-3 flex flex-col gap-3">
+                <label className="flex flex-col gap-1 text-xs font-semibold">
+                  Flavour option to pick from
+                  <input
+                    className={inputClass}
+                    value={draft.flavourBox.flavourOption}
+                    onChange={(e) =>
+                      set("flavourBox", { ...draft.flavourBox!, flavourOption: e.target.value })
+                    }
+                    placeholder="Flavour"
+                  />
+                  <span className="font-normal text-muted">
+                    Must match an option group name above, usually Flavour.
+                  </span>
+                </label>
+                {draft.flavourBox.sizes.map((size, sizeIndex) => (
+                  <div key={sizeIndex} className="flex flex-wrap items-center gap-2">
+                    <input
+                      className={cn(inputClass, "min-w-28 flex-1")}
+                      value={size.label}
+                      onChange={(e) => updateBoxSize(sizeIndex, { label: e.target.value })}
+                      placeholder="Size label, e.g. Box of 6"
+                    />
+                    <label className="flex items-center gap-1 text-xs text-muted">
+                      Count
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        className={cn(inputClass, "w-16")}
+                        value={size.count}
+                        onChange={(e) =>
+                          updateBoxSize(sizeIndex, {
+                            count: Math.max(1, Math.round(parseFloat(e.target.value) || 1)),
+                          })
+                        }
+                      />
+                    </label>
+                    <label className="flex items-center gap-1 text-xs text-muted">
+                      S$
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.5"
+                        className={cn(inputClass, "w-20")}
+                        value={size.priceCents / 100}
+                        onChange={(e) =>
+                          updateBoxSize(sizeIndex, {
+                            priceCents: Math.max(0, Math.round((parseFloat(e.target.value) || 0) * 100)),
+                          })
+                        }
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => removeBoxSize(sizeIndex)}
+                      aria-label="Remove size"
+                      className="rounded-full p-1.5 text-muted transition hover:bg-blush-soft active:scale-90"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={addBoxSize}
+                  className="self-start rounded-full border border-line px-3 py-1.5 text-xs font-semibold transition hover:border-rose active:scale-95"
+                >
+                  + Add box size
+                </button>
+              </div>
+            )}
           </fieldset>
         </div>
 

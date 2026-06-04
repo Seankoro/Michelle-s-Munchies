@@ -34,6 +34,16 @@ export type ProductOption = {
   values: ProductOptionValue[];
 };
 
+/**
+ * Per-item build-your-own box. Lets a customer pick `count` flavours of this one
+ * product for a flat price, chosen from the values of the option named
+ * `flavourOption`. Referenced by name, since the flavour editor regenerates
+ * option ids on each save. Null or absent means the item is not sold this way.
+ * This is distinct from a Build a Box template, which mixes different products.
+ */
+export type FlavourBoxSize = { label: string; count: number; priceCents: number };
+export type FlavourBoxConfig = { flavourOption: string; sizes: FlavourBoxSize[] };
+
 export type Product = {
   id: string;
   slug: string;
@@ -59,6 +69,8 @@ export type Product = {
   /** Number of placeholder photo slots to show in the detail gallery. */
   photoCount?: number;
   options: ProductOption[];
+  /** Per-item build-your-own box config (null/absent = not offered). */
+  flavourBox?: FlavourBoxConfig | null;
 };
 
 /** A curated set menu sold as a single cart line. */

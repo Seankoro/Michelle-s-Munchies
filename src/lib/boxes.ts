@@ -1,6 +1,6 @@
 import "server-only";
 import { createPublicClient } from "@/lib/supabase/public";
-import { fetchProducts } from "@/lib/products";
+import { fetchProducts, fetchProductById } from "@/lib/products";
 import type { BoxTemplate, Product } from "@/lib/types";
 
 type BoxRow = {
@@ -109,4 +109,32 @@ export async function validateBoxForCheckout(
     }
   }
   return { priceCents: box.priceCents };
+}
+
+/**
+ * Server-side validation for a per-item build-your-own flavour box line.
+ * Confirms the count matches a configured box size and every chosen flavour is a
+ * current, available value of the product's flavour option. Returns the flat box
+ * price. This is the per-item counterpart to validateBoxForCheckout.
+ */
+export async function validateFlavourBoxForCheckout(
+  productId: string,
+  count: number,
+  chosenLabels: string[],
+): Promise<{ priceCents: number } | { error: string } | null> {
+  const product = await fetchProductById(productId);
+  if (!product || !product.flavourBox) return null;
+  const size = product.flavourBox.sizes.find((s) => s.count === count);
+  if (!size) return { error: "That box size is no longer available." };
+  if (chosenLabels.length !== count) {
+    return { error: `Please choose exactly ${count} flavours for your box.` };
+  }
+  const option = product.options.find((o) => o.name === product.flavourBox!.flavourOption);
+  const available = new Set(
+    (option?.values ?? []).filter((v) => v.isAvailable !== false).map((v) => v.label),
+  );
+  if (!chosenLabels.every((label) => available.has(label))) {
+    return { error: "Some flavours in your box are no longer available. Please update it." };
+  }
+  return { priceCents: size.priceCents };
 }

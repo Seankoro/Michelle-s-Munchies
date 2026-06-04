@@ -373,6 +373,7 @@ function toProductColumns(patch: Partial<Product>) {
   if (patch.imageUrls !== undefined) columns.image_paths = patch.imageUrls;
   if (patch.stockCount !== undefined) columns.stock_count = patch.stockCount;
   if (patch.availableFrom !== undefined) columns.available_from = patch.availableFrom;
+  if (patch.flavourBox !== undefined) columns.flavour_box = patch.flavourBox;
   return columns;
 }
 

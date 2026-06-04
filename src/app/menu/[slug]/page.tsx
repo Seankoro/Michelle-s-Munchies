@@ -8,6 +8,7 @@ import { fetchStoreSettings } from "@/lib/settings";
 import { ImagePlaceholder } from "@/components/ui/ImagePlaceholder";
 import { Badge } from "@/components/ui/Badge";
 import { OptionPicker } from "@/components/product/OptionPicker";
+import { FlavourBoxPicker } from "@/components/product/FlavourBoxPicker";
 import { AllergenChips } from "@/components/product/AllergenChips";
 import { DietaryTags } from "@/components/product/DietaryTags";
 import { SubstitutionNote } from "@/components/product/SubstitutionNote";
@@ -146,6 +147,11 @@ export default async function ProductDetailPage({ params }: Params) {
               <div className="mt-6">
                 <OptionPicker product={product} />
               </div>
+              {product.isAvailable && (
+                <div className="mt-6">
+                  <FlavourBoxPicker product={product} />
+                </div>
+              )}
               {!product.isAvailable && <NotifyBackInStock productId={product.id} />}
             </>
           )}

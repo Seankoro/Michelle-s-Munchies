@@ -11,7 +11,7 @@ import { formatPrice } from "@/lib/catalog";
 import { rateLimit } from "@/lib/rate-limit";
 import { validatePromo, type PromoValidation } from "@/lib/promos";
 import { validateBundleForCheckout } from "@/lib/bundles";
-import { validateBoxForCheckout } from "@/lib/boxes";
+import { validateBoxForCheckout, validateFlavourBoxForCheckout } from "@/lib/boxes";
 import { recordIntent, markConverted } from "@/lib/checkout-intents";
 import { EMAIL_RE } from "@/lib/text";
 import { normalizeSgPhone } from "@/lib/phone";
@@ -52,6 +52,19 @@ async function sanitizeSpecialLines(
       // Cart key encodes the picks: box::<slug>::<id|id|...>
       const flatIds = (item.key.split("::")[2] ?? "").split("|").filter(Boolean);
       const v = await validateBoxForCheckout(slug, flatIds);
+      if (!v) return { ok: false, error: `“${item.name}” is no longer available.` };
+      if ("error" in v) return { ok: false, error: v.error };
+      out.push({ ...item, unitPriceCents: v.priceCents });
+    } else if (item.productId.startsWith("fbox:")) {
+      if (!features.buildABox) {
+        return { ok: false, error: "Build-a-box isn’t available right now." };
+      }
+      const productId = item.productId.slice("fbox:".length);
+      // Cart key encodes the picks: fbox::<productId>::<count>::<label|label|...>
+      const parts = item.key.split("::");
+      const count = parseInt(parts[2] ?? "", 10);
+      const labels = (parts[3] ?? "").split("|").filter(Boolean);
+      const v = await validateFlavourBoxForCheckout(productId, count, labels);
       if (!v) return { ok: false, error: `“${item.name}” is no longer available.` };
       if ("error" in v) return { ok: false, error: v.error };
       out.push({ ...item, unitPriceCents: v.priceCents });

@@ -1,5 +1,5 @@
 import "server-only";
-import type { Allergen, DietaryTag, Product } from "@/lib/types";
+import type { Allergen, DietaryTag, FlavourBoxConfig, Product } from "@/lib/types";
 import { createPublicClient } from "@/lib/supabase/public";
 
 // Shape of the rows returned by the nested products query below.
@@ -37,6 +37,7 @@ type ProductRow = {
   stock_count: number | null;
   available_from: string | null;
   product_options: OptionRow[] | null;
+  flavour_box: FlavourBoxConfig | null;
 };
 
 const PRODUCT_SELECT = "*, product_options(*, product_option_values(*))";
@@ -79,6 +80,7 @@ function rowToProduct(row: ProductRow): Product {
     availableFrom: row.available_from,
     photoCount: 3,
     options,
+    flavourBox: row.flavour_box ?? null,
   };
 }
 
@@ -108,6 +110,17 @@ export async function fetchProductBySlug(slug: string): Promise<Product | null> 
     .maybeSingle();
 
   if (error) throw new Error(`Failed to load product: ${error.message}`);
+  return data ? rowToProduct(data as ProductRow) : null;
+}
+
+export async function fetchProductById(id: string): Promise<Product | null> {
+  const supabase = createPublicClient();
+  const { data, error } = await supabase
+    .from("products")
+    .select(PRODUCT_SELECT)
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(`Failed to load product by id: ${error.message}`);
   return data ? rowToProduct(data as ProductRow) : null;
 }
 
