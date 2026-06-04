@@ -84,7 +84,7 @@ function rowToProduct(row: ProductRow): Product {
   };
 }
 
-/** True when a product has a future go-live time (a seasonal drop not yet open). */
+/** True when a product has a future go-live time, a seasonal drop not yet open. */
 export function isUpcoming(product: Product): boolean {
   return Boolean(product.availableFrom) && new Date(product.availableFrom as string) > new Date();
 }
@@ -129,7 +129,7 @@ export async function fetchCategories(): Promise<string[]> {
   return Array.from(new Set(products.map((product) => product.category)));
 }
 
-/** Best-sellers first, then recommended (admin-toggled) — for the home strip. */
+/** Best-sellers first, then recommended via the admin toggle, for the home strip. */
 export async function fetchFeatured(limit = 6): Promise<Product[]> {
   const products = await fetchProducts();
   const seen = new Set<string>();
@@ -146,7 +146,7 @@ export async function fetchFeatured(limit = 6): Promise<Product[]> {
   return featured.slice(0, limit);
 }
 
-/** "You might also like" — same category first, then other available products. */
+/** "You might also like", same category first, then other available products. */
 export async function fetchRelatedProducts(product: Product, limit = 3): Promise<Product[]> {
   const products = await fetchProducts();
   const sameCategory = products.filter(

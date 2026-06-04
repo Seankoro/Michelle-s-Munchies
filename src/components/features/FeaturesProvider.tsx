@@ -5,7 +5,7 @@ import { ALL_FEATURES_ON, type FeatureFlags } from "@/lib/feature-flags";
 
 const FeaturesContext = createContext<FeatureFlags | null>(null);
 
-/** Seeded with the flags fetched server-side in the root layout (no flash). */
+/** Seeded with the flags fetched server-side in the root layout, so there's no flash. */
 export function FeaturesProvider({
   value,
   children,

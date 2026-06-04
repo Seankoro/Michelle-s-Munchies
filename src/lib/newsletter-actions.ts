@@ -13,7 +13,7 @@ import { EMAIL_RE, escapeHtml } from "@/lib/text";
 
 export type SimpleResult = { ok: true } | { ok: false; error: string };
 
-/** Public opt-in (checkout / sign-up). Rate-limited + feature-gated. */
+/** Public opt-in from checkout or sign-up. Rate-limited and feature-gated. */
 export async function subscribeNewsletterAction(email: string): Promise<SimpleResult> {
   if (!EMAIL_RE.test(email.trim())) return { ok: false, error: "Please enter a valid email." };
   if (!(await rateLimit("newsletter-subscribe", { limit: 15, windowMs: 5 * 60_000 }))) {
@@ -37,7 +37,7 @@ export async function unsubscribeNewsletterAction(token: string): Promise<Simple
 
 export type SendResult = { ok: true; sent: number } | { ok: false; error: string };
 
-/** Admin send: composes the body from plain text and emails every subscriber. */
+/** Admin send, composes the body from plain text and emails every subscriber. */
 export async function sendNewsletterAction(subject: string, body: string): Promise<SendResult> {
   await requireAdmin();
   if (!subject.trim() || !body.trim()) return { ok: false, error: "Add a subject and a message." };

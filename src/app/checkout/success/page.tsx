@@ -18,7 +18,7 @@ export default function CheckoutSuccessPage() {
       const raw = window.sessionStorage.getItem(LAST_ORDER_KEY);
       if (raw) setOrder(JSON.parse(raw) as PlacedOrder);
     } catch {
-      // Ignore — fall through to the generic message.
+      // Ignore, fall through to the generic message.
     }
     setLoaded(true);
   }, []);

@@ -20,7 +20,7 @@ export function ReferralCard({
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1800);
     } catch {
-      // Clipboard blocked — the code is shown below regardless.
+      // Clipboard blocked, the code is shown below regardless.
     }
   }
 

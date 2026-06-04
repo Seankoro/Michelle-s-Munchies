@@ -52,7 +52,7 @@ function Field({
 export default function CheckoutPage() {
   const { items, subtotalCents, hydrated } = useCart();
 
-  // Live store settings (delivery fee, lead time, windows, blackout, min order).
+  // Live store settings like delivery fee, lead time, windows, blackout, and min order.
   // Seeded with the mock defaults, then replaced with Michelle's saved values.
   const [settings, setSettings] = useState<
     Pick<
@@ -102,7 +102,7 @@ export default function CheckoutPage() {
 
   const deliveryFeeCents = computeDeliveryFeeCents(subtotalCents, fulfillment, settings);
 
-  // Rewards: load the signed-in customer's points balance (if any).
+  // Rewards, load the signed-in customer's points balance if any.
   const [pointsBalance, setPointsBalance] = useState(0);
   const [pointValueCents, setPointValueCents] = useState(5);
   const [applyPoints, setApplyPoints] = useState(false);
@@ -119,7 +119,7 @@ export default function CheckoutPage() {
     const supabase = createBrowserSupabase();
     let active = true;
     (async () => {
-      // Live store settings (for every shopper, signed in or not).
+      // Live store settings, for every shopper, signed in or not.
       const r = await fetchClientSettingsRow();
       if (!active) return;
       if (r) {
@@ -145,7 +145,7 @@ export default function CheckoutPage() {
         setTimeWindow((cur) => (windows.includes(cur) ? cur : windows[0]));
       }
 
-      // Rewards balance (signed-in only).
+      // Rewards balance, signed-in only.
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -166,7 +166,7 @@ export default function CheckoutPage() {
     };
   }, []);
 
-  // Dietary-preference conflicts: warn (softly) if a cart item doesn't match the
+  // Dietary-preference conflicts, warn softly if a cart item doesn't match the
   // signed-in customer's saved preferences.
   useEffect(() => {
     if (!features.dietaryPrefs || items.length === 0) {
@@ -215,7 +215,7 @@ export default function CheckoutPage() {
     };
   }, [features.dietaryPrefs, items]);
 
-  // Abandoned-cart capture: shortly after a valid email is entered, record the
+  // Abandoned-cart capture, shortly after a valid email is entered, record the
   // cart so the cron job can send a reminder if checkout isn't completed.
   useEffect(() => {
     if (!features.abandonedCart || items.length === 0) return;
@@ -231,8 +231,8 @@ export default function CheckoutPage() {
     return () => window.clearTimeout(id);
   }, [email, items, subtotalCents, features.abandonedCart]);
 
-  // Discount preview — mirrors the server: promo first, then points fill the
-  // remaining room; keep >= S$0.50 chargeable and snap points to whole points.
+  // Discount preview, mirrors the server. Promo first, then points fill the
+  // remaining room. Keep >= S$0.50 chargeable and snap points to whole points.
   const maxDiscountCents = Math.max(0, subtotalCents + deliveryFeeCents - 50);
   const promoDiscountCents = appliedPromo
     ? Math.min(appliedPromo.discountCents, maxDiscountCents)
@@ -264,7 +264,7 @@ export default function CheckoutPage() {
   }
 
   // Re-validate the applied promo whenever the subtotal or delivery fee changes,
-  // so the preview stays correct (e.g. a free-delivery code as fulfillment toggles).
+  // so the preview stays correct, like a free-delivery code as fulfillment toggles.
   const appliedCode = appliedPromo?.code;
   useEffect(() => {
     if (!appliedCode) return;
@@ -343,8 +343,8 @@ export default function CheckoutPage() {
 
     setSubmitting(true);
 
-    // Persist the order via a Server Action (amounts are recomputed server-side).
-    // Payment (Stripe) will slot in here later, before the order is confirmed.
+    // Persist the order via a Server Action, where amounts are recomputed server-side.
+    // Payment is arranged later over WhatsApp, or via Stripe if it is ever configured.
     const result = await placeOrder(
       {
         items,
@@ -383,7 +383,7 @@ export default function CheckoutPage() {
       return;
     }
 
-    // Newsletter opt-in (best-effort, never blocks the redirect).
+    // Newsletter opt-in, best-effort and never blocks the redirect.
     if (newsletterOptIn && features.newsletter) {
       void subscribeNewsletterAction(email.trim());
     }

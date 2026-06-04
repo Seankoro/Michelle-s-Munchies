@@ -2,7 +2,7 @@ import type Stripe from "stripe";
 import { getStripe } from "@/lib/stripe";
 import { markOrderPaid } from "@/lib/admin-db";
 
-// Stripe's SDK needs the Node runtime (not edge) and the raw request body.
+// Stripe's SDK needs the Node runtime, not edge, and the raw request body.
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
   try {
     event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
   } catch {
-    // Signature didn't verify — reject (could be a forged request).
+    // Signature didn't verify, reject it since it could be a forged request.
     return new Response("Invalid signature.", { status: 400 });
   }
 
@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
-        // Cards confirm immediately ("paid"); PayNow may still be processing
+        // Cards confirm immediately as "paid". PayNow may still be processing
         // and will arrive via async_payment_succeeded below.
         if (session.payment_status === "paid") await paidFromSession(session);
         break;

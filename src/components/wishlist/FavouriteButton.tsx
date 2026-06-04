@@ -9,7 +9,7 @@ import { cn } from "@/lib/cn";
 /**
  * A ribbon you "tie" to favourite a product. Hidden for signed-out visitors.
  * Tying the ribbon on a sold-out item also subscribes you to its back-in-stock
- * alert (when that feature is on).
+ * alert when that feature is on.
  */
 export function FavouriteButton({
   productId,

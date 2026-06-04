@@ -9,9 +9,9 @@ import { EMAIL_RE } from "@/lib/text";
 export type NotifyResult = { ok: true } | { ok: false; error: string };
 
 /**
- * Subscribe to a product's back-in-stock alert. Works for guests (email passed
- * in) and signed-in users (email resolved from the session, ignoring any client
- * value). Rate-limited and gated by the back-in-stock feature.
+ * Subscribe to a product's back-in-stock alert. Guests pass their email in, and
+ * signed-in users have it resolved from the session, ignoring any client value.
+ * Rate-limited and gated by the back-in-stock feature.
  */
 export async function subscribeBackInStockAction(
   productId: string,
@@ -29,7 +29,7 @@ export async function subscribeBackInStockAction(
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Signed-in users always use their account email; guests use the form value.
+  // Signed-in users always use their account email. Guests use the form value.
   const resolved = user?.email ?? email.trim().toLowerCase();
   if (!EMAIL_RE.test(resolved)) {
     return { ok: false, error: "Please enter a valid email." };

@@ -2,20 +2,21 @@ import "server-only";
 import { headers } from "next/headers";
 
 /**
- * Rate limiter for custom Server Actions (Supabase already throttles its own
- * auth endpoints). Keyed by client IP + action.
+ * Rate limiter for custom Server Actions. Supabase already throttles its own
+ * auth endpoints. Keyed by client IP and action.
  *
- * Two backends, chosen automatically:
+ * Two backends, chosen automatically.
  *
- *  - Upstash Redis (REST) when UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN
- *    are set. This gives a SHARED counter across every serverless instance, which
- *    is what you want on Vercel where each request can hit a fresh worker.
- *  - In-memory otherwise — effective in dev and single-instance hosting, and the
- *    automatic fallback if an Upstash call ever fails (so a Redis blip can't take
- *    the site down). In-memory limits are per-instance only.
+ *  - Upstash Redis over REST when UPSTASH_REDIS_REST_URL and
+ *    UPSTASH_REDIS_REST_TOKEN are set. This gives a shared counter across every
+ *    serverless instance, which is what you want on Vercel where each request can
+ *    hit a fresh worker.
+ *  - In-memory otherwise, effective in dev and single-instance hosting, and the
+ *    automatic fallback if an Upstash call ever fails so a Redis blip can't take
+ *    the site down. In-memory limits are per-instance only.
  *
  * We talk to Upstash over its REST API with plain fetch to avoid adding a
- * dependency — same approach as the Twilio module in sms.ts.
+ * dependency, same approach as the Twilio module in sms.ts.
  */
 type Hit = { count: number; resetAt: number };
 const buckets = new Map<string, Hit>();
@@ -51,7 +52,7 @@ function inMemoryAllow(key: string, limit: number, windowMs: number): boolean {
 }
 
 /**
- * Shared fixed-window counter in Redis. INCR returns the new count; PEXPIRE with
+ * Shared fixed-window counter in Redis. INCR returns the new count. PEXPIRE with
  * NX sets the window's TTL only on the first hit, so the window doesn't slide
  * forward on every request. Both run in one pipeline round-trip.
  */
@@ -86,7 +87,7 @@ export async function rateLimit(
     try {
       return await upstashAllow(key, opts.limit, opts.windowMs);
     } catch (error) {
-      // Never let a Redis hiccup break a user action — fall back to the
+      // Never let a Redis hiccup break a user action. Fall back to the
       // in-memory limiter, which still bounds traffic on this instance.
       console.error("[rate-limit] Upstash unavailable, using in-memory fallback:", error);
     }

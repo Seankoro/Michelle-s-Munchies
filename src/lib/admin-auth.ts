@@ -3,8 +3,8 @@ import { createServerSupabase } from "@/lib/supabase/server";
 
 /**
  * Admin authorization. An "admin" is a signed-in Supabase user whose email is in
- * the ADMIN_EMAILS allow-list (comma-separated). This is enforced server-side on
- * every admin Server Action and in middleware — the admin UI gate is cosmetic.
+ * the comma-separated ADMIN_EMAILS allow-list. This is enforced server-side on
+ * every admin Server Action and in middleware, the admin UI gate is cosmetic.
  */
 export function adminEmails(): string[] {
   return (process.env.ADMIN_EMAILS ?? "")

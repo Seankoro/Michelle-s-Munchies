@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 
-/** Header link that reflects auth state: "Account" when signed in, else "Sign in". */
+/** Header link that reflects auth state, "Account" when signed in, else "Sign in". */
 export function AccountNav() {
   const [signedIn, setSignedIn] = useState(false);
   const [ready, setReady] = useState(false);
@@ -23,7 +23,7 @@ export function AccountNav() {
   }, []);
 
   // Until the session resolves, show a same-size placeholder so we never flash
-  // the wrong label (and never shift layout).
+  // the wrong label and never shift layout.
   if (!ready) {
     return (
       <span

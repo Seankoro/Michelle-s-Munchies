@@ -4,10 +4,10 @@ import { useState } from "react";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 
 /**
- * "Continue with Google" — kicks off Supabase OAuth. Google redirects back to
- * /auth/callback (which already exchanges the code for a session), then on to
- * the account page. Requires the Google provider to be enabled in Supabase +
- * OAuth credentials in Google Cloud; until then it returns a config error.
+ * "Continue with Google", kicks off Supabase OAuth. Google redirects back to
+ * /auth/callback, which already exchanges the code for a session, then on to
+ * the account page. Requires the Google provider to be enabled in Supabase and
+ * OAuth credentials in Google Cloud. Until then it returns a config error.
  */
 export function GoogleButton({ label = "Continue with Google" }: { label?: string }) {
   const [loading, setLoading] = useState(false);

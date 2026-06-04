@@ -5,20 +5,21 @@ import type { CartItem, SelectedOption } from "@/lib/types";
 export type RawSelection = { optionName?: string; valueLabel: string };
 export type RawCartLine = {
   productId: string | null;
-  /** Name fallback when matching by id fails (order snapshots keep the name). */
+  /** Name fallback when matching by id fails, since order snapshots keep the name. */
   productName?: string | null;
   quantity: number;
   selections: RawSelection[];
 };
 
 /**
- * Re-resolve "raw" cart lines against the *current* catalog — live price +
- * availability, options matched by label, cart key built like OptionPicker so
- * lines merge with menu adds. Lines whose product is gone/sold-out, or whose
- * required options no longer exist, are reported in `skipped` (by name).
+ * Re-resolve "raw" cart lines against the current catalog, with live price and
+ * availability, options matched by label, and the cart key built like
+ * OptionPicker so lines merge with menu adds. Lines whose product is gone or
+ * sold-out, or whose required options no longer exist, are reported in `skipped`
+ * by name.
  *
- * Shared by "Order again" (buildReorderCart) and shared-cart links
- * (resolveSharedCart) so the resolution logic lives in one place.
+ * Shared by "Order again" in buildReorderCart and shared-cart links in
+ * resolveSharedCart so the resolution logic lives in one place.
  */
 export async function resolveCartLines(
   lines: RawCartLine[],

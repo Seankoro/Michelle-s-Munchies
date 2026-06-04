@@ -6,10 +6,10 @@ import { ProductCard } from "@/components/product/ProductCard";
 import { cn } from "@/lib/cn";
 
 /**
- * Recommendations carousel. On phone/tablet it is a native scroll-snap rail you
- * swipe through, with the next card peeking at the edge and dot indicators
+ * Recommendations carousel. On phone and tablet it is a native scroll-snap rail
+ * you swipe through, with the next card peeking at the edge and dot indicators
  * tracking your place. On lg+ the same products render as a static grid, so
- * desktop is not a mobile afterthought. No autoplay (attention/accessibility).
+ * desktop is not a mobile afterthought. No autoplay, for attention and accessibility.
  */
 export function RecommendationRail({ products }: { products: Product[] }) {
   const trackRef = useRef<HTMLDivElement>(null);
@@ -29,8 +29,8 @@ export function RecommendationRail({ products }: { products: Product[] }) {
   }, []);
 
   // Track the card nearest the viewport centre as the rail scrolls. A native
-  // listener (rather than React's onScroll prop) is used because scroll doesn't
-  // bubble and the delegated handler can miss programmatic/inertial scrolls.
+  // listener is used instead of React's onScroll prop because scroll doesn't
+  // bubble and the delegated handler can miss programmatic or inertial scrolls.
   useEffect(() => {
     const track = trackRef.current;
     if (!track) return;

@@ -12,7 +12,7 @@ export type SharedFavourite = {
   hasOptions: boolean;
 };
 
-/** Mint (or return the existing) unguessable share token for a user's wishlist. */
+/** Mint or return the existing unguessable share token for a user's wishlist. */
 export async function getOrCreateShareToken(userId: string): Promise<string> {
   const supabase = createAdminClient();
   const { data: existing } = await supabase
@@ -30,7 +30,7 @@ export async function getOrCreateShareToken(userId: string): Promise<string> {
 }
 
 /**
- * Resolve a share token to the owner's current favourites — names, prices, and
+ * Resolve a share token to the owner's current favourites, names, prices, and
  * links only. Never returns the owner's identity or any PII.
  */
 export async function fetchSharedFavourites(token: string): Promise<SharedFavourite[] | null> {

@@ -9,8 +9,8 @@ import { formatPrice } from "@/lib/catalog";
 import { useDialog } from "@/lib/useDialog";
 
 /**
- * The "quick-pick" popover: choose options for a product without leaving the
- * listing page (the impulse-buy flow). Opened from a ProductCard for items that
+ * The "quick-pick" popover, choose options for a product without leaving the
+ * listing page in the impulse-buy flow. Opened from a ProductCard for items that
  * have options. Bottom-sheet on mobile, centred modal on larger screens.
  */
 export function QuickPick({

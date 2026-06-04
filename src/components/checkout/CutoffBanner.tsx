@@ -9,7 +9,7 @@ function format12h(hhmm: string): string {
   return m ? `${h12}:${String(m).padStart(2, "0")}${ampm}` : `${h12}${ampm}`;
 }
 
-/** Live "order by <cutoff>" banner; counts down to today's same-day cutoff. */
+/** Live "order by <cutoff>" banner. Counts down to today's same-day cutoff. */
 export function CutoffBanner({
   cutoffTime,
   earliestLabel,

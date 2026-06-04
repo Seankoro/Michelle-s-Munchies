@@ -22,7 +22,7 @@ export async function createServerSupabase() {
               cookieStore.set(name, value, options),
             );
           } catch {
-            // Called from a Server Component — cookie writes are read-only there.
+            // Called from a Server Component, cookie writes are read-only there.
             // The middleware refreshes the session cookie instead.
           }
         },

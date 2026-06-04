@@ -8,8 +8,8 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-// Access is enforced server-side by middleware (only ADMIN_EMAILS sessions reach
-// here) and again by requireAdmin() inside every admin Server Action.
+// Access is enforced server-side by middleware, where only ADMIN_EMAILS sessions
+// reach here, and again by requireAdmin() inside every admin Server Action.
 export default function AdminPanelLayout({ children }: { children: ReactNode }) {
   return (
     <AdminStoreProvider>

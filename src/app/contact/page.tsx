@@ -72,7 +72,7 @@ export default function ContactPage() {
 
       <section className="mt-12">
         <h2 className="font-display text-2xl font-semibold">Get in touch</h2>
-        {/* Placeholder contact details — swap in real handles/links. */}
+        {/* Placeholder contact details, swap in real handles/links. */}
         <ul className="mt-5 grid gap-4 sm:grid-cols-3">
           {contactMethods.map((method) => (
             <li

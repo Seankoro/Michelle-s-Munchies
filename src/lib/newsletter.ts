@@ -2,7 +2,7 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-/** Add (or re-activate) a newsletter subscriber by email. Idempotent. */
+/** Add or re-activate a newsletter subscriber by email. Idempotent. */
 export async function subscribeNewsletter(email: string): Promise<void> {
   const supabase = createAdminClient();
   const normalized = email.trim().toLowerCase();
@@ -41,7 +41,7 @@ export async function unsubscribeByToken(token: string): Promise<boolean> {
 
 export type Subscriber = { email: string; unsubscribeToken: string };
 
-/** All still-subscribed contacts (for an admin send). */
+/** All still-subscribed contacts, for an admin send. */
 export async function listActiveSubscribers(): Promise<Subscriber[]> {
   const supabase = createAdminClient();
   const { data } = await supabase

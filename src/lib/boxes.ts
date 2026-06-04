@@ -18,7 +18,7 @@ type BoxRow = {
 const BOX_SELECT =
   "id, name, slug, item_count, price_cents, eligible_category, is_active, sort_order, box_template_items(product_id)";
 
-/** Resolve the eligible product pool for a box: explicit allowlist, else category. */
+/** Resolve the eligible product pool for a box, the explicit allowlist or else the category. */
 function resolveEligible(row: BoxRow, allProducts: Product[]): Product[] {
   const explicitIds = (row.box_template_items ?? []).map((i) => i.product_id);
   if (explicitIds.length > 0) {

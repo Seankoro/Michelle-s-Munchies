@@ -3,14 +3,14 @@ import { allergenMeta } from "@/lib/catalog";
 import { cn } from "@/lib/cn";
 
 /**
- * Allergen icons with a tap/hover popup (the look you chose).
+ * Allergen icons with a tap or hover popup.
  *
- * Accessibility safety net: each chip is a real focusable <button> whose
+ * Accessibility safety net. Each chip is a real focusable <button> whose
  * `aria-label` always says "Contains peanuts" etc., so screen-reader users get
- * the information even though sighted users see just the icon until they
- * hover/tap. The popup also appears on keyboard focus (focus-within), so it's
+ * the information even though sighted users see just the icon until they hover
+ * or tap. The popup also appears on keyboard focus via focus-within, so it's
  * reachable without a mouse. Allergen info is health-critical, so it's never
- * *only* visual.
+ * only visual.
  */
 export function AllergenChips({
   allergens,

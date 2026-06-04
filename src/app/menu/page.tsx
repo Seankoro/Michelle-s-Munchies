@@ -15,7 +15,7 @@ export default async function MenuPage() {
   const products = await fetchProducts();
   const categories = Array.from(new Set(products.map((product) => product.category)));
 
-  // Pre-apply the signed-in customer's saved dietary preferences (when enabled).
+  // Pre-apply the signed-in customer's saved dietary preferences when enabled.
   let initialDietary: DietaryTag[] = [];
   if ((await fetchStoreSettings()).features.dietaryPrefs) {
     const supabase = await createServerSupabase();

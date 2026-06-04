@@ -12,7 +12,7 @@ import { compactInputClass as inputClass } from "@/lib/ui";
 export default function AdminSettingsPage() {
   const { settings, updateSettings, hydrated, products } = useAdmin();
   // Mount the form only once settings have loaded, so its initial field values
-  // come from the saved settings (not the pre-hydration defaults).
+  // come from the saved settings, not the pre-hydration defaults.
   if (!hydrated) return null;
   return <SettingsForm settings={settings} onSave={updateSettings} products={products} />;
 }

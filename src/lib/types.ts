@@ -1,5 +1,5 @@
-// Domain types shared across the app. These mirror the Supabase schema
-// (supabase/migrations/0001_init.sql) but use camelCase for the UI layer.
+// Domain types shared across the app. These mirror the Supabase schema in
+// supabase/migrations/0001_init.sql but use camelCase for the UI layer.
 
 export type Allergen =
   | "peanuts"
@@ -60,16 +60,16 @@ export type Product = {
   ingredients?: string[];
   storageInfo?: string;
   servingInfo?: string;
-  /** Public URLs of uploaded product photos (empty → placeholder is shown). */
+  /** Public URLs of uploaded product photos. Empty shows the placeholder. */
   imageUrls?: string[];
-  /** Remaining stock; null/undefined = untracked (unlimited). Auto sold-out at 0. */
+  /** Remaining stock. null or undefined means untracked and unlimited. Auto sold-out at 0. */
   stockCount?: number | null;
-  /** Seasonal-drop go-live time (ISO). In the future = not yet orderable. */
+  /** Seasonal-drop go-live time as an ISO string. A future time means not yet orderable. */
   availableFrom?: string | null;
   /** Number of placeholder photo slots to show in the detail gallery. */
   photoCount?: number;
   options: ProductOption[];
-  /** Per-item build-your-own box config (null/absent = not offered). */
+  /** Per-item build-your-own box config. null or absent means not offered. */
   flavourBox?: FlavourBoxConfig | null;
 };
 
@@ -90,7 +90,7 @@ export type Bundle = {
   items: BundleItem[];
 };
 
-/** A build-your-own box template: pick exactly `itemCount` from `eligibleProducts`. */
+/** A build-your-own box template. Pick exactly `itemCount` from `eligibleProducts`. */
 export type BoxTemplate = {
   id: string;
   name: string;
@@ -107,7 +107,7 @@ export type NoteAnswer = {
   answer: string;
 };
 
-/** A single chosen option on a cart line (snapshotted for display). */
+/** A single chosen option on a cart line, snapshotted for display. */
 export type SelectedOption = {
   optionName: string;
   valueLabel: string;
@@ -115,7 +115,7 @@ export type SelectedOption = {
 };
 
 export type CartItem = {
-  /** Stable identity = product + the exact options chosen (so two sizes are two lines). */
+  /** Stable identity = product + the exact options chosen, so two sizes are two lines. */
   key: string;
   productId: string;
   slug: string;

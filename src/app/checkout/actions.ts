@@ -25,9 +25,9 @@ function subtotalOf(items: CreateOrderInput["items"]): number {
 }
 
 /**
- * Re-validate and authoritatively re-price "special" cart lines server-side —
- * bundles (and build-a-box lines, added later). The client-sent price/contents
- * are never trusted; the DB price wins, and unavailable items are rejected.
+ * Re-validate and authoritatively re-price "special" cart lines server-side,
+ * meaning bundles and build-a-box lines. The client-sent price and contents are
+ * never trusted. The DB price wins, and unavailable items are rejected.
  */
 async function sanitizeSpecialLines(
   items: CreateOrderInput["items"],
@@ -49,7 +49,7 @@ async function sanitizeSpecialLines(
         return { ok: false, error: "Build-a-box isn’t available right now." };
       }
       const slug = item.productId.slice("box:".length);
-      // Cart key encodes the picks: box::<slug>::<id|id|...>
+      // Cart key encodes the picks as box::<slug>::<id|id|...>
       const flatIds = (item.key.split("::")[2] ?? "").split("|").filter(Boolean);
       const v = await validateBoxForCheckout(slug, flatIds);
       if (!v) return { ok: false, error: `“${item.name}” is no longer available.` };
@@ -57,7 +57,7 @@ async function sanitizeSpecialLines(
       out.push({ ...item, unitPriceCents: v.priceCents });
     } else if (item.productId.startsWith("fbox:")) {
       const productId = item.productId.slice("fbox:".length);
-      // Cart key encodes the picks: fbox::<productId>::<count>::<label|label|...>
+      // Cart key encodes the picks as fbox::<productId>::<count>::<label|label|...>
       const parts = item.key.split("::");
       const count = parseInt(parts[2] ?? "", 10);
       const labels = (parts[3] ?? "").split("|").filter(Boolean);
@@ -73,8 +73,8 @@ async function sanitizeSpecialLines(
 }
 
 /**
- * Capture a checkout intent (cart + email) for the abandoned-cart reminder.
- * Rate-limited + feature-gated; failures are swallowed (never block checkout).
+ * Capture a checkout intent, the cart and email, for the abandoned-cart reminder.
+ * Rate-limited and feature-gated. Failures are swallowed and never block checkout.
  */
 export async function recordCheckoutIntentAction(
   email: string,
@@ -87,7 +87,7 @@ export async function recordCheckoutIntentAction(
   await recordIntent(email, items, subtotalCents);
 }
 
-/** Look up the spend-gift product (only returned if it still exists + is available). */
+/** Look up the spend-gift product, returned only if it still exists and is available. */
 async function fetchGiftLine(productId: string): Promise<{ name: string; slug: string } | null> {
   const supabase = createAdminClient();
   const { data } = await supabase
@@ -100,7 +100,7 @@ async function fetchGiftLine(productId: string): Promise<{ name: string; slug: s
   return { name: row.name, slug: row.slug };
 }
 
-/** Checkout "Apply code" — validates a promo against the current subtotal + context. */
+/** Checkout "Apply code", validates a promo against the current subtotal and context. */
 export async function applyPromo(
   code: string,
   subtotalCents: number,
@@ -121,9 +121,9 @@ export async function applyPromo(
 }
 
 /**
- * Creates the order server-side. Discounts (promo code + rewards points) are
- * recomputed authoritatively here — never trusted from the client — combined
- * into one amount, and applied via a single Stripe coupon.
+ * Creates the order server-side. Discounts from the promo code and rewards
+ * points are recomputed authoritatively here, never trusted from the client,
+ * combined into one amount, and applied via a single Stripe coupon.
  */
 export async function placeOrder(
   input: CreateOrderInput,
@@ -139,12 +139,12 @@ export async function placeOrder(
       data: { user },
     } = await supabase.auth.getUser();
 
-    // Authoritative scheduling/fee rules come from Michelle's live settings —
-    // the client's copy is only for display and is never trusted here.
+    // Authoritative scheduling and fee rules come from Michelle's live settings.
+    // The client's copy is only for display and is never trusted here.
     const settings = await fetchStoreSettings();
 
-    // Validate contact details server-side too (the client checks these, but a
-    // request can be POSTed directly). Phone is normalized to "+65 XXXX XXXX".
+    // Validate contact details server-side too, since the client checks these but a
+    // request can be POSTed directly. Phone is normalized to "+65 XXXX XXXX".
     if (!EMAIL_RE.test((input.email ?? "").trim())) {
       return { ok: false, error: "Enter a valid email." };
     }
@@ -160,12 +160,12 @@ export async function placeOrder(
       return { ok: false, error: "Enter a valid Singapore mobile number for the recipient." };
     }
 
-    // Re-validate + re-price special lines (bundles/boxes) on the server.
+    // Re-validate and re-price special lines like bundles and boxes on the server.
     const sanitized = await sanitizeSpecialLines(input.items, settings.features);
     if (!sanitized.ok) return { ok: false, error: sanitized.error };
     let items = sanitized.items;
 
-    // Block items that haven't launched yet (seasonal drops) — server-enforced.
+    // Block items that haven't launched yet, the seasonal drops. Server-enforced.
     if (settings.features.drops) {
       const uuidRe = /^[0-9a-f-]{36}$/i;
       const productIds = items.map((i) => i.productId).filter((id) => uuidRe.test(id));
@@ -188,7 +188,7 @@ export async function placeOrder(
 
     const subtotalCents = subtotalOf(items);
 
-    // Spend-gift: append a free gift line once the cart clears the threshold.
+    // Spend-gift, append a free gift line once the cart clears the threshold.
     if (
       settings.features.spendGift &&
       settings.freeGiftThresholdCents &&
@@ -235,8 +235,8 @@ export async function placeOrder(
     if (settings.blackoutDates.includes(input.scheduledDate)) {
       return { ok: false, error: "We’re away that day. Please choose another date." };
     }
-    // Daily order cap (null/0 = unlimited). Counted with the service-role client
-    // since orders aren't publicly readable.
+    // Daily order cap, where null or 0 means unlimited. Counted with the service-role
+    // client since orders aren't publicly readable.
     if (settings.dailyOrderCap && settings.dailyOrderCap > 0) {
       const admin = createAdminClient();
       const { count } = await admin
@@ -248,7 +248,7 @@ export async function placeOrder(
         return { ok: false, error: "That date is fully booked. Please pick another." };
       }
     }
-    // Per-time-window cap (null/0 = unlimited).
+    // Per-time-window cap, where null or 0 means unlimited.
     if (settings.perWindowCap && settings.perWindowCap > 0 && input.timeWindow) {
       const admin = createAdminClient();
       const { count } = await admin
@@ -265,7 +265,7 @@ export async function placeOrder(
     // Always keep at least S$0.50 chargeable.
     let room = Math.max(0, subtotalCents + deliveryFeeCents - 50);
 
-    // Promo code (validated server-side; available to guests too). Skipped if
+    // Promo code, validated server-side and available to guests too. Skipped if
     // the promo feature is turned off.
     let promoDiscount = 0;
     let appliedPromo: string | null = null;
@@ -281,7 +281,7 @@ export async function placeOrder(
       }
     }
 
-    // Rewards points (signed-in only), filling whatever discount room remains.
+    // Rewards points for signed-in customers only, filling whatever discount room remains.
     let pointsRedeemed = 0;
     let pointsDiscount = 0;
     if (redeemPoints && user && settings.features.rewards) {
@@ -305,7 +305,7 @@ export async function placeOrder(
       room -= pointsDiscount;
     }
 
-    // Structured order notes: validate required prompts + keep only known answers.
+    // Structured order notes, validate required prompts and keep only known answers.
     const noteAnswers: { id: string; label: string; answer: string }[] = [];
     if (settings.features.structuredNotes && settings.notePrompts.length > 0) {
       const provided = new Map((input.noteAnswers ?? []).map((a) => [a.id, a.answer]));

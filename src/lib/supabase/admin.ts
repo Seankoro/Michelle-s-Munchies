@@ -2,12 +2,12 @@ import "server-only";
 import { createClient } from "@supabase/supabase-js";
 
 /**
- * Admin Supabase client (service role key). BYPASSES Row-Level Security, so it
- * must NEVER be imported into client components or shipped to the browser — the
- * `server-only` import above turns any such accidental use into a build error.
+ * Admin Supabase client using the service role key. BYPASSES Row-Level Security,
+ * so it must NEVER be imported into client components or shipped to the browser.
+ * The `server-only` import above turns any such accidental use into a build error.
  *
- * Use this on the server for: creating/reading orders, the admin dashboard, and
- * Stripe webhook handling. Created lazily so the app boots before env is set.
+ * Use this on the server for creating and reading orders, the admin dashboard,
+ * and Stripe webhook handling. Created lazily so the app boots before env is set.
  */
 export function createAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;

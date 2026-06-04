@@ -14,9 +14,9 @@ const CHANGEABLE_STATUSES = ["received", "confirmed"];
 
 /**
  * Self-serve reschedule from the tracking link. Auth = possession of the 32-char
- * tracking token. Re-validates lead time, cutoff, blackout, and per-window/daily
- * caps server-side (excluding this order's own slot), only while the order is
- * still early, capped at MAX_RESCHEDULES, rate-limited.
+ * tracking token. Re-validates lead time, cutoff, blackout, and the per-window
+ * and daily caps server-side while excluding this order's own slot, only while
+ * the order is still early, capped at MAX_RESCHEDULES, rate-limited.
  */
 export async function rescheduleOrderAction(
   token: string,
@@ -95,7 +95,7 @@ export async function rescheduleOrderAction(
   return { ok: true };
 }
 
-/** Customer asks to cancel — emails the owner (admin does the actual cancel + refund). */
+/** Customer asks to cancel, emails the owner. The admin does the actual cancel and refund. */
 export async function requestCancellationAction(token: string): Promise<ChangeResult> {
   if (!(await rateLimit("cancel-request", { limit: 10, windowMs: 5 * 60_000 }))) {
     return { ok: false, error: "Too many requests. Please wait a few minutes." };
@@ -116,9 +116,9 @@ export async function requestCancellationAction(token: string): Promise<ChangeRe
 }
 
 /**
- * Guest order lookup: find a past order by email + order number and return its
- * tracking token. Both must match (email is the lightweight "auth"); we keep the
- * error generic so it can't be used to probe which orders exist.
+ * Guest order lookup. Find a past order by email and order number and return its
+ * tracking token. Both must match, with email acting as the lightweight auth.
+ * We keep the error generic so it can't be used to probe which orders exist.
  */
 export async function findGuestOrder(email: string, orderNumber: string): Promise<LookupResult> {
   const num = orderNumber.trim().toUpperCase();

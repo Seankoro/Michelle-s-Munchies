@@ -19,7 +19,7 @@ type ReviewRow = {
   image_paths: string[] | null;
 };
 
-/** All reviews for a product (public — shown on the product page). */
+/** All reviews for a product, public and shown on the product page. */
 export async function fetchReviews(productId: string): Promise<Review[]> {
   const supabase = createPublicClient();
   const { data, error } = await supabase
@@ -43,7 +43,7 @@ export type ReviewContext = {
   existing: { rating: number; body: string } | null;
 };
 
-/** Whether the current user may review this product (signed in + paid purchase). */
+/** Whether the current user may review this product, signed in with a paid purchase. */
 export async function getReviewContext(productId: string): Promise<ReviewContext> {
   const supabase = await createServerSupabase();
   const {

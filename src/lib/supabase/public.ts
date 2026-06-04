@@ -1,9 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
 
 /**
- * Public Supabase client (anon key). Safe for the browser and for server-side
- * reads of public data (products, settings). Subject to Row-Level Security, so
- * it can only ever read what the "Public can read ..." policies allow.
+ * Public Supabase client using the anon key. Safe for the browser and for
+ * server-side reads of public data like products and settings. Subject to
+ * Row-Level Security, so it can only ever read what the "Public can read ..."
+ * policies allow.
  *
  * Created lazily so the app still boots before Supabase env vars are set.
  */

@@ -8,7 +8,7 @@ import { cn } from "@/lib/cn";
 export function CartButton() {
   const { count, hydrated } = useCart();
   const prevCount = useRef(count);
-  // Bumps once per increase; used as a key so the pop animation restarts each time.
+  // Bumps once per increase. Used as a key so the pop animation restarts each time.
   const [bump, setBump] = useState(0);
 
   useEffect(() => {

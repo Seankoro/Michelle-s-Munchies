@@ -6,7 +6,7 @@ export function escapeHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-/** URL-friendly slug: lowercase, non-alphanumerics → dashes, trimmed. */
+/** URL-friendly slug, lowercase with non-alphanumerics turned to dashes, trimmed. */
 export function slugify(value: string): string {
   return value
     .toLowerCase()
@@ -15,5 +15,5 @@ export function slugify(value: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-/** Loose email shape check (not validation — just a sanity gate). */
+/** Loose email shape check, not validation, just a sanity gate. */
 export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

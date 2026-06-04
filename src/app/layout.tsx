@@ -5,14 +5,14 @@ import { SiteChrome } from "@/components/layout/SiteChrome";
 import { CartProvider } from "@/components/cart/CartContext";
 import { fetchFeatureFlags } from "@/lib/settings";
 
-// Display serif — soft, elegant, a touch of charm (the "marble Pantheon" calm).
+// Display serif, soft, elegant, a touch of charm, the "marble Pantheon" calm.
 const fraunces = Fraunces({
   subsets: ["latin"],
   variable: "--font-fraunces",
   display: "swap",
 });
 
-// Body sans — rounded and friendly (the Sylveon cuteness), still very readable.
+// Body sans, rounded and friendly with the Sylveon cuteness, still very readable.
 const nunito = Nunito({
   subsets: ["latin"],
   variable: "--font-nunito",

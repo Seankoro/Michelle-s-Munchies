@@ -5,7 +5,7 @@ import { useCart } from "@/components/cart/CartContext";
 import { useFeatures } from "@/components/features/FeaturesProvider";
 import { encodeSharedCart } from "@/lib/cart-share";
 
-/** "Share this order" — copies a link that loads the basket into someone's cart. */
+/** "Share this order", copies a link that loads the basket into someone's cart. */
 export function ShareCartButton() {
   const { items } = useCart();
   const features = useFeatures();
@@ -27,7 +27,7 @@ export function ShareCartButton() {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Clipboard blocked — surface the URL for manual copy.
+      // Clipboard blocked, surface the URL for manual copy.
       window.prompt("Copy your order link:", url);
     }
   }

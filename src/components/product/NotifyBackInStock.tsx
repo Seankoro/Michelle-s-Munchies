@@ -5,8 +5,8 @@ import { useFeatures } from "@/components/features/FeaturesProvider";
 import { subscribeBackInStockAction } from "@/lib/stock-actions";
 
 /**
- * Shown on a sold-out product. Guests enter an email; signed-in users can leave
- * it blank (the server uses their account email). Gated by the back-in-stock
+ * Shown on a sold-out product. Guests enter an email. Signed-in users can leave
+ * it blank, and the server uses their account email. Gated by the back-in-stock
  * feature.
  */
 export function NotifyBackInStock({

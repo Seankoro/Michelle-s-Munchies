@@ -8,7 +8,7 @@ export type DeliveryAddress = {
   postalCode: string;
 };
 
-/** A placed order as shown on the success page (client-side until Supabase). */
+/** A placed order as shown on the success page, client-side until Supabase. */
 export type PlacedOrder = {
   orderNumber: string;
   items: CartItem[];
@@ -35,7 +35,7 @@ type FeeSettings = {
   freeDeliveryMinCents: number | null;
 };
 
-/** Pickup is always free; delivery is a flat fee, waived above the threshold. */
+/** Pickup is always free. Delivery is a flat fee, waived above the threshold. */
 export function computeDeliveryFeeCents(
   subtotalCents: number,
   fulfillment: FulfillmentType,
@@ -60,7 +60,7 @@ export function generateOrderNumber(date = new Date()): string {
   return `MM-${yy}${mm}${dd}-${random}`;
 }
 
-/** Local date as yyyy-mm-dd (avoids UTC off-by-one from toISOString). */
+/** Local date as yyyy-mm-dd, avoiding the UTC off-by-one from toISOString. */
 export function toISODate(date: Date): string {
   const yyyy = date.getFullYear();
   const mm = String(date.getMonth() + 1).padStart(2, "0");
@@ -70,8 +70,8 @@ export function toISODate(date: Date): string {
 
 /**
  * Earliest date a customer may choose, given the lead time in days. If a
- * same-day `cutoffTime` ("HH:MM") is set and the current local time is past it,
- * the earliest date moves one extra day later.
+ * same-day `cutoffTime` in "HH:MM" form is set and the current local time is
+ * past it, the earliest date moves one extra day later.
  */
 export function earliestFulfillmentDate(
   leadTimeDays: number,
@@ -86,7 +86,7 @@ export function earliestFulfillmentDate(
   return toISODate(date);
 }
 
-/** True if `now`'s local time is at/after the "HH:MM" cutoff. */
+/** True if `now`'s local time is at or after the "HH:MM" cutoff. */
 export function isPastCutoff(now: Date, cutoffTime: string): boolean {
   const [h, m] = cutoffTime.split(":").map(Number);
   if (!Number.isFinite(h)) return false;
@@ -151,7 +151,7 @@ export const paymentStatusLabels: Record<PaymentStatus, string> = {
   failed: "Payment failed",
 };
 
-/** An order as Michelle sees it in the admin (adds lifecycle + payment state). */
+/** An order as Michelle sees it in the admin, with lifecycle and payment state. */
 export type AdminOrder = PlacedOrder & {
   status: OrderStatus;
   paymentStatus: PaymentStatus;

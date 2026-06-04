@@ -37,8 +37,8 @@ export type UploadResult = { ok: true; url: string } | { ok: false; error: strin
 
 /**
  * Uploads a review photo to the public `review-images` bucket. Requires a
- * signed-in user and the photo-reviews feature; validates type + size. Uses the
- * service-role client (so writes are server-controlled).
+ * signed-in user and the photo-reviews feature, and validates type and size.
+ * Uses the service-role client so writes are server-controlled.
  */
 export async function uploadReviewImageAction(formData: FormData): Promise<UploadResult> {
   if (!(await fetchStoreSettings()).features.photoReviews) {

@@ -1,9 +1,9 @@
 /**
- * Singapore mobile-number validation + normalization.
+ * Singapore mobile-number validation and normalization.
  *
- * SG mobile numbers are 8 digits starting with 8 or 9 (6 is a landline prefix),
- * optionally written with a +65 / 65 country code and spaces or dashes. We accept
- * those forms and normalize to a consistent "+65 XXXX XXXX".
+ * SG mobile numbers are 8 digits starting with 8 or 9, since 6 is a landline
+ * prefix, optionally written with a +65 or 65 country code and spaces or dashes.
+ * We accept those forms and normalize to a consistent "+65 XXXX XXXX".
  */
 const SG_LOCAL_RE = /^[89]\d{7}$/;
 

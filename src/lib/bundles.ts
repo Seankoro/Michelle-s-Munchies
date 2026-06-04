@@ -63,9 +63,9 @@ export async function fetchBundleBySlug(slug: string): Promise<Bundle | null> {
 }
 
 /**
- * Server-side validation helper for checkout: confirms a bundle is still active
+ * Server-side validation helper for checkout. Confirms a bundle is still active
  * and all its products are available, and returns its authoritative price.
- * Returns null if the bundle is gone/inactive.
+ * Returns null if the bundle is gone or inactive.
  */
 export async function validateBundleForCheckout(
   slug: string,

@@ -29,7 +29,7 @@ export async function grantBirthdayRewards(): Promise<number> {
     [];
 
   const todays = profiles.filter((p) => {
-    // birthday is yyyy-mm-dd; match on month + day.
+    // birthday is stored as yyyy-mm-dd. Match on month and day.
     const [, m, d] = p.birthday.split("-");
     return m === mm && d === dd;
   });
@@ -53,7 +53,7 @@ export async function grantBirthdayRewards(): Promise<number> {
       reason: "birthday",
     });
 
-    // Email the greeting (best-effort) — resolve the address from auth.
+    // Email the greeting on a best-effort basis, resolving the address from auth.
     const { data: userData } = await supabase.auth.admin.getUserById(profile.id);
     const email = userData.user?.email;
     if (email) await sendBirthdayEmail(email, settings.birthdayRewardPoints);

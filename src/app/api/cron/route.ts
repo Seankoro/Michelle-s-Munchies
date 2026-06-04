@@ -20,9 +20,9 @@ function authorized(request: NextRequest): boolean {
 }
 
 /**
- * Scheduled work, triggered by Vercel Cron (see vercel.json). Protected by a
- * secret bearer token so it can't be triggered to spam emails. Runs
- * abandoned-cart reminders and birthday rewards, each gated by its feature flag.
+ * Scheduled work, triggered hourly by an external scheduler that calls this URL.
+ * Protected by a secret bearer token so it can't be triggered to spam emails.
+ * Runs abandoned-cart reminders and birthday rewards, each gated by its feature flag.
  */
 export async function GET(request: NextRequest) {
   if (!authorized(request)) {

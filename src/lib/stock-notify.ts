@@ -3,9 +3,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { sendBackInStockEmail } from "@/lib/email";
 
 /**
- * Records a back-in-stock subscription. The partial unique index on
- * (product_id, lower(email)) where notified_at is null dedupes, so a repeat
- * subscribe is a harmless no-op.
+ * Records a back-in-stock subscription. The partial unique index on product_id
+ * and lower(email) where notified_at is null dedupes, so a repeat subscribe is
+ * a harmless no-op.
  */
 export async function subscribeBackInStock(
   productId: string,
@@ -16,15 +16,15 @@ export async function subscribeBackInStock(
   const { error } = await supabase
     .from("stock_notifications")
     .insert({ product_id: productId, email: email.trim().toLowerCase(), user_id: userId });
-  // 23505 = already subscribed (unique index) — fine to ignore.
+  // 23505 means already subscribed via the unique index. Fine to ignore.
   if (error && error.code !== "23505") {
     console.error("[stock-notify] subscribe failed:", error.message);
   }
 }
 
 /**
- * Emails everyone waiting on a product (best-effort) and stamps them notified so
- * they aren't emailed again. Called when a product becomes available.
+ * Emails everyone waiting on a product on a best-effort basis and stamps them
+ * notified so they aren't emailed again. Called when a product becomes available.
  */
 export async function notifySubscribers(productId: string): Promise<void> {
   const supabase = createAdminClient();
@@ -58,7 +58,7 @@ export async function notifySubscribers(productId: string): Promise<void> {
 
 /**
  * Notify waitlists for any seasonal drop whose go-live time has passed. Safe to
- * run repeatedly: notifySubscribers only emails un-notified subscribers.
+ * run repeatedly, since notifySubscribers only emails un-notified subscribers.
  */
 export async function notifyLaunchedDrops(): Promise<number> {
   const supabase = createAdminClient();

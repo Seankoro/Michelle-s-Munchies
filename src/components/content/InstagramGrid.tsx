@@ -1,9 +1,10 @@
 import { fetchActiveInstagramPosts } from "@/lib/instagram";
 
 /**
- * Curated Instagram grid (manual — admin pastes image + post links). Uses plain
- * <img>/<a> only (no Meta embed script), so the CSP stays tight. Renders nothing
- * when there are no active posts. The caller gates on the `instagram` flag.
+ * Curated Instagram grid that Michelle fills by hand, pasting image and post
+ * links. Uses plain <img> and <a> tags only, with no Meta embed script, so the
+ * CSP stays tight. Renders nothing when there are no active posts. The caller
+ * gates on the `instagram` flag.
  */
 export async function InstagramGrid() {
   const posts = await fetchActiveInstagramPosts();

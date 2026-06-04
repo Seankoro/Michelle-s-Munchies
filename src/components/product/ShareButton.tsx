@@ -3,8 +3,8 @@
 import { useState } from "react";
 
 /**
- * Share to WhatsApp / socials. Uses the native share sheet when available
- * (great on mobile), otherwise falls back to copying the link.
+ * Share to WhatsApp and socials. Uses the native share sheet when available,
+ * which is great on mobile, otherwise falls back to copying the link.
  */
 export function ShareButton({ title, text }: { title: string; text: string }) {
   const [copied, setCopied] = useState(false);
@@ -15,7 +15,7 @@ export function ShareButton({ title, text }: { title: string; text: string }) {
       try {
         await navigator.share({ title, text, url });
       } catch {
-        // User dismissed the share sheet — nothing to do.
+        // User dismissed the share sheet, nothing to do.
       }
       return;
     }
@@ -24,7 +24,7 @@ export function ShareButton({ title, text }: { title: string; text: string }) {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1800);
     } catch {
-      // Clipboard unavailable — fall back to a WhatsApp share window.
+      // Clipboard unavailable, fall back to a WhatsApp share window.
       window.open(`https://wa.me/?text=${encodeURIComponent(`${text} ${url}`)}`, "_blank");
     }
   }

@@ -1,8 +1,8 @@
 /**
  * Safety disclaimer shown when a product offers options that may include
- * ingredient substitutions (e.g. oat milk, plant butter, gluten-free flour).
- * We deliberately do NOT recompute the allergen/dietary badges when a
- * substitution is chosen — those stay as the product's base recipe — so this
+ * ingredient substitutions like oat milk, plant butter, or gluten-free flour.
+ * We deliberately do not recompute the allergen and dietary badges when a
+ * substitution is chosen, those stay as the product's base recipe, so this
  * note tells customers to confirm allergies directly.
  */
 export function SubstitutionNote({ className }: { className?: string }) {

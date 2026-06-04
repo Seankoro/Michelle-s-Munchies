@@ -22,8 +22,8 @@ const WishlistContext = createContext<WishlistValue | null>(null);
 
 /**
  * Tracks the signed-in customer's favourited products. Favourites live in the
- * `wishlists` table (RLS: own rows only); guests have an empty list and the
- * favourite control is hidden for them.
+ * `wishlists` table, where RLS allows own rows only. Guests have an empty list
+ * and the favourite control is hidden for them.
  */
 export function WishlistProvider({ children }: { children: ReactNode }) {
   const supabase = useMemo(() => createBrowserSupabase(), []);
@@ -81,8 +81,8 @@ export function WishlistProvider({ children }: { children: ReactNode }) {
         else next.add(productId);
         return next;
       });
-      // The Supabase query builder is lazy — it only runs when awaited, so we
-      // execute it inside a fire-and-forget async IIFE (keeps toggle sync).
+      // The Supabase query builder is lazy, it only runs when awaited, so we
+      // execute it inside a fire-and-forget async IIFE to keep toggle synchronous.
       void (async () => {
         if (wasFavourite) {
           await supabase

@@ -2,15 +2,15 @@ import "server-only";
 import { orderStatusLabels, type OrderStatus } from "@/lib/order";
 
 /**
- * Twilio SMS / WhatsApp notifications.
+ * Twilio SMS and WhatsApp notifications.
  *
- * Mirrors the email module's contract: best-effort, never throws, and a clean
- * no-op when credentials aren't configured — so notifications can be switched
- * on at launch (paid Twilio account) with zero code changes.
+ * Mirrors the email module's contract. Best-effort, never throws, and a clean
+ * no-op when credentials aren't configured, so notifications can be switched
+ * on at launch with a paid Twilio account and zero code changes.
  *
  * We call Twilio's REST API directly with fetch to avoid a new dependency.
- * WhatsApp and SMS share one Messages endpoint; WhatsApp just prefixes the
- * to/from numbers with "whatsapp:". If TWILIO_WHATSAPP_FROM is set we use
+ * WhatsApp and SMS share one Messages endpoint. WhatsApp just prefixes the
+ * to and from numbers with "whatsapp:". If TWILIO_WHATSAPP_FROM is set we use
  * WhatsApp, otherwise we fall back to SMS via TWILIO_FROM.
  */
 
@@ -24,7 +24,7 @@ type TwilioConfig = {
   accountSid: string;
   authToken: string;
   from: string;
-  /** When true, `from`/`to` are WhatsApp addresses (prefixed "whatsapp:"). */
+  /** When true, `from` and `to` are WhatsApp addresses prefixed with "whatsapp:". */
   whatsapp: boolean;
 };
 
@@ -56,7 +56,7 @@ function toAddress(phone: string, whatsapp: boolean): string {
 async function sendMessage(toPhone: string, body: string): Promise<void> {
   const config = getConfig();
   if (!config) {
-    console.warn(`[sms] Twilio not configured — skipping message to ${toPhone}`);
+    console.warn(`[sms] Twilio not configured, skipping message to ${toPhone}`);
     return;
   }
   if (!toPhone.trim()) return;
@@ -83,7 +83,7 @@ async function sendMessage(toPhone: string, body: string): Promise<void> {
       console.error(`[sms] Twilio rejected message to ${toPhone} (${res.status}): ${detail}`);
     }
   } catch (error) {
-    // Notifications must never break the order flow — log and move on.
+    // Notifications must never break the order flow, log and move on.
     console.error(`[sms] Failed to send message to ${toPhone}:`, error);
   }
 }
@@ -105,7 +105,7 @@ export async function notifyOwnerNewOrder(order: {
   await sendMessage(owner, body);
 }
 
-// Only ping the customer at the moments that actually matter to them —
+// Only ping the customer at the moments that actually matter to them. This
 // avoids texting on every internal status nudge.
 const CUSTOMER_SMS_STATUSES: OrderStatus[] = ["ready", "out_for_delivery", "completed"];
 

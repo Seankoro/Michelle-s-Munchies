@@ -1,7 +1,7 @@
 import { cn } from "@/lib/cn";
 import { RibbonBow } from "./RibbonBow";
 
-/** A bow-tied section divider: a hairline with the signature bow in the middle. */
+/** A bow-tied section divider, a hairline with the signature bow in the middle. */
 export function RibbonDivider({ className }: { className?: string }) {
   return (
     <div

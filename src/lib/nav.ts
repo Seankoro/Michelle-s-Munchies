@@ -3,7 +3,7 @@ export type NavLink = {
   href: string;
 };
 
-/** Main customer-facing destinations (shown inline on desktop + in the ribbon menu). */
+/** Main customer-facing destinations, shown inline on desktop and in the ribbon menu. */
 export const primaryNav: NavLink[] = [
   { label: "Home", href: "/" },
   { label: "Menu", href: "/menu" },

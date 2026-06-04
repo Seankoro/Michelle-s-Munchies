@@ -51,7 +51,7 @@ import type { Product } from "@/lib/types";
 
 export type AdminSignInResult = { ok: true } | { ok: false; error: string };
 
-/** Admin sign-in: authenticate via Supabase, then require the admin allow-list. */
+/** Admin sign-in, authenticate via Supabase, then require the admin allow-list. */
 export async function adminSignIn(email: string, password: string): Promise<AdminSignInResult> {
   const supabase = await createServerSupabase();
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });

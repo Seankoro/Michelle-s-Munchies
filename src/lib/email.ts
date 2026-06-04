@@ -19,7 +19,7 @@ function money(cents: number): string {
   return `S$${(cents / 100).toFixed(2)}`;
 }
 
-/** Minimal data each email needs (a subset of an order). */
+/** Minimal data each email needs, a subset of an order. */
 export type OrderEmailData = {
   orderNumber: string;
   trackingToken: string;
@@ -61,7 +61,7 @@ function giftBlock(order: OrderEmailData, forOwner: boolean): string {
     </div>`;
 }
 
-/** Renders any answered structured note prompts (escaped). */
+/** Renders any answered structured note prompts, escaped. */
 function noteAnswersBlock(order: OrderEmailData): string {
   const answers = (order.noteAnswers ?? []).filter((a) => a.answer && a.answer.trim());
   if (answers.length === 0) return "";
@@ -130,7 +130,7 @@ function itemRows(order: OrderEmailData): string {
 async function send(to: string, subject: string, html: string): Promise<void> {
   const resend = getResend();
   if (!resend) {
-    console.warn(`[email] RESEND_API_KEY not set — skipping "${subject}" to ${to}`);
+    console.warn(`[email] RESEND_API_KEY not set, skipping "${subject}" to ${to}`);
     return;
   }
   try {
@@ -139,7 +139,7 @@ async function send(to: string, subject: string, html: string): Promise<void> {
       console.error(`[email] Resend rejected "${subject}" to ${to}:`, error);
     }
   } catch (error) {
-    // Email must never break the order flow — log and move on.
+    // Email must never break the order flow, log and move on.
     console.error(`[email] Failed to send "${subject}" to ${to}:`, error);
   }
 }
@@ -219,7 +219,7 @@ export async function sendNewsletterEmail(
   await send(to, subject, shell(subject, body));
 }
 
-/** Owner alert: a customer has asked to cancel an order. */
+/** Owner alert, a customer has asked to cancel an order. */
 export async function sendCancellationRequestEmail(
   orderNumber: string,
   customerName: string,

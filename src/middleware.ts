@@ -2,8 +2,8 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 /**
- * Refreshes the Supabase session on every request (so server components see a
- * fresh user) and guards the /account area, sending signed-out visitors to
+ * Refreshes the Supabase session on every request so server components see a
+ * fresh user, and guards the /account area, sending signed-out visitors to
  * sign in. The auth pages themselves are excluded to avoid a redirect loop.
  */
 export async function middleware(request: NextRequest) {
@@ -33,8 +33,8 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const path = request.nextUrl.pathname;
-  // Public account pages (no session needed): sign in/up and the password-reset
-  // flow. Forgot/reset MUST be reachable while signed out, or a locked-out
+  // Account pages that need no session. Sign in, sign up, and the password-reset
+  // flow. Forgot and reset MUST be reachable while signed out, or a locked-out
   // customer can never recover their password.
   const isAuthPage =
     path.startsWith("/account/sign-in") ||
@@ -49,9 +49,9 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(redirectUrl);
   }
 
-  // Admin area: only a signed-in admin (email in ADMIN_EMAILS) gets in; the
-  // login page is exempt. This is the authoritative gate — admin Server Actions
-  // also re-check via requireAdmin().
+  // Only a signed-in admin whose email is in ADMIN_EMAILS reaches the admin area.
+  // The login page is exempt. This is the authoritative gate, and admin Server
+  // Actions also re-check via requireAdmin().
   if (path.startsWith("/admin") && !path.startsWith("/admin/login")) {
     const admins = (process.env.ADMIN_EMAILS ?? "")
       .split(",")

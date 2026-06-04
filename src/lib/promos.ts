@@ -22,15 +22,15 @@ export type PromoValidation =
   | { ok: false; error: string };
 
 export type PromoContext = {
-  /** Signed-in customer (null for guests) — needed for per-customer / first-order rules. */
+  /** Signed-in customer, null for guests, needed for per-customer and first-order rules. */
   userId?: string | null;
-  /** Current delivery fee — used by the `free_delivery` discount type. */
+  /** Current delivery fee, used by the `free_delivery` discount type. */
   deliveryFeeCents?: number;
 };
 
 /**
- * Validates a promo code against the order subtotal + context and returns its
- * discount. Usage limits are counted against recorded (non-cancelled) orders.
+ * Validates a promo code against the order subtotal and context and returns its
+ * discount. Usage limits are counted against recorded, non-cancelled orders.
  */
 export async function validatePromo(
   rawCode: string,
@@ -56,7 +56,7 @@ export async function validatePromo(
     };
   }
 
-  // First-order-only: requires a signed-in customer with no prior orders.
+  // First-order-only, requires a signed-in customer with no prior orders.
   if (promo.first_order_only) {
     if (!userId) return { ok: false, error: "Sign in to use this code." };
     const { count } = await admin
@@ -81,7 +81,7 @@ export async function validatePromo(
     }
   }
 
-  // Per-customer cap (only enforceable for signed-in customers).
+  // Per-customer cap, only enforceable for signed-in customers.
   if (promo.per_customer_limit != null && userId) {
     const { count } = await admin
       .from("orders")
@@ -103,7 +103,7 @@ export async function validatePromo(
     discountCents = Math.min(promo.discount_value, subtotalCents);
     label = `${formatPrice(promo.discount_value)} off`;
   } else {
-    // free_delivery — discount equals the current delivery fee (0 for pickup).
+    // free_delivery, discount equals the current delivery fee, 0 for pickup.
     discountCents = Math.max(0, deliveryFeeCents);
     label = "Free delivery";
   }

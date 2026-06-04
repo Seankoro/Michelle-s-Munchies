@@ -25,7 +25,7 @@ export default function SignInPage() {
       setError(result.error);
       return;
     }
-    // Full reload so the session cookie is picked up everywhere (header, etc.).
+    // Full reload so the session cookie is picked up everywhere, including the header.
     window.location.assign("/account");
   }
 

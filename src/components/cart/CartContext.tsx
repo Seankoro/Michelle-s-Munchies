@@ -36,12 +36,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if (raw) setItems(JSON.parse(raw) as CartItem[]);
     } catch {
-      // Corrupt/blocked storage — start with an empty cart.
+      // Corrupt/blocked storage, start with an empty cart.
     }
     setHydrated(true);
   }, []);
 
-  // Persist on every change (after hydration).
+  // Persist on every change, after hydration.
   useEffect(() => {
     if (!hydrated) return;
     try {

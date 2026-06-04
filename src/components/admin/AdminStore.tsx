@@ -23,13 +23,13 @@ export type AdminSettings = {
   timeWindows: string[];
   blackoutDates: string[];
   pickupLocation: string;
-  /** Max orders per fulfillment day (null = unlimited). */
+  /** Max orders per fulfillment day. null means unlimited. */
   dailyOrderCap: number | null;
-  /** Max orders per (date, time window) (null = unlimited). */
+  /** Max orders per date and time window. null means unlimited. */
   perWindowCap: number | null;
-  /** Same-day order cutoff "HH:MM" (null = none). */
+  /** Same-day order cutoff as "HH:MM". null means none. */
   dailyCutoffTime: string | null;
-  /** Spend-gift nudge: threshold + product (null = off). */
+  /** Spend-gift nudge, the threshold and product. null means off. */
   freeGiftThresholdCents: number | null;
   freeGiftProductId: string | null;
   birthdayRewardPoints: number;
@@ -111,8 +111,8 @@ const AdminContext = createContext<AdminContextValue | null>(null);
 
 /**
  * Database-backed admin store. Reads everything once on mount via a server
- * action; each mutation applies an optimistic local update and fires the
- * matching server action (which writes to Postgres with the service-role key).
+ * action. Each mutation applies an optimistic local update and fires the
+ * matching server action, which writes to Postgres with the service-role key.
  */
 export function AdminStoreProvider({ children }: { children: ReactNode }) {
   const [products, setProducts] = useState<Product[]>([]);
@@ -175,7 +175,7 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
   }
 
   function addProduct(product: Product) {
-    // DB assigns the real id; insert the returned row so later edits match.
+    // DB assigns the real id. Insert the returned row so later edits match.
     void createProductAction(product)
       .then((created) => setProducts((prev) => [created, ...prev]))
       .catch((e: unknown) =>

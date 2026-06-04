@@ -12,9 +12,9 @@ type CheckoutSessionInput = {
 
 /**
  * Creates a Stripe Checkout Session for an order and returns its hosted URL.
- * Returns null when Stripe isn't configured (caller then falls back to the
- * no-payment flow). PayNow + cards are offered; wallets (Apple/Google Pay)
- * appear automatically on the hosted page.
+ * Returns null when Stripe isn't configured, and the caller then falls back to
+ * the no-payment flow. PayNow and cards are offered. Wallets like Apple Pay and
+ * Google Pay appear automatically on the hosted page.
  */
 export async function createCheckoutSession(
   input: CheckoutSessionInput,
@@ -24,8 +24,8 @@ export async function createCheckoutSession(
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 
-  // Zero-priced lines (e.g. a free spend-gift) are recorded on the order but
-  // omitted here — Stripe rejects line items priced at 0.
+  // Zero-priced lines such as a free spend-gift are recorded on the order but
+  // omitted here, since Stripe rejects line items priced at 0.
   const lineItems = input.items
     .filter((item) => item.unitPriceCents > 0)
     .map((item) => ({

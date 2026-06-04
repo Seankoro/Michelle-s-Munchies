@@ -5,8 +5,8 @@ import { sendAbandonedCartEmail } from "@/lib/email";
 type IntentItem = { name: string; quantity: number };
 
 /**
- * Record (or refresh) a checkout intent for an email — the cart contents at the
- * moment the customer entered their email. Prior un-reminded/un-converted
+ * Record or refresh a checkout intent for an email, the cart contents at the
+ * moment the customer entered their email. Prior un-reminded or un-converted
  * intents for the same email are cleared so we keep just the latest.
  */
 export async function recordIntent(
@@ -30,7 +30,7 @@ export async function recordIntent(
   if (error) console.error("[abandoned-cart] record failed:", error.message);
 }
 
-/** Mark an email's open intent converted (called when an order is placed). */
+/** Mark an email's open intent converted, called when an order is placed. */
 export async function markConverted(email: string): Promise<void> {
   const supabase = createAdminClient();
   await supabase
@@ -38,13 +38,13 @@ export async function markConverted(email: string): Promise<void> {
     .update({ converted_order_id: null, reminded_at: new Date().toISOString() })
     .eq("email", email.trim().toLowerCase())
     .is("reminded_at", null);
-  // Stamping reminded_at on conversion prevents a later reminder; we don't have
+  // Stamping reminded_at on conversion prevents a later reminder. We don't have
   // the order id here, so converted_order_id stays null but the intent is closed.
 }
 
 /**
  * Email customers who started checkout `afterHours` ago and haven't paid. Sends
- * one reminder per intent (stamps reminded_at). Best-effort.
+ * one reminder per intent and stamps reminded_at. Best-effort.
  */
 export async function sendAbandonedReminders(afterHours: number): Promise<number> {
   const supabase = createAdminClient();

@@ -44,9 +44,10 @@ export type CreatedOrder = {
 export type OrderRedemption = { pointsRedeemed: number; discountCents: number };
 
 /**
- * Creates an order + items. Amounts are recomputed here, never trusted from the
- * client. `userId` is resolved server-side from the session (null for guests).
- * `redemption` (points → discount) is computed server-side in the action.
+ * Creates an order and its items. Amounts are recomputed here, never trusted
+ * from the client. `userId` is resolved server-side from the session, null for
+ * guests. `redemption`, the points-to-discount conversion, is computed
+ * server-side in the action.
  */
 export async function createOrder(
   input: CreateOrderInput,
@@ -56,8 +57,8 @@ export async function createOrder(
 ): Promise<CreatedOrder> {
   if (input.items.length === 0) throw new Error("Your cart is empty.");
 
-  // Orders are written with the service role (server-only) so the public anon
-  // key can't insert forged orders (e.g. a fake "paid" order) directly.
+  // Orders are written with the server-only service role so the public anon
+  // key can't insert forged orders, like a fake "paid" order, directly.
   const supabase = createAdminClient();
 
   const subtotalCents = input.items.reduce(
@@ -125,7 +126,7 @@ export async function createOrder(
   const { error: itemsError } = await supabase.from("order_items").insert(itemRows);
   if (itemsError) throw new Error(`Could not save order items: ${itemsError.message}`);
 
-  // Confirmation to the customer + alert to Michelle (never throws).
+  // Confirmation to the customer and alert to Michelle. Never throws.
   await sendOrderEmails({
     orderNumber,
     trackingToken,
@@ -144,7 +145,7 @@ export async function createOrder(
     noteAnswers: input.noteAnswers ?? [],
   });
 
-  // Text Michelle the moment it lands (no-op until Twilio is configured).
+  // Text Michelle the moment it lands. No-op until Twilio is configured.
   await notifyOwnerNewOrder({
     orderNumber,
     name: input.name,
@@ -186,7 +187,7 @@ export type TrackedOrder = {
   items: TrackedOrderItem[];
 };
 
-/** Fetch one order by its tracking token (no login), via the SECURITY DEFINER RPC. */
+/** Fetch one order by its tracking token without login, via the SECURITY DEFINER RPC. */
 export async function getOrderByToken(token: string): Promise<TrackedOrder | null> {
   const supabase = createPublicClient();
   const { data, error } = await supabase.rpc("get_order_by_token", { p_token: token });

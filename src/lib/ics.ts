@@ -1,5 +1,5 @@
-// Pure, client-safe iCalendar (.ics) builder for upcoming orders. One all-day
-// VEVENT per order so Michelle can see the day's bakes in her calendar app.
+// Pure, client-safe iCalendar builder for upcoming orders, output as .ics text.
+// One all-day VEVENT per order so Michelle can see the day's bakes in her calendar app.
 
 export type IcsOrder = {
   orderNumber: string;

@@ -11,7 +11,7 @@ const aspectClasses: Record<Aspect, string> = {
 
 /**
  * A clearly-labelled placeholder marking exactly where a real photo will go.
- * We have no product images yet, so every image slot uses one of these — the
+ * We have no product images yet, so every image slot uses one of these, the
  * dashed blush border + label makes the "add a photo here" intent obvious.
  */
 export function ImagePlaceholder({

@@ -9,10 +9,10 @@ import { FeaturesProvider } from "@/components/features/FeaturesProvider";
 import type { FeatureFlags } from "@/lib/settings";
 
 /**
- * Renders the storefront header/footer around customer pages, but NOT around
- * the admin area (which brings its own shell). Keeps a single root layout while
- * giving /admin a clean, separate frame. `features` (fetched server-side in the
- * layout) seed the client feature-flag context.
+ * Renders the storefront header and footer around customer pages, but not around
+ * the admin area, which brings its own shell. Keeps a single root layout while
+ * giving /admin a clean, separate frame. `features`, fetched server-side in the
+ * layout, seed the client feature-flag context.
  */
 export function SiteChrome({
   children,

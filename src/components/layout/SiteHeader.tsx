@@ -11,7 +11,7 @@ import { useFeatures } from "@/components/features/FeaturesProvider";
 
 export function SiteHeader() {
   const features = useFeatures();
-  // Desktop inline links exclude "Home" (the wordmark already links home).
+  // Desktop inline links exclude "Home" since the wordmark already links home.
   const inlineLinks = primaryNav.filter((link) => link.href !== "/");
   // Feature-gated storefront destinations, inserted after "Menu".
   const extraLinks = [

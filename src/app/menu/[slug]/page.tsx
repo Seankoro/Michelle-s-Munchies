@@ -159,7 +159,7 @@ export default async function ProductDetailPage({ params }: Params) {
 
           <DietaryTags tags={product.dietaryTags} className="mt-6" />
 
-          {/* Allergens — icons + a written line (safety-critical, never hidden) */}
+          {/* Allergens, icons and a written line, safety-critical and never hidden */}
           {product.allergens.length > 0 && (
             <div className="mt-6">
               <h2 className="text-sm font-semibold text-ink">Allergens</h2>

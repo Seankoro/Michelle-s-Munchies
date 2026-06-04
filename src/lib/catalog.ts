@@ -29,8 +29,8 @@ export function formatPrice(cents: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Fallback store-settings defaults. The live `settings` row (read through
-// src/lib/settings.ts) is the source of truth; these only fill missing values.
+// Fallback store-settings defaults. The live `settings` row read through
+// src/lib/settings.ts is the source of truth. These only fill missing values.
 // ---------------------------------------------------------------------------
 export const mockSettings = {
   deliveryFeeCents: 800,

@@ -9,8 +9,8 @@ export default function AdminBakeListPage() {
   const { orders, hydrated } = useAdmin();
 
   // What still needs baking, grouped by fulfillment date. Completed and
-  // cancelled orders drop off; sizes/options are kept separate (a box of 6 and a
-  // box of 12 are different bakes).
+  // cancelled orders drop off. Sizes and options are kept separate, since a box
+  // of 6 and a box of 12 are different bakes.
   const days = useMemo(() => {
     const active = orders.filter(
       (o) => o.status !== "completed" && o.status !== "cancelled",

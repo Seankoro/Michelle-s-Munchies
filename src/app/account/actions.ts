@@ -37,14 +37,14 @@ export async function signUpWithPassword(
   if (data.user && referralCode.trim()) {
     await linkReferral(data.user.id, referralCode);
   }
-  // If email confirmation is on, there's no session yet — prompt to confirm.
+  // If email confirmation is on, there's no session yet, so prompt to confirm.
   if (!data.session) {
     return { ok: true, pending: "Check your email to confirm your account, then sign in." };
   }
   return { ok: true };
 }
 
-/** Record that a new customer was referred by `rawCode` (best-effort; never throws). */
+/** Record that a new customer was referred by `rawCode`. Best-effort, never throws. */
 async function linkReferral(refereeUserId: string, rawCode: string): Promise<void> {
   const code = rawCode.trim().toUpperCase();
   if (!code) return;
@@ -63,7 +63,7 @@ async function linkReferral(refereeUserId: string, rawCode: string): Promise<voi
     referee_user_id: refereeUserId,
     code,
   });
-  // 23505 = already referred (referee_user_id unique) — fine to ignore.
+  // 23505 means already referred, since referee_user_id is unique. Fine to ignore.
   if (error && error.code !== "23505") {
     console.error("[referral] link failed:", error.message);
   }
@@ -80,18 +80,18 @@ export async function sendMagicLink(email: string): Promise<AuthResult> {
 }
 
 /**
- * Step 1 of password reset: email a recovery link that lands on /account/reset.
+ * Step 1 of password reset. Email a recovery link that lands on /account/reset.
  *
- * Anti-enumeration: the response is identical whether or not the email exists —
- * the same message, errors swallowed (so a rate-limit/format error can't leak),
- * AND padded to a constant-time floor so existence can't be inferred from how
- * long the request takes (sending an email vs. doing nothing).
+ * Anti-enumeration. The response is identical whether or not the email exists,
+ * the same message, with errors swallowed so a rate-limit or format error can't
+ * leak, and padded to a constant-time floor so existence can't be inferred from
+ * how long the request takes, whether we send an email or do nothing.
  */
 export async function sendPasswordReset(email: string): Promise<AuthResult> {
   const start = Date.now();
   try {
     const supabase = await createServerSupabase();
-    // Result intentionally ignored — Supabase returns success for unknown emails,
+    // Result intentionally ignored, Supabase returns success for unknown emails,
     // and we don't surface any error to the client.
     await supabase.auth.resetPasswordForEmail(email.trim(), {
       redirectTo: `${SITE_URL}/auth/callback?next=/account/reset`,
@@ -108,7 +108,7 @@ export async function sendPasswordReset(email: string): Promise<AuthResult> {
   };
 }
 
-/** Step 2: set a new password (requires the recovery session from the email link). */
+/** Step 2, set a new password. Requires the recovery session from the email link. */
 export async function updatePassword(newPassword: string): Promise<AuthResult> {
   if (newPassword.length < 6) return { error: "Password must be at least 6 characters." };
   const supabase = await createServerSupabase();
@@ -128,7 +128,7 @@ export async function signOut(): Promise<void> {
 
 export type ShareLinkResult = { ok: true; url: string } | { ok: false; error: string };
 
-/** Returns (creating if needed) the signed-in user's read-only wishlist share link. */
+/** Returns the signed-in user's read-only wishlist share link, creating it if needed. */
 export async function getWishlistShareLinkAction(): Promise<ShareLinkResult> {
   if (!(await fetchStoreSettings()).features.wishlistSharing) {
     return { ok: false, error: "Wishlist sharing isn’t available right now." };
@@ -181,9 +181,9 @@ type ReorderItemRow = {
 
 /**
  * Rebuilds a cart from a past order owned by the signed-in user, re-resolving
- * each line against the *current* catalog (current price + availability). Lines
- * whose product is gone/sold out, or whose required options no longer exist, are
- * reported as `skipped` rather than silently dropped.
+ * each line against the current catalog for current price and availability.
+ * Lines whose product is gone or sold out, or whose required options no longer
+ * exist, are reported as `skipped` rather than silently dropped.
  */
 export async function buildReorderCart(orderNumber: string): Promise<ReorderResult> {
   const supabase = await createServerSupabase();
@@ -192,7 +192,7 @@ export async function buildReorderCart(orderNumber: string): Promise<ReorderResu
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Please sign in to reorder." };
 
-  // Ownership check + item read via service role (orders aren't user-readable).
+  // Ownership check and item read via service role, since orders aren't user-readable.
   const admin = createAdminClient();
   const { data: orderRow } = await admin
     .from("orders")

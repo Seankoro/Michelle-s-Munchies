@@ -19,7 +19,7 @@ export default function AdminAnalyticsPage() {
       .filter((o) => new Date(o.createdAt).getTime() >= cutoff)
       .reduce((sum, o) => sum + o.totalCents, 0);
 
-    // Top products by quantity sold (across paid orders), using order snapshots.
+    // Top products by quantity sold across paid orders, using order snapshots.
     const byProduct = new Map<string, { name: string; qty: number; revenueCents: number }>();
     for (const order of paid) {
       for (const item of order.items) {
@@ -32,7 +32,7 @@ export default function AdminAnalyticsPage() {
     const topProducts = [...byProduct.values()].sort((x, y) => y.qty - x.qty).slice(0, 8);
     const maxQty = Math.max(1, ...topProducts.map((p) => p.qty));
 
-    // Revenue for each of the last 7 days (by paid order).
+    // Revenue for each of the last 7 days, by paid order.
     const days = Array.from({ length: 7 }, (_, i) => {
       const d = new Date(Date.now() - (6 - i) * 86_400_000);
       const key = d.toISOString().slice(0, 10);

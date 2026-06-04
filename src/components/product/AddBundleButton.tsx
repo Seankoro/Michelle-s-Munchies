@@ -7,8 +7,8 @@ import type { Bundle } from "@/lib/types";
 
 /**
  * Adds a bundle to the cart as a single line. The cart line's `productId` uses a
- * non-UUID sentinel (`bundle:<slug>`) so `createOrder` stores it with a null
- * product_id; the contained items are snapshotted into `selectedOptions` for the
+ * non-UUID sentinel `bundle:<slug>` so `createOrder` stores it with a null
+ * product_id. The contained items are snapshotted into `selectedOptions` for the
  * bake list, packing slips, and order display.
  */
 export function AddBundleButton({ bundle }: { bundle: Bundle }) {

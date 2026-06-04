@@ -1,8 +1,9 @@
-// Client-safe (no "server-only"): the single source of truth for the feature-flag
-// shape and its all-on default. Both the server settings layer (settings.ts) and
-// the client provider (FeaturesProvider) import from here, so they can never drift.
+// Client-safe with no "server-only" import. The single source of truth for the
+// feature-flag shape and its all-on default. Both the server settings layer in
+// settings.ts and the client provider in FeaturesProvider import from here, so
+// they can never drift.
 
-/** Owner-controllable feature toggles, surfaced in Admin → Settings → Features. */
+/** Owner-controllable feature toggles, surfaced in Admin under Settings then Features. */
 export type FeatureFlags = {
   // Original six
   rewards: boolean;

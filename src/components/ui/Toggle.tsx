@@ -3,14 +3,14 @@ import { cn } from "@/lib/cn";
 type ToggleProps = {
   checked: boolean;
   onChange: (next: boolean) => void;
-  /** Accessible name for the switch (announced by screen readers). */
+  /** Accessible name for the switch, announced by screen readers. */
   label: string;
   disabled?: boolean;
   className?: string;
 };
 
 /**
- * Accessible on/off switch (role="switch"). Use for boolean settings; for
+ * Accessible on or off switch with role="switch". Use for boolean settings. For
  * picking from a list or ticking items off, use a real checkbox instead.
  */
 export function Toggle({ checked, onChange, label, disabled, className }: ToggleProps) {

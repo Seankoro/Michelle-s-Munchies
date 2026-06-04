@@ -14,9 +14,9 @@ export default function CartPage() {
   const { items, updateQuantity, removeItem, subtotalCents, hydrated } = useCart();
   const features = useFeatures();
 
-  // Live free-delivery threshold (falls back to the default until loaded).
+  // Live free-delivery threshold, falling back to the default until loaded.
   const [freeMin, setFreeMin] = useState(mockSettings.freeDeliveryMinCents);
-  // Spend-gift nudge details (null until loaded / when off).
+  // Spend-gift nudge details, null until loaded or when off.
   const [giftThreshold, setGiftThreshold] = useState<number | null>(null);
   const [giftName, setGiftName] = useState<string | null>(null);
   useEffect(() => {

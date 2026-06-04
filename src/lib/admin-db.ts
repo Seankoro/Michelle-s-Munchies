@@ -16,7 +16,7 @@ import type {
 } from "@/lib/order";
 import type { CartItem, Product, SelectedOption } from "@/lib/types";
 
-// ---- Orders (not public-readable — admin/service-role only) ---------------
+// ---- Orders. Not public-readable, admin and service-role only ----------
 type OrderItemRow = {
   id: string;
   product_id: string | null;
@@ -101,7 +101,7 @@ export async function updateOrderStatus(orderNumber: string, status: OrderStatus
     .eq("order_number", orderNumber);
   if (error) throw new Error(`Failed to update status: ${error.message}`);
 
-  // Notify the customer of the new status (never throws).
+  // Notify the customer of the new status. Never throws.
   const { data } = await supabase
     .from("orders")
     .select("email, phone, customer_name, tracking_token")
@@ -139,7 +139,7 @@ export async function updatePaymentStatus(orderNumber: string, paymentStatus: Pa
   if (error) throw new Error(`Failed to update payment: ${error.message}`);
 }
 
-/** Add ordered quantities back to any tracked product (reverses a paid decrement). */
+/** Add ordered quantities back to any tracked product, reversing a paid decrement. */
 async function restockOrder(orderId: string) {
   const supabase = createAdminClient();
   const { data: itemRows } = await supabase
@@ -165,9 +165,9 @@ async function restockOrder(orderId: string) {
 export type CancelResult = { ok: true; refunded: boolean } | { ok: false; error: string };
 
 /**
- * Admin cancel + refund. Idempotent: a cancelled order is a no-op. If the order
- * was paid, refunds the Stripe PaymentIntent and restocks; then marks the order
- * cancelled (and refunded when money was returned).
+ * Admin cancel and refund. Idempotent, so a cancelled order is a no-op. If the
+ * order was paid, refunds the Stripe PaymentIntent and restocks, then marks the
+ * order cancelled, and refunded when money was returned.
  */
 export async function cancelAndRefundOrder(orderNumber: string): Promise<CancelResult> {
   const supabase = createAdminClient();
@@ -204,8 +204,8 @@ export async function cancelAndRefundOrder(orderNumber: string): Promise<CancelR
 
 /**
  * Decrements `stock_count` for each tracked product in an order and flips it to
- * sold-out at zero. Untracked products (null stock) are skipped. Called from the
- * paid-transition in markOrderPaid, so it runs at most once per order.
+ * sold-out at zero. Untracked products with null stock are skipped. Called from
+ * the paid-transition in markOrderPaid, so it runs at most once per order.
  */
 async function decrementStockForOrder(orderId: string) {
   const supabase = createAdminClient();
@@ -233,7 +233,7 @@ async function decrementStockForOrder(orderId: string) {
     };
     if (next <= 0) patch.is_available = false; // never silently re-enables a sold-out item
     await supabase.from("products").update(patch).eq("id", item.product_id);
-    // Low-stock alert: fire when the new count crosses the owner's threshold.
+    // Low-stock alert, fire when the new count crosses the owner's threshold.
     if (
       ownerEmail &&
       lowStockThreshold != null &&
@@ -248,8 +248,8 @@ async function decrementStockForOrder(orderId: string) {
 /** Called by the Stripe webhook once payment is confirmed. */
 export async function markOrderPaid(orderNumber: string, paymentIntentId: string | null) {
   const supabase = createAdminClient();
-  // Only the pending→paid transition runs side effects; the `neq` guard makes a
-  // duplicate webhook a no-op (so points/stock are never applied twice).
+  // Only the pending-to-paid transition runs side effects. The `neq` guard makes
+  // a duplicate webhook a no-op, so points and stock are never applied twice.
   const { data, error } = await supabase
     .from("orders")
     .update({
@@ -262,12 +262,12 @@ export async function markOrderPaid(orderNumber: string, paymentIntentId: string
     .select("id, user_id, subtotal_cents, points_redeemed")
     .maybeSingle();
   if (error) throw new Error(`Failed to mark order paid: ${error.message}`);
-  if (!data) return; // already paid (duplicate webhook) or not found
+  if (!data) return; // already paid from a duplicate webhook, or not found
 
-  // Decrement stock for tracked products + auto-sold-out at zero (guests too).
+  // Decrement stock for tracked products and auto-sold-out at zero, guests too.
   await decrementStockForOrder((data as { id: string }).id);
 
-  // Award/deduct loyalty points if the order belongs to a signed-in customer.
+  // Award or deduct loyalty points if the order belongs to a signed-in customer.
   const order = data as {
     id: string;
     user_id: string | null;
@@ -275,7 +275,7 @@ export async function markOrderPaid(orderNumber: string, paymentIntentId: string
     points_redeemed: number;
   };
   if (order?.user_id) {
-    // Deduct any points the customer redeemed on this order (idempotent).
+    // Deduct any points the customer redeemed on this order. Idempotent.
     if (order.points_redeemed > 0) {
       const { error: redeemError } = await supabase.from("points_ledger").insert({
         user_id: order.user_id,
@@ -287,7 +287,7 @@ export async function markOrderPaid(orderNumber: string, paymentIntentId: string
         console.error(`[points] Failed to deduct for ${orderNumber}:`, redeemError.message);
       }
     }
-    // One read for the points/referral config + the relevant feature toggles.
+    // One read for the points and referral config and the relevant feature toggles.
     const { data: cfgRow } = await supabase
       .from("settings")
       .select(
@@ -303,12 +303,12 @@ export async function markOrderPaid(orderNumber: string, paymentIntentId: string
       referral_referee_points: number | null;
     } | null;
 
-    // Earn loyalty points — only when the rewards feature is on.
+    // Earn loyalty points, only when the rewards feature is on.
     if (cfg?.feature_rewards ?? true) {
       const perDollar = cfg?.points_per_dollar ?? 1;
       const points = Math.floor(order.subtotal_cents / 100) * perDollar;
       if (points > 0) {
-        // The unique index on (order_id) where reason='earned' makes retries safe.
+        // The unique index on order_id where reason='earned' makes retries safe.
         const { error: ledgerError } = await supabase.from("points_ledger").insert({
           user_id: order.user_id,
           order_id: order.id,
@@ -321,8 +321,8 @@ export async function markOrderPaid(orderNumber: string, paymentIntentId: string
       }
     }
 
-    // Referral reward — only when referrals are on. Reward both parties once, on
-    // the referee's first paid order; the status flip is the idempotency guard.
+    // Referral reward, only when referrals are on. Reward both parties once, on
+    // the referee's first paid order. The status flip is the idempotency guard.
     if (cfg?.feature_referrals ?? true) {
       const { data: refRow } = await supabase
         .from("referrals")
@@ -353,7 +353,7 @@ export async function markOrderPaid(orderNumber: string, paymentIntentId: string
   }
 }
 
-// ---- Products (writes need service-role; RLS only allows public reads) -----
+// ---- Products. Writes need the service-role, RLS allows public reads only --
 function toProductColumns(patch: Partial<Product>) {
   const columns: Record<string, unknown> = {};
   if (patch.slug !== undefined) columns.slug = patch.slug;
@@ -378,9 +378,9 @@ function toProductColumns(patch: Partial<Product>) {
 }
 
 /**
- * Replace a product's option groups + values wholesale. The flavour editor
- * sends the full desired set, so we clear the existing groups (values cascade)
- * and reinsert with fresh ids. Returns the saved shape with those ids.
+ * Replace a product's option groups and values wholesale. The flavour editor
+ * sends the full desired set, so we clear the existing groups, the values
+ * cascade, and reinsert with fresh ids. Returns the saved shape with those ids.
  */
 async function replaceProductOptions(
   supabase: ReturnType<typeof createAdminClient>,
@@ -446,7 +446,7 @@ async function replaceProductOptions(
   return saved;
 }
 
-/** Insert a new product with its option groups (DB generates the product id). */
+/** Insert a new product with its option groups. The DB generates the product id. */
 export async function createProduct(product: Product): Promise<Product> {
   const supabase = createAdminClient();
   const { data, error } = await supabase
@@ -470,7 +470,7 @@ export async function updateProduct(id: string, patch: Partial<Product>) {
       .eq("id", id);
     if (error) throw new Error(`Failed to update product: ${error.message}`);
   }
-  // The flavour editor includes the full options set; replace them when present.
+  // The flavour editor includes the full options set. Replace them when present.
   if (patch.options !== undefined) {
     await replaceProductOptions(supabase, id, patch.options);
   }
@@ -652,10 +652,10 @@ export type PromoCode = {
   id: string;
   code: string;
   discountType: PromoDiscountType;
-  discountValue: number; // percent (1–100) OR cents (amount); 0 for free_delivery
+  discountValue: number; // percent, 1–100, or cents for a fixed amount, 0 for free_delivery
   minOrderCents: number;
   active: boolean;
-  expiresAt: string | null; // ISO date (yyyy-mm-dd) or null
+  expiresAt: string | null; // ISO date as yyyy-mm-dd, or null
   maxRedemptions: number | null;
   perCustomerLimit: number | null;
   firstOrderOnly: boolean;
@@ -745,7 +745,7 @@ export async function createPromo(input: NewPromo): Promise<PromoCode> {
     .select("*")
     .single();
   if (error) {
-    // 23505 = unique_violation (code already exists)
+    // 23505 = unique_violation, the code already exists
     if ((error as { code?: string }).code === "23505") {
       throw new Error("A code with that name already exists.");
     }

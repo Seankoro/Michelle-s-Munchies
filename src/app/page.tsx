@@ -106,7 +106,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* Instagram grid (manual curation) */}
+      {/* Instagram grid, manually curated */}
       {features.instagram && (
         <Reveal>
           <InstagramGrid />

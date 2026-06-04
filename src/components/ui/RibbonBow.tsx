@@ -7,8 +7,8 @@ type RibbonBowProps = {
 };
 
 /**
- * The Michelle's Munchies signature: a little satin bow, drawn as inline SVG
- * (no image asset, scales crisply, themable). Used as the brand mark accent,
+ * The Michelle's Munchies signature, a little satin bow drawn as inline SVG.
+ * No image asset, scales crisply, and themable. Used as the brand mark accent,
  * the ribbon-pull menu handle, and section dividers.
  */
 export function RibbonBow({ className, withTails = true }: RibbonBowProps) {
@@ -21,7 +21,7 @@ export function RibbonBow({ className, withTails = true }: RibbonBowProps) {
     >
       {withTails && (
         <g>
-          {/* left tail (swallowtail notch at the bottom) */}
+          {/* left tail, the swallowtail notch at the bottom */}
           <path
             d="M34 35 L27 59 L31.5 53 L34 59 L37 36 Z"
             fill="var(--color-rose)"

@@ -12,13 +12,13 @@ type RevealProps = {
 
 /**
  * Scroll-reveal wrapper. Children render normally on the server and for no-JS
- * visitors; only after mount does this add the hidden pre-state and observe the
+ * visitors. Only after mount does this add the hidden pre-state and observe the
  * element, fading it up the first time it scrolls into view. Honors
- * prefers-reduced-motion (renders plainly, no hidden state, no observer).
+ * prefers-reduced-motion by rendering plainly, with no hidden state and no observer.
  */
 export function Reveal({ children, delay = 0, className }: RevealProps) {
   const ref = useRef<HTMLDivElement>(null);
-  // Becomes true on mount when motion is allowed → applies the `.reveal` pre-state.
+  // Becomes true on mount when motion is allowed, then applies the `.reveal` pre-state.
   const [armed, setArmed] = useState(false);
   const [shown, setShown] = useState(false);
 

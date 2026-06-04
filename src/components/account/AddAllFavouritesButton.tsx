@@ -6,8 +6,8 @@ import type { SharedFavourite } from "@/lib/wishlist-share";
 
 /**
  * Adds the option-less favourites straight to the cart. Items with choices
- * (size/flavour) are left for the recipient to open and configure, so we don't
- * guess an option for them.
+ * like size or flavour are left for the recipient to open and configure, so we
+ * don't guess an option for them.
  */
 export function AddAllFavouritesButton({ items }: { items: SharedFavourite[] }) {
   const { addItem } = useCart();

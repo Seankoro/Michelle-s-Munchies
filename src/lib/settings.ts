@@ -4,7 +4,7 @@ import { mockSettings } from "@/lib/catalog";
 import { ALL_FEATURES_ON, type FeatureFlags } from "@/lib/feature-flags";
 
 // Re-exported so existing `import { FeatureFlags } from "@/lib/settings"` callers
-// keep working; the canonical definition lives in feature-flags.ts.
+// keep working. The canonical definition lives in feature-flags.ts.
 export { ALL_FEATURES_ON };
 export type { FeatureFlags };
 
@@ -18,8 +18,8 @@ export type NotePrompt = {
 
 /**
  * Live storefront settings, read from the `settings` row Michelle edits in the
- * admin. `mockSettings` (in catalog.ts) is now only the *fallback default* used
- * when a value is missing — the database is the source of truth.
+ * admin. `mockSettings` in catalog.ts is now only the fallback default used
+ * when a value is missing. The database is the source of truth.
  */
 export type StoreSettings = {
   deliveryFeeCents: number;
@@ -31,17 +31,17 @@ export type StoreSettings = {
   pickupLocation: string;
   /** null = unlimited. */
   dailyOrderCap: number | null;
-  /** Max non-cancelled orders per (date, time window). null = unlimited. */
+  /** Max non-cancelled orders per date and time window. null = unlimited. */
   perWindowCap: number | null;
-  /** Same-day order cutoff as "HH:MM" (or "HH:MM:SS"). null = no cutoff. */
+  /** Same-day order cutoff as "HH:MM" or "HH:MM:SS". null = no cutoff. */
   dailyCutoffTime: string | null;
-  /** Free-gift spend nudge: threshold + the gift product. null = off. */
+  /** Free-gift spend nudge, the threshold and the gift product. null = off. */
   freeGiftThresholdCents: number | null;
   freeGiftProductId: string | null;
   birthdayRewardPoints: number;
   abandonedAfterHours: number;
   notePrompts: NotePrompt[];
-  /** Email Michelle when a tracked product's stock falls to/below this. null = off. */
+  /** Email Michelle when a tracked product's stock falls to or below this. null = off. */
   lowStockThreshold: number | null;
   features: FeatureFlags;
 };
@@ -103,7 +103,7 @@ const DEFAULTS: StoreSettings = {
   features: { ...ALL_FEATURES_ON },
 };
 
-/** Map a raw settings row (or null) to StoreSettings, filling gaps with defaults. */
+/** Map a raw settings row or null to StoreSettings, filling gaps with defaults. */
 export function rowToStoreSettings(row: SettingsRow | null): StoreSettings {
   if (!row) return DEFAULTS;
   return {
@@ -150,7 +150,7 @@ export function rowToStoreSettings(row: SettingsRow | null): StoreSettings {
   };
 }
 
-/** Live settings for server-side use (order creation, validation, SSR display). */
+/** Live settings for server-side use, like order creation, validation, and SSR display. */
 export async function fetchStoreSettings(): Promise<StoreSettings> {
   const supabase = createPublicClient();
   const { data } = await supabase
@@ -161,7 +161,7 @@ export async function fetchStoreSettings(): Promise<StoreSettings> {
   return rowToStoreSettings(data as SettingsRow | null);
 }
 
-/** Just the feature flags (for the layout/provider). */
+/** Just the feature flags, for the layout and provider. */
 export async function fetchFeatureFlags(): Promise<FeatureFlags> {
   return (await fetchStoreSettings()).features;
 }

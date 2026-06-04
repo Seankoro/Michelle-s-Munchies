@@ -21,7 +21,7 @@ const sizeClasses: Record<ButtonSize, string> = {
 
 /**
  * Shared button styling. Exported separately so it can be applied to non-button
- * elements too (e.g. a Next.js <Link> styled as a button).
+ * elements too, such as a Next.js <Link> styled as a button.
  */
 export function buttonClasses(opts?: {
   variant?: ButtonVariant;
