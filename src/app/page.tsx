@@ -27,7 +27,7 @@ const steps = [
 ];
 
 export default async function HomePage() {
-  // Best-sellers first, then Michelle's picks (admin-toggled in Phase 4).
+  // Best sellers first, then Michelle's picks, set in admin.
   const featured = await fetchFeatured(8);
   const { features } = await fetchStoreSettings();
 

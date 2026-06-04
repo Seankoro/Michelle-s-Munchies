@@ -112,8 +112,9 @@ export async function createOrder(
 
   const itemRows = input.items.map((item) => ({
     order_id: orderId,
-    // Live products carry a uuid; mock/admin-added ids are stored as null
-    // (the product_name snapshot keeps the order readable regardless).
+    // Real products carry a uuid. Box and bundle lines use a prefixed id with
+    // no uuid, so they store null and lean on the product_name snapshot to keep
+    // the order readable.
     product_id: UUID_RE.test(item.productId) ? item.productId : null,
     product_name: item.name,
     unit_price_cents: item.unitPriceCents,

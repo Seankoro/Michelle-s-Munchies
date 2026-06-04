@@ -111,7 +111,7 @@ export function formatLongDate(iso: string): string {
 export const LAST_ORDER_KEY = "mm-last-order";
 
 // ---------------------------------------------------------------------------
-// Order lifecycle (admin / Phase 3+)
+// Order lifecycle, managed in admin
 // ---------------------------------------------------------------------------
 export type OrderStatus =
   | "received"

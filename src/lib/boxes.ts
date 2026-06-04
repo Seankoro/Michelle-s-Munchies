@@ -71,22 +71,42 @@ export async function fetchBoxBySlug(slug: string): Promise<BoxTemplate | null> 
 }
 
 /**
- * Server-side checkout validation for a build-a-box line. `chosenProductIds` is
- * the flat list of picks (with repeats). Confirms the count matches the template
- * and every pick is eligible + available; returns the authoritative price.
+ * Server-side checkout validation for a build-a-box line. `chosenPicks` is the
+ * flat list of picks with repeats, each either `productId` or, for a treat
+ * picked by flavour, `productId~flavour`. Confirms the count matches the
+ * template, every product is eligible and available, and every chosen flavour
+ * is a current, available value of that product's flavour option. Returns the
+ * authoritative flat price.
  */
 export async function validateBoxForCheckout(
   slug: string,
-  chosenProductIds: string[],
+  chosenPicks: string[],
 ): Promise<{ priceCents: number } | { error: string } | null> {
   const box = await fetchBoxBySlug(slug);
   if (!box) return null;
-  if (chosenProductIds.length !== box.itemCount) {
+  if (chosenPicks.length !== box.itemCount) {
     return { error: `${box.name} needs exactly ${box.itemCount} items.` };
   }
-  const eligible = new Set(box.eligibleProducts.map((p) => p.id));
-  if (!chosenProductIds.every((id) => eligible.has(id))) {
-    return { error: `Some items in “${box.name}” are no longer available.` };
+  const eligible = new Map(box.eligibleProducts.map((product) => [product.id, product]));
+  for (const pick of chosenPicks) {
+    const separator = pick.indexOf("~");
+    const productId = separator === -1 ? pick : pick.slice(0, separator);
+    const flavour = separator === -1 ? null : pick.slice(separator + 1);
+    const product = eligible.get(productId);
+    if (!product) {
+      return { error: `Some items in “${box.name}” are no longer available.` };
+    }
+    if (flavour) {
+      const option = product.options.find((o) => o.name.toLowerCase() === "flavour");
+      const ok = (option?.values ?? []).some(
+        (value) => value.label === flavour && value.isAvailable !== false,
+      );
+      if (!ok) {
+        return {
+          error: `Some flavours in “${box.name}” are no longer available. Please update your box.`,
+        };
+      }
+    }
   }
   return { priceCents: box.priceCents };
 }
