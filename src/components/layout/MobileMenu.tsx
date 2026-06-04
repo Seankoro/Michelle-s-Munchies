@@ -123,6 +123,13 @@ export function MobileMenu() {
             ))}
           </ul>
           <hr className="my-2 border-line" />
+          <Link
+            href="/track"
+            onClick={() => setOpen(false)}
+            className="block rounded-xl px-3 py-2.5 font-semibold text-ink transition hover:bg-blush-soft"
+          >
+            Track an order
+          </Link>
           {authReady ? (
             <Link
               href={signedIn ? "/account" : "/account/sign-in"}

@@ -8,18 +8,18 @@ import { primaryNav } from "@/lib/nav";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 
 /**
- * The signature interaction: "pull the ribbon to reveal the menu."
+ * The signature interaction, "pull the ribbon to reveal the menu."
  *
- * Under the charm it's a standard, accessible disclosure:
- *  - a real <button> with aria-expanded / aria-controls,
+ * Under the charm it's a standard, accessible disclosure.
+ *  - a real <button> with aria-expanded and aria-controls,
  *  - Escape closes and returns focus to the button,
  *  - clicking outside closes,
  *  - focus moves into the panel on open.
- * The "pull" is conveyed by a gentle tug on hover/press; the panel reveal and
- * tug both calm down automatically under prefers-reduced-motion (see globals.css).
+ * The "pull" is conveyed by a gentle tug on hover or press. The panel reveal and
+ * tug both calm down automatically under prefers-reduced-motion, see globals.css.
  *
  * This is the desktop menu. On small screens the header hides it and shows the
- * left side-bar menu (MobileMenu) instead.
+ * MobileMenu left side-bar instead.
  */
 export function RibbonNav() {
   const [open, setOpen] = useState(false);
@@ -27,7 +27,7 @@ export function RibbonNav() {
   const [authReady, setAuthReady] = useState(false);
   const panelId = useId();
 
-  // Reflect auth state for the account link (mirrors AccountNav).
+  // Reflect auth state for the account link, mirroring AccountNav.
   useEffect(() => {
     const supabase = createBrowserSupabase();
     supabase.auth.getUser().then(({ data }) => {
@@ -111,6 +111,15 @@ export function RibbonNav() {
           </ul>
           <hr className="my-2 border-line" />
           <ul className="flex flex-col">
+            <li>
+              <Link
+                href="/track"
+                onClick={() => setOpen(false)}
+                className="block rounded-xl px-3 py-2 font-semibold text-ink transition hover:bg-blush-soft"
+              >
+                Track an order
+              </Link>
+            </li>
             <li>
               {authReady ? (
                 <Link

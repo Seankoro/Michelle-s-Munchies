@@ -57,8 +57,9 @@ export function MenuBrowser({
     setDietary((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
   }
 
-  // Search and dietary filter the items; the category tab decides which sections
+  // Search and dietary filter the items. The category tab decides which sections
   // show. Each shown category becomes its own rail. Empty sections drop out.
+  // Within a rail, best sellers come first, then recommended, then the rest.
   const sections = useMemo(() => {
     const q = query.trim().toLowerCase();
     const matches = (product: Product) => {
@@ -70,9 +71,15 @@ export function MenuBrowser({
       const matchesDietary = dietary.every((tag) => product.dietaryTags.includes(tag));
       return matchesQuery && matchesDietary;
     };
+    const rank = (p: Product) => (p.isBestSeller ? 0 : p.isRecommended ? 1 : 2);
     const shown = category === "All" ? categories : [category];
     return shown
-      .map((cat) => ({ cat, items: products.filter((p) => p.category === cat && matches(p)) }))
+      .map((cat) => ({
+        cat,
+        items: products
+          .filter((p) => p.category === cat && matches(p))
+          .sort((a, b) => rank(a) - rank(b)),
+      }))
       .filter((section) => section.items.length > 0);
   }, [products, categories, query, category, dietary]);
 
