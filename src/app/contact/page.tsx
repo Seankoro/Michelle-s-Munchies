@@ -17,7 +17,7 @@ const faqs = [
   },
   {
     q: "How do I pay?",
-    a: "Securely online at checkout via PayNow, credit/debit card, or Apple/Google Pay.",
+    a: "Place your order on the site, then we confirm it with you over WhatsApp and send a PayNow number or QR to pay by transfer.",
   },
   {
     q: "I have an allergy. Can you help?",
@@ -25,7 +25,7 @@ const faqs = [
   },
   {
     q: "Can treats be made for dietary needs, like no pork, vegetarian, or gluten free?",
-    a: "Many can. Lots of treats are already vegetarian, eggless, or gluten free, and you can filter the menu by dietary tag to find them. Some can also be adapted on request. The jelly cheesecake and panna cotta can be made with no-pork beef gelatine, our Basque cheesecake is crustless and gluten free, and the agar fruit jelly is fully vegan and pork free. Just add a note with your order and we will sort it out.",
+    a: "Many can. Several treats are already vegetarian, eggless, or gluten free, like the Basque cheesecakes and the macarons, and you can filter the menu by dietary tag to find them. The strawberry jelly cheesecake can also be made with no-pork beef gelatine on request. Just add a note with your order and we will sort it out.",
   },
   {
     q: "Can I cancel or change my order?",

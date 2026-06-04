@@ -8,7 +8,7 @@ import type { DietaryTag } from "@/lib/types";
 
 export const metadata: Metadata = {
   title: "Menu",
-  description: "Browse Michelle's Munchies cookies, brownies, cakes, loaves and more, freshly baked to order.",
+  description: "Browse Michelle's Munchies cheesecakes, cookies, macarons and cakes, freshly baked to order.",
 };
 
 export default async function MenuPage() {

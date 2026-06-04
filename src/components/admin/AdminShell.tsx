@@ -35,7 +35,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     items: [
       { href: "/admin/products", label: "Products" },
       { href: "/admin/bundles", label: "Bundles" },
-      { href: "/admin/build-a-box", label: "Build-a-box" },
+      { href: "/admin/build-a-box", label: "DIY" },
     ],
   },
   {
@@ -51,10 +51,25 @@ const settingsItem: NavItem = { href: "/admin/settings", label: "Settings" };
 
 export function AdminShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { error } = useAdmin();
+  const { error, settings } = useAdmin();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawerRef = useRef<HTMLDivElement>(null);
   useDialog(drawerOpen, () => setDrawerOpen(false), drawerRef);
+
+  // Hide the catalogue links for features that are switched off, so admin only
+  // surfaces what the storefront is actually using.
+  const groups = navGroups.map((group) =>
+    group.label === "Catalogue"
+      ? {
+          ...group,
+          items: group.items.filter(
+            (item) =>
+              (item.href !== "/admin/bundles" || settings.features.bundles) &&
+              (item.href !== "/admin/build-a-box" || settings.features.buildABox),
+          ),
+        }
+      : group,
+  );
 
   function isActive(href: string) {
     return href === "/admin" ? pathname === "/admin" : pathname.startsWith(href);
@@ -80,7 +95,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
   function renderNav() {
     return (
       <nav className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4" aria-label="Admin sections">
-        {navGroups.map((group) => (
+        {groups.map((group) => (
           <div key={group.label}>
             <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-muted">
               {group.label}

@@ -6,6 +6,31 @@ import { dietaryMeta } from "@/lib/catalog";
 import { ProductCard } from "@/components/product/ProductCard";
 import { cn } from "@/lib/cn";
 
+/**
+ * One category's products as a horizontal scroll-snap rail on phones, so the
+ * menu reads as short swipeable rows instead of one long vertical list, and a
+ * plain grid on desktop. Pure CSS, no JS needed.
+ */
+function ProductRail({ products }: { products: Product[] }) {
+  return (
+    <div
+      className={cn(
+        "-mx-6 flex gap-4 overflow-x-auto scroll-pl-6 px-6 pb-2 snap-x snap-mandatory no-scrollbar",
+        "lg:mx-0 lg:grid lg:grid-cols-3 lg:gap-6 lg:overflow-visible lg:px-0 lg:pb-0 lg:snap-none xl:grid-cols-4",
+      )}
+    >
+      {products.map((product) => (
+        <div
+          key={product.id}
+          className="shrink-0 basis-[72%] snap-start sm:basis-[40%] lg:basis-auto"
+        >
+          <ProductCard product={product} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function MenuBrowser({
   products,
   categories,
@@ -21,9 +46,10 @@ export function MenuBrowser({
 
   // Only offer dietary filters that some product actually carries.
   const dietaryTags = useMemo(
-    () => (Object.keys(dietaryMeta) as DietaryTag[]).filter((tag) =>
-      products.some((p) => p.dietaryTags.includes(tag)),
-    ),
+    () =>
+      (Object.keys(dietaryMeta) as DietaryTag[]).filter((tag) =>
+        products.some((p) => p.dietaryTags.includes(tag)),
+      ),
     [products],
   );
 
@@ -31,19 +57,24 @@ export function MenuBrowser({
     setDietary((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
   }
 
-  const filtered = useMemo(() => {
+  // Search and dietary filter the items; the category tab decides which sections
+  // show. Each shown category becomes its own rail. Empty sections drop out.
+  const sections = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return products.filter((product) => {
-      const matchesCategory = category === "All" || product.category === category;
+    const matches = (product: Product) => {
       const matchesQuery =
         !q ||
         product.name.toLowerCase().includes(q) ||
         product.shortDescription.toLowerCase().includes(q) ||
         product.category.toLowerCase().includes(q);
       const matchesDietary = dietary.every((tag) => product.dietaryTags.includes(tag));
-      return matchesCategory && matchesQuery && matchesDietary;
-    });
-  }, [products, query, category, dietary]);
+      return matchesQuery && matchesDietary;
+    };
+    const shown = category === "All" ? categories : [category];
+    return shown
+      .map((cat) => ({ cat, items: products.filter((p) => p.category === cat && matches(p)) }))
+      .filter((section) => section.items.length > 0);
+  }, [products, categories, query, category, dietary]);
 
   const allCategories = ["All", ...categories];
 
@@ -89,8 +120,12 @@ export function MenuBrowser({
       </div>
 
       {dietaryTags.length > 0 && (
-        <div className="mt-3 flex flex-wrap items-center gap-2" role="group" aria-label="Filter by dietary need">
-          <span className="text-sm font-semibold text-muted">Dietary:</span>
+        <div
+          className="-mx-6 mt-3 flex items-center gap-2 overflow-x-auto px-6 pb-1 no-scrollbar sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0"
+          role="group"
+          aria-label="Filter by dietary need"
+        >
+          <span className="shrink-0 text-sm font-semibold text-muted">Dietary</span>
           {dietaryTags.map((tag) => (
             <button
               key={tag}
@@ -98,7 +133,7 @@ export function MenuBrowser({
               onClick={() => toggleDietary(tag)}
               aria-pressed={dietary.includes(tag)}
               className={cn(
-                "rounded-full border px-3 py-1.5 text-sm font-semibold transition active:scale-95",
+                "shrink-0 rounded-full border px-3 py-1.5 text-sm font-semibold transition active:scale-95",
                 dietary.includes(tag)
                   ? "border-sky-deep bg-sky/50 text-sky-deep"
                   : "border-line bg-white text-ink hover:border-sky",
@@ -119,17 +154,27 @@ export function MenuBrowser({
         note with your order.
       </p>
 
-      {filtered.length === 0 ? (
+      {sections.length === 0 ? (
         <p className="mt-16 text-center text-muted">
           No treats match that search. Try something else?
         </p>
       ) : (
         <div
           key={`${category}|${dietary.join(",")}`}
-          className="mt-8 grid animate-[fade-up_0.4s_ease-out] gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5"
+          className="mt-8 flex animate-[fade-up_0.4s_ease-out] flex-col gap-10"
         >
-          {filtered.map((product) => (
-            <ProductCard key={product.id} product={product} />
+          {sections.map((section) => (
+            <section key={section.cat} aria-label={section.cat}>
+              <div className="flex items-baseline justify-between gap-3">
+                <h2 className="font-display text-2xl font-semibold">{section.cat}</h2>
+                {section.items.length > 1 && (
+                  <span className="text-sm text-rose lg:hidden">Swipe →</span>
+                )}
+              </div>
+              <div className="mt-4">
+                <ProductRail products={section.items} />
+              </div>
+            </section>
           ))}
         </div>
       )}
