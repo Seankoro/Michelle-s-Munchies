@@ -460,7 +460,7 @@ function SettingsForm({
                 ["promos", "Promo codes", "Discount codes at checkout."],
                 ["gifting", "Gift orders", "Send an order as a gift with a message."],
                 ["referrals", "Referrals", "Refer-a-friend reward codes."],
-                ["buildABox", "Build-a-box", "Let customers mix their own box of treats."],
+                ["buildABox", "DIY", "Let customers mix their own box of treats."],
                 ["bundles", "Bundles", "Curated set menus sold as one item."],
                 ["spendGift", "Spend-gift nudge", "Free gift over a spend threshold."],
                 ["backInStock", "Back-in-stock alerts", "Email customers when a sold-out item returns."],

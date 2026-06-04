@@ -404,7 +404,7 @@ function ProductFormModal({
               className={inputClass}
               value={draft.shortDescription}
               onChange={(e) => set("shortDescription", e.target.value)}
-              placeholder="e.g. Fudgy chocolate brownie, 18 cm tray"
+              placeholder="e.g. Crustless burnt Basque cheesecake, 15 cm round"
             />
           </label>
 
@@ -636,8 +636,7 @@ function ProductFormModal({
           <fieldset className="rounded-xl bg-marble/40 p-3">
             <legend className="px-1 text-sm font-semibold">Build your own box</legend>
             <p className="text-xs text-muted">
-              A box of this one item where the customer picks their own flavours. Separate from the
-              Build a Box page, which mixes different treats.
+              A box of this one item where the customer picks their own flavours.
             </p>
             <label className="mt-2 flex items-center gap-2 text-xs font-semibold">
               <Toggle
