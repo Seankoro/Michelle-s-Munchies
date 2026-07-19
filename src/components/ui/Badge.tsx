@@ -10,9 +10,9 @@ export type BadgeTone =
 
 const toneClasses: Record<BadgeTone, string> = {
   bestseller: "bg-rose-deep text-white",
-  recommended: "bg-sky-deep text-white",
+  recommended: "bg-ink text-white",
   soldout: "bg-ink/80 text-white",
-  dietary: "border border-blush bg-blush-soft text-rose-deep",
+  dietary: "border border-blush bg-blush-soft text-ink",
   neutral: "bg-marble text-muted",
 };
 

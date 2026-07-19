@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 /*
-  Michelle's Munchies — "Pastel Patisserie" design tokens.
-  Aesthetic: Sylveon x clean marble, "playful elegance" dial.
+  Michelle's Munchies design tokens.
+  Palette: pale blush #FFE3E8, candy rose #FD9BAD, deep cocoa #3D2823.
   Tailwind v4 reads these tokens and generates utilities automatically
   (e.g. --color-blush -> bg-blush / text-blush, --font-display -> font-display).
 */
@@ -16,25 +16,33 @@
 }
 
 @theme {
-  /* --- Surfaces (marble) --- */
-  --color-cream: #fdf8f4; /* warm marble-white page background */
-  --color-marble: #f5eef0; /* soft pink-grey panel */
+  /* --- Surfaces --- */
+  --color-cream: #fff7f9; /* page background, a whisper of blush */
+  --color-marble: #fbeef1; /* soft neutral panel surface */
   --color-white: #ffffff;
 
-  /* --- Blush pink (Sylveon body / primary) --- */
-  --color-blush: #f6b8cd; /* signature soft blush (decorative) */
-  --color-blush-soft: #fae3ea; /* pale pink wash for backgrounds */
-  --color-rose: #d8688f; /* mid rose for accents/links */
-  --color-rose-deep: #b8466f; /* CTA buttons (white text passes AA) */
+  /* --- Brand pink (pale blush #FFE3E8, candy rose #FD9BAD) --- */
+  --color-blush: #fd9bad; /* candy rose, the signature accent/decoration */
+  --color-blush-soft: #ffe3e8; /* pale blush wash for backgrounds/hovers */
+  --color-rose: #d2648a; /* mid rose for links/accents (legible on light) */
+  --color-rose-deep: #bc4a6a; /* CTA buttons, deepened candy rose (white text passes AA) */
 
-  /* --- Sky blue (Sylveon eyes / ribbon tips / secondary accent) --- */
-  --color-sky: #bfe3ec; /* pastel sky wash */
-  --color-sky-deep: #4f9bb5; /* accent / focus rings */
+  /* --- Ink & neutrals (deep cocoa #3D2823) --- */
+  --color-ink: #3d2823; /* deep cocoa, body text + headings */
+  --color-muted: #7c665f; /* secondary text (AA on cream/white) */
+  --color-line: #f1dbe0; /* hairline borders */
 
-  /* --- Ink & neutrals --- */
-  --color-ink: #4a3a40; /* warm near-black body text */
-  --color-muted: #8a767e; /* secondary text */
-  --color-line: #ece1e5; /* hairline borders */
+  /* --- Functional signals: desaturated, brand-harmonised. Admin + form
+         validation only, always paired with a label/icon (never colour alone). --- */
+  --color-success: #43775c; /* paid, ready, saved (white text passes AA) */
+  --color-success-soft: #e7f0ea;
+  --color-success-ink: #35604a;
+  --color-warning: #c08a3e; /* pending, confirmed */
+  --color-warning-soft: #f6eddc;
+  --color-warning-ink: #7a5312;
+  --color-danger: #b15049; /* failed, cancelled emphasis, destructive */
+  --color-danger-soft: #f5e4e2;
+  --color-danger-ink: #7e322c;
 
   /* --- Radii (soft, rounded — leans cute) --- */
   --radius-sm: 0.5rem;
@@ -44,8 +52,8 @@
   --radius-2xl: 2.25rem;
 
   /* --- Soft shadows --- */
-  --shadow-soft: 0 12px 30px -12px rgb(184 70 111 / 0.18);
-  --shadow-card: 0 8px 24px -16px rgb(74 58 64 / 0.35);
+  --shadow-soft: 0 12px 30px -12px rgb(188 74 106 / 0.18); /* rose-deep */
+  --shadow-card: 0 8px 24px -16px rgb(61 40 35 / 0.35); /* cocoa */
 }
 
 @layer base {
@@ -83,7 +91,7 @@
 
   /* Visible, on-brand focus ring for keyboard users (accessibility) */
   :focus-visible {
-    outline: 2px solid var(--color-sky-deep);
+    outline: 2px solid var(--color-rose-deep);
     outline-offset: 2px;
     border-radius: 4px;
   }
@@ -103,12 +111,59 @@
 }
 
 @layer components {
+  /* The rail scrubber under product carousels. A slim brand-toned track whose
+     filled portion follows --rail-progress, with a little ribbon-bow thumb (a
+     tail-less, solid-colour copy of RibbonBow, inlined so it needs no asset). */
+  .rail-slider {
+    appearance: none;
+    -webkit-appearance: none;
+    height: 0.1875rem;
+    border-radius: 999px;
+    background: linear-gradient(
+      to right,
+      var(--color-rose-deep) 0%,
+      var(--color-rose-deep) var(--rail-progress, 0%),
+      var(--color-line) var(--rail-progress, 0%)
+    );
+    outline-offset: 4px;
+    --rail-bow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='2 10 68 30'%3E%3Cpath d='M34 23L9 14C3 12 3 38 9 36L34 32Z' fill='%23fd9bad' stroke='%23d2648a' stroke-width='1.5' stroke-linejoin='round'/%3E%3Cpath d='M38 23L63 14C69 12 69 38 63 36L38 32Z' fill='%23fd9bad' stroke='%23d2648a' stroke-width='1.5' stroke-linejoin='round'/%3E%3Crect x='31' y='20' width='10' height='15' rx='4.5' fill='%23bc4a6a'/%3E%3C/svg%3E");
+  }
+  .rail-slider::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    height: 1.15rem;
+    width: 1.7rem;
+    border: 0;
+    background: var(--rail-bow) center / contain no-repeat;
+    filter: drop-shadow(0 1px 2px rgb(61 40 35 / 0.35));
+    transition: transform 0.15s ease;
+  }
+  .rail-slider::-webkit-slider-thumb:hover,
+  .rail-slider:active::-webkit-slider-thumb {
+    transform: scale(1.18);
+  }
+  .rail-slider::-moz-range-thumb {
+    height: 1.15rem;
+    width: 1.7rem;
+    border: 0;
+    background: var(--rail-bow) center / contain no-repeat;
+    filter: drop-shadow(0 1px 2px rgb(61 40 35 / 0.35));
+    transition: transform 0.15s ease;
+  }
+  .rail-slider::-moz-range-thumb:hover,
+  .rail-slider:active::-moz-range-thumb {
+    transform: scale(1.18);
+  }
+  .rail-slider::-moz-range-track {
+    background: transparent;
+  }
+
   /* A faint veined-marble wash used behind hero / feature sections. */
   .marble-surface {
     background-color: var(--color-cream);
     background-image:
-      radial-gradient(120% 80% at 15% 10%, rgb(246 184 205 / 0.18), transparent 60%),
-      radial-gradient(120% 90% at 90% 0%, rgb(191 227 236 / 0.22), transparent 55%);
+      radial-gradient(120% 80% at 15% 10%, rgb(253 155 173 / 0.16), transparent 60%),
+      radial-gradient(120% 90% at 90% 0%, rgb(255 227 232 / 0.5), transparent 55%);
   }
 
   /* Animated variant: the marble wash drifts slowly for a living-but-calm hero. */
@@ -141,6 +196,13 @@
   /* Quick scale pop for cart-count + "Added" feedback. */
   .animate-pop {
     animation: pop 0.4s ease-out 1;
+  }
+
+  /* Orchestrated hero entrance: elements rise in on load, staggered via an
+     inline --rise-delay. Pure CSS so it needs no JS and never hides content. */
+  .animate-rise {
+    animation: fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-delay: var(--rise-delay, 0ms);
   }
 
   /* Hide the scrollbar on the swipe rail (content still scrolls/swipes). */
@@ -212,7 +274,8 @@
 /* Reduced-motion: never leave reveal content hidden (the global rule below also
    collapses all animation durations to ~0). */
 @media (prefers-reduced-motion: reduce) {
-  .reveal {
+  .reveal,
+  .animate-rise {
     opacity: 1 !important;
     transform: none !important;
   }
@@ -229,4 +292,27 @@
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border-width: 0;
+}
+
+/* Print one card only. The kitchen pages add `.print-only-target` to a single
+   section just before window.print(), so a day's bake or shopping sheet prints
+   on its own. The :has() guard means a plain Ctrl+P with no target still prints
+   the whole page normally. */
+@media print {
+  body:has(.print-only-target) * {
+    visibility: hidden;
+  }
+  body:has(.print-only-target) .print-only-target,
+  body:has(.print-only-target) .print-only-target * {
+    visibility: visible;
+  }
+  body:has(.print-only-target) .print-only-target {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+  .print-hide {
+    display: none !important;
+  }
 }
