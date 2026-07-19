@@ -10,18 +10,24 @@ export async function InstagramGrid() {
   const posts = await fetchActiveInstagramPosts();
   if (posts.length === 0) return null;
 
+  // Real profile link only when the handle is configured, a generic
+  // instagram.com link reads as a placeholder.
+  const handle = (process.env.INSTAGRAM_HANDLE ?? "").replace(/^@/, "");
+
   return (
     <section className="mx-auto max-w-none px-6 py-12 lg:px-10">
       <div className="flex flex-wrap items-baseline justify-between gap-3">
         <h2 className="font-display text-2xl font-semibold">From our kitchen 📸</h2>
-        <a
-          href="https://instagram.com"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-sm font-semibold text-rose transition hover:text-rose-deep"
-        >
-          Follow us →
-        </a>
+        {handle && (
+          <a
+            href={`https://instagram.com/${handle}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm font-semibold text-rose-deep transition hover:text-rose"
+          >
+            Follow us →
+          </a>
+        )}
       </div>
       <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
         {posts.map((post) => (

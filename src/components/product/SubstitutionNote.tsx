@@ -1,3 +1,5 @@
+import { cn } from "@/lib/cn";
+
 /**
  * Safety disclaimer shown when a product offers options that may include
  * ingredient substitutions like oat milk, plant butter, or gluten-free flour.
@@ -8,7 +10,7 @@
 export function SubstitutionNote({ className }: { className?: string }) {
   return (
     <p
-      className={`rounded-xl border border-line bg-white px-4 py-3 text-sm text-muted ${className ?? ""}`}
+      className={cn("rounded-xl border border-line bg-white px-4 py-3 text-sm text-muted", className)}
     >
       🥛 Some options swap ingredients like oat milk or plant butter. These change the recipe, so
       the allergen list above reflects the standard version. Please tell us about any allergies in

@@ -1,27 +1,36 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import type { CartItem, Product, SelectedOption } from "@/lib/types";
+import { useMemo, useState, type ChangeEvent } from "react";
+import type { CartItem, Personalisation, Product, SelectedOption } from "@/lib/types";
 import { formatPrice } from "@/lib/catalog";
 import { useCart } from "@/components/cart/CartContext";
+import { menuCartKey } from "@/lib/cart-key";
+import { uploadPersonalisationImageAction } from "@/lib/personalisation-actions";
 import { Button } from "@/components/ui/Button";
+import { compactInputClass } from "@/lib/ui";
 import { cn } from "@/lib/cn";
 
 /**
  * Shared option + quantity selector that adds to the cart. Reused inline on the
  * product detail page and inside the quick-pick popover, so the "choose size /
- * flavour / quantity" experience is identical everywhere.
+ * flavour / quantity" experience is identical everywhere. `allowPersonalisation`
+ * is passed only on the full detail page, so quick-pick stays a fast one-tap add.
  */
 export function OptionPicker({
   product,
   onAdded,
-  className,
+  allowPersonalisation = false,
 }: {
   product: Product;
   onAdded?: () => void;
-  className?: string;
+  allowPersonalisation?: boolean;
 }) {
   const { addItem } = useCart();
+  const personalisation = allowPersonalisation ? product.personalisation ?? null : null;
+  const [message, setMessage] = useState("");
+  const [photoUrl, setPhotoUrl] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [photoError, setPhotoError] = useState("");
 
   // Pre-select the first value of each option for a smoother first tap.
   const [selected, setSelected] = useState<Record<string, string>>(() => {
@@ -35,6 +44,10 @@ export function OptionPicker({
     return initial;
   });
   const [quantity, setQuantity] = useState(1);
+  // Brief "Added" confirmation, so the primary buy button on the product page
+  // never reads as a dead tap. QuickPick passes onAdded and swaps the whole
+  // view, so this only shows where the picker stays mounted.
+  const [added, setAdded] = useState(false);
 
   const unitPriceCents = useMemo(() => {
     let price = product.basePriceCents;
@@ -56,6 +69,21 @@ export function OptionPicker({
     return !value || value.isAvailable !== false;
   });
 
+  async function handlePhoto(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = ""; // allow re-selecting the same file
+    if (!file) return;
+    setPhotoError("");
+    setUploading(true);
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("productId", product.id);
+    const result = await uploadPersonalisationImageAction(fd);
+    setUploading(false);
+    if (result.ok) setPhotoUrl(result.url);
+    else setPhotoError(result.error);
+  }
+
   function handleAdd() {
     if (!product.isAvailable || !allRequiredChosen || !selectionAvailable) return;
 
@@ -68,9 +96,19 @@ export function OptionPicker({
       };
     });
 
-    const key = `${product.id}::${product.options
-      .map((option) => selected[option.id] ?? "")
-      .join("|")}`;
+    const trimmedMessage = message.trim();
+    const chosen: Personalisation | undefined =
+      personalisation && (trimmedMessage || photoUrl)
+        ? { message: trimmedMessage || undefined, photoUrl: photoUrl || undefined }
+        : undefined;
+
+    // Options key, exactly how the cart merges menu adds. A personalised line
+    // carries a unique suffix so two different messages never merge into one.
+    const optionsKey = menuCartKey(
+      product.id,
+      product.options.map((option) => selected[option.id] ?? ""),
+    );
+    const key = chosen ? `${optionsKey}::p-${crypto.randomUUID()}` : optionsKey;
 
     const item: CartItem = {
       key,
@@ -80,19 +118,25 @@ export function OptionPicker({
       unitPriceCents,
       quantity,
       selectedOptions,
+      imageUrl: product.imageUrls?.[0],
+      ...(chosen ? { personalisation: chosen } : {}),
     };
 
     addItem(item);
+    setAdded(true);
+    setMessage("");
+    setPhotoUrl("");
+    window.setTimeout(() => setAdded(false), 1600);
     onAdded?.();
   }
 
   return (
-    <div className={cn("flex flex-col gap-5", className)}>
+    <div className="flex flex-col gap-5">
       {product.options.map((option) => (
         <fieldset key={option.id}>
           <legend className="mb-2 text-sm font-semibold text-ink">
             {option.name}
-            {option.required && <span className="ml-1 text-rose">*</span>}
+            {option.required && <span className="ml-1 text-rose-deep">*</span>}
           </legend>
           <div className="flex flex-wrap gap-2">
             {option.values.map((value) => {
@@ -126,6 +170,63 @@ export function OptionPicker({
           </div>
         </fieldset>
       ))}
+
+      {personalisation && (
+        <div className="flex flex-col gap-2 rounded-xl border border-line bg-white p-4">
+          <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
+            {personalisation.label}
+            <span className="font-normal text-muted">Optional, we&rsquo;ll do our best 🎀</span>
+            <input
+              className={compactInputClass}
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              maxLength={120}
+              placeholder="e.g. Happy Birthday Mum!"
+            />
+          </label>
+          {personalisation.allowPhoto && (
+            <div className="text-sm">
+              <span className="font-semibold text-ink">Reference photo</span>
+              <div className="mt-1 flex items-center gap-3">
+                {photoUrl ? (
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={photoUrl}
+                      alt="Your reference"
+                      className="h-14 w-14 rounded-lg border border-line object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setPhotoUrl("")}
+                      className="text-xs font-semibold text-muted transition hover:text-rose-deep"
+                    >
+                      Remove
+                    </button>
+                  </>
+                ) : (
+                  <label
+                    className={cn(
+                      "cursor-pointer rounded-full border border-line px-4 py-1.5 text-xs font-semibold transition hover:border-rose",
+                      uploading && "opacity-60",
+                    )}
+                  >
+                    {uploading ? "Uploading…" : "+ Add a photo"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handlePhoto}
+                      disabled={uploading}
+                    />
+                  </label>
+                )}
+              </div>
+              {photoError && <p className="mt-1 text-xs text-rose-deep">{photoError}</p>}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Quantity */}
       <div className="flex items-center gap-3">
@@ -162,8 +263,13 @@ export function OptionPicker({
           ? "Sold out"
           : !selectionAvailable
             ? "Flavour sold out"
-            : `Add to cart · ${formatPrice(unitPriceCents * quantity)}`}
+            : added
+              ? "Added ✓"
+              : `Add to cart · ${formatPrice(unitPriceCents * quantity)}`}
       </Button>
+      <span className="sr-only" role="status" aria-live="polite">
+        {added ? `Added ${quantity} ${product.name} to your cart.` : ""}
+      </span>
     </div>
   );
 }

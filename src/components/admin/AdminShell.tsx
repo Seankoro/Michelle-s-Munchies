@@ -1,15 +1,41 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useRef, useState, type ReactNode } from "react";
-import { RibbonBow } from "@/components/ui/RibbonBow";
 import { cn } from "@/lib/cn";
 import { useDialog } from "@/lib/useDialog";
-import { createBrowserSupabase } from "@/lib/supabase/browser";
+import { signOutAndRedirect } from "@/lib/supabase/browser";
 import { useAdmin } from "./AdminStore";
 
 type NavItem = { href: string; label: string };
+
+/** Last-updated stamp + manual refresh, shown in the sidebar and drawer. */
+function RefreshRow() {
+  const { refresh, lastUpdated } = useAdmin();
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="flex items-center justify-between gap-2 px-4 pb-1 text-xs text-muted">
+      <span>
+        {lastUpdated
+          ? `Updated ${lastUpdated.toLocaleTimeString("en-SG", { hour: "numeric", minute: "2-digit" })}`
+          : "Loading…"}
+      </span>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => {
+          setBusy(true);
+          void refresh().finally(() => setBusy(false));
+        }}
+        className="font-semibold text-rose-deep transition hover:text-rose active:scale-95 disabled:opacity-50"
+      >
+        {busy ? "Refreshing…" : "Refresh"}
+      </button>
+    </div>
+  );
+}
 
 // Grouped so 13 destinations read as four scannable sections instead of a flat
 // wall of links. Settings sits on its own at the foot of the sidebar.
@@ -35,7 +61,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     items: [
       { href: "/admin/products", label: "Products" },
       { href: "/admin/bundles", label: "Bundles" },
-      { href: "/admin/build-a-box", label: "DIY" },
+      { href: "/admin/build-a-box", label: "Build a box" },
     ],
   },
   {
@@ -76,13 +102,8 @@ export function AdminShell({ children }: { children: ReactNode }) {
   }
 
   async function signOut() {
-    try {
-      await createBrowserSupabase().auth.signOut();
-    } catch {
-      // ignore
-    }
     // Full reload so middleware re-evaluates with the cleared session.
-    window.location.assign("/admin/login");
+    await signOutAndRedirect("/admin/login");
   }
 
   function navLinkClass(href: string) {
@@ -138,17 +159,23 @@ export function AdminShell({ children }: { children: ReactNode }) {
   }
 
   const brand = (
-    <div className="flex items-center gap-2 px-4 py-4">
-      <RibbonBow withTails={false} className="h-7 w-9" />
+    <Link
+      href="/admin"
+      onClick={() => setDrawerOpen(false)}
+      aria-label="Munchies Admin, go to dashboard"
+      className="flex items-center gap-2 px-4 py-4 transition hover:opacity-80 active:scale-[0.99]"
+    >
+      <Image src="/logo.png" alt="" width={512} height={512} className="h-8 w-8" />
       <span className="font-display text-lg font-semibold">Munchies Admin</span>
-    </div>
+    </Link>
   );
 
   return (
     <div className="min-h-screen bg-cream lg:flex">
       {/* Desktop sidebar */}
-      <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-line bg-white lg:flex">
+      <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col border-r border-line bg-white lg:flex">
         {brand}
+        <RefreshRow />
         {renderNav()}
       </aside>
 
@@ -180,19 +207,25 @@ export function AdminShell({ children }: { children: ReactNode }) {
             className="absolute left-0 top-0 flex h-full w-72 max-w-[80%] flex-col bg-white shadow-soft"
           >
             <div className="flex items-center justify-between px-4 py-4">
-              <div className="flex items-center gap-2">
-                <RibbonBow withTails={false} className="h-7 w-9" />
+              <Link
+                href="/admin"
+                onClick={() => setDrawerOpen(false)}
+                aria-label="Munchies Admin, go to dashboard"
+                className="flex items-center gap-2 transition hover:opacity-80 active:scale-[0.99]"
+              >
+                <Image src="/logo.png" alt="" width={512} height={512} className="h-8 w-8" />
                 <span className="font-display text-lg font-semibold">Munchies Admin</span>
-              </div>
+              </Link>
               <button
                 type="button"
                 aria-label="Close menu"
                 onClick={() => setDrawerOpen(false)}
-                className="rounded-full px-2 text-xl leading-none text-muted transition hover:text-ink"
+                className="flex h-10 w-10 items-center justify-center rounded-full text-xl leading-none text-muted transition hover:bg-blush-soft hover:text-ink"
               >
                 ✕
               </button>
             </div>
+            <RefreshRow />
             {renderNav()}
           </div>
         </div>
@@ -201,8 +234,11 @@ export function AdminShell({ children }: { children: ReactNode }) {
       {/* Content */}
       <div className="min-w-0 flex-1">
         {error && (
-          <div className="border-b border-red-200 bg-red-50 px-5 py-2 text-center text-sm font-semibold text-red-700">
-            ⚠ {error}
+          <div
+            role="alert"
+            className="border-b border-danger/30 bg-danger-soft px-5 py-2 text-center text-sm font-semibold text-danger-ink"
+          >
+            <span aria-hidden="true">⚠</span> {error}
           </div>
         )}
         {/* Keyed on the path so each page gently fades in on navigation. */}

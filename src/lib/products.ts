@@ -1,6 +1,30 @@
 import "server-only";
-import type { Allergen, DietaryTag, FlavourBoxConfig, Product } from "@/lib/types";
+import type { Allergen, DietaryTag, FlavourBoxConfig, IngredientLine, Product } from "@/lib/types";
 import { createPublicClient } from "@/lib/supabase/public";
+
+/**
+ * Read the ingredients jsonb. Handles both the new { name, amount, unit } objects
+ * and any legacy plain-string entries, so a half-migrated row never breaks a page.
+ */
+function parseIngredients(raw: unknown): IngredientLine[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((entry): IngredientLine | null => {
+      if (typeof entry === "string") return entry.trim() ? { name: entry.trim() } : null;
+      if (entry && typeof entry === "object" && "name" in entry) {
+        const e = entry as { name: unknown; amount?: unknown; unit?: unknown };
+        const name = String(e.name ?? "").trim();
+        if (!name) return null;
+        return {
+          name,
+          amount: typeof e.amount === "number" && e.amount > 0 ? e.amount : null,
+          unit: typeof e.unit === "string" && e.unit.trim() ? e.unit.trim() : null,
+        };
+      }
+      return null;
+    })
+    .filter((x): x is IngredientLine => x !== null);
+}
 
 // Shape of the rows returned by the nested products query below.
 type OptionValueRow = {
@@ -24,6 +48,7 @@ type ProductRow = {
   short_description: string | null;
   long_description: string | null;
   base_price_cents: number;
+  cost_cents: number | null;
   category: string;
   image_paths: string[] | null;
   is_available: boolean;
@@ -31,13 +56,15 @@ type ProductRow = {
   is_recommended: boolean;
   allergens: Allergen[] | null;
   dietary_tags: DietaryTag[] | null;
-  ingredients: string[] | null;
+  ingredients: unknown;
   storage_info: string | null;
   serving_info: string | null;
   stock_count: number | null;
   available_from: string | null;
   product_options: OptionRow[] | null;
   flavour_box: FlavourBoxConfig | null;
+  personalisation_label: string | null;
+  personalisation_allow_photo: boolean | null;
 };
 
 const PRODUCT_SELECT = "*, product_options(*, product_option_values(*))";
@@ -66,13 +93,14 @@ function rowToProduct(row: ProductRow): Product {
     shortDescription: row.short_description ?? "",
     longDescription: row.long_description ?? "",
     basePriceCents: row.base_price_cents,
+    costCents: row.cost_cents,
     category: row.category,
     isAvailable: row.is_available,
     isBestSeller: row.is_best_seller,
     isRecommended: row.is_recommended,
     allergens: row.allergens ?? [],
     dietaryTags: row.dietary_tags ?? [],
-    ingredients: row.ingredients ?? [],
+    ingredients: parseIngredients(row.ingredients),
     storageInfo: row.storage_info ?? undefined,
     servingInfo: row.serving_info ?? undefined,
     imageUrls: row.image_paths ?? [],
@@ -81,6 +109,27 @@ function rowToProduct(row: ProductRow): Product {
     photoCount: 3,
     options,
     flavourBox: row.flavour_box ?? null,
+    personalisation: row.personalisation_label?.trim()
+      ? { label: row.personalisation_label.trim(), allowPhoto: row.personalisation_allow_photo ?? false }
+      : null,
+  };
+}
+
+/**
+ * Drop detail-page-only fields (recipe, storage, serving) before shipping a
+ * product into a client list. Cards, quick-pick, and menu search never read
+ * them, so this trims the RSC/client payload for every card on the page.
+ */
+export function toCardProduct(product: Product): Product {
+  // costCents is admin-only; never ship the bakery's cost to a storefront client.
+  return {
+    ...product,
+    ingredients: [],
+    storageInfo: undefined,
+    servingInfo: undefined,
+    costCents: null,
+    // Personalisation is chosen on the detail page, not on cards or quick-pick.
+    personalisation: null,
   };
 }
 
@@ -110,7 +159,16 @@ export async function fetchProductBySlug(slug: string): Promise<Product | null> 
     .maybeSingle();
 
   if (error) throw new Error(`Failed to load product: ${error.message}`);
-  return data ? rowToProduct(data as ProductRow) : null;
+  if (!data) return null;
+  const product = rowToProduct(data as ProductRow);
+  // Storefront-facing: the detail page passes the product to client components,
+  // so never include the admin-only cost, nor the ingredient amounts (the recipe).
+  // Customers see the ingredient names only; keep the other detail fields it shows.
+  return {
+    ...product,
+    costCents: null,
+    ingredients: (product.ingredients ?? []).map((i) => ({ name: i.name })),
+  };
 }
 
 export async function fetchProductById(id: string): Promise<Product | null> {
@@ -122,11 +180,6 @@ export async function fetchProductById(id: string): Promise<Product | null> {
     .maybeSingle();
   if (error) throw new Error(`Failed to load product by id: ${error.message}`);
   return data ? rowToProduct(data as ProductRow) : null;
-}
-
-export async function fetchCategories(): Promise<string[]> {
-  const products = await fetchProducts();
-  return Array.from(new Set(products.map((product) => product.category)));
 }
 
 /** Best-sellers first, then recommended via the admin toggle, for the home strip. */
@@ -155,5 +208,6 @@ export async function fetchRelatedProducts(product: Product, limit = 3): Promise
   const others = products.filter(
     (p) => p.id !== product.id && p.isAvailable && p.category !== product.category,
   );
-  return [...sameCategory, ...others].slice(0, limit);
+  // These render as client ProductCards, so strip detail + cost fields.
+  return [...sameCategory, ...others].slice(0, limit).map(toCardProduct);
 }

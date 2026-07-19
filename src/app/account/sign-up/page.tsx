@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { RibbonBow } from "@/components/ui/RibbonBow";
+import { AuthCard } from "@/components/account/AuthCard";
 import { Button } from "@/components/ui/Button";
 import { GoogleButton } from "@/components/account/GoogleButton";
 import { useFeatures } from "@/components/features/FeaturesProvider";
@@ -47,14 +47,10 @@ export default function SignUpPage() {
   }
 
   return (
-    <main className="mx-auto flex max-w-md flex-col px-6 py-16">
-      <div className="rounded-2xl border border-line bg-white p-8 shadow-soft">
-        <div className="flex flex-col items-center text-center">
-          <RibbonBow withTails={false} className="h-10 w-12" />
-          <h1 className="mt-3 font-display text-2xl font-semibold">Join Michelle&rsquo;s Munchies</h1>
-          <p className="mt-1 text-sm text-muted">Create an account to track orders & earn rewards.</p>
-        </div>
-
+    <AuthCard
+      title="Join Michelle’s Munchies"
+      subtitle="Create an account to track orders & earn rewards."
+    >
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -109,8 +105,20 @@ export default function SignUpPage() {
             </div>
           )}
 
-          {error && <p className="text-sm text-rose-deep">{error}</p>}
-          {pending && <p className="rounded-xl bg-blush-soft/60 px-3 py-2 text-sm text-rose-deep">{pending}</p>}
+          {error && (
+            <p role="alert" className="text-sm text-rose-deep">
+              {error}
+            </p>
+          )}
+          {pending && (
+            <p
+              role="status"
+              aria-live="polite"
+              className="rounded-xl bg-blush-soft/60 px-3 py-2 text-sm text-rose-deep"
+            >
+              {pending}
+            </p>
+          )}
 
           <Button type="submit" size="lg" disabled={loading} className="w-full">
             {loading ? "Creating…" : "Create account"}
@@ -127,11 +135,10 @@ export default function SignUpPage() {
 
         <p className="mt-6 text-center text-sm text-muted">
           Already have an account?{" "}
-          <Link href="/account/sign-in" className="font-semibold text-rose hover:text-rose-deep">
+          <Link href="/account/sign-in" className="font-semibold text-rose-deep hover:text-rose">
             Sign in
           </Link>
         </p>
-      </div>
-    </main>
+    </AuthCard>
   );
 }

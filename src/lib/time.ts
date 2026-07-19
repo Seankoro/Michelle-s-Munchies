@@ -14,3 +14,11 @@
 export function singaporeNow(): Date {
   return new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
 }
+
+/**
+ * A moment's calendar date in Singapore as "YYYY-MM-DD", for comparing against
+ * date-only columns like scheduled_date and expires_at. Defaults to now.
+ */
+export function singaporeDateString(input: string | number | Date = Date.now()): string {
+  return new Date(input).toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+}

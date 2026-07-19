@@ -81,7 +81,7 @@ export default function TrackLookupPage() {
 
         <p className="mt-6 text-center text-sm text-muted">
           Have an account?{" "}
-          <Link href="/account" className="font-semibold text-rose hover:text-rose-deep">
+          <Link href="/account" className="font-semibold text-rose-deep hover:text-rose">
             See all your orders
           </Link>
         </p>

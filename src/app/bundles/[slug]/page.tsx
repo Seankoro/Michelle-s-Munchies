@@ -24,7 +24,7 @@ export default async function BundleDetailPage({ params }: Params) {
 
   return (
     <main className="mx-auto max-w-none px-6 py-10 lg:px-10">
-      <Link href="/bundles" className="text-sm font-semibold text-rose transition hover:text-rose-deep">
+      <Link href="/bundles" className="text-sm font-semibold text-rose-deep transition hover:text-rose">
         ← Back to bundles
       </Link>
 

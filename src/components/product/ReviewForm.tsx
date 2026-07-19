@@ -70,7 +70,7 @@ export function ReviewForm({
       <p className="text-sm font-semibold text-ink">
         {initialRating > 0 ? "Update your review" : "Leave a review"}
       </p>
-      <div className="mt-2 flex items-center gap-1" role="radiogroup" aria-label="Rating">
+      <div className="mt-2 flex items-center gap-1" role="group" aria-label="Rating">
         {[1, 2, 3, 4, 5].map((star) => (
           <button
             key={star}
@@ -93,7 +93,7 @@ export function ReviewForm({
         value={body}
         onChange={(e) => setBody(e.target.value)}
         placeholder="How was it? (optional)"
-        className="mt-3 min-h-20 w-full resize-y rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none transition focus:border-rose"
+        className="mt-3 min-h-20 w-full resize-y rounded-xl border border-line bg-white px-3 py-2 text-sm transition focus:border-rose"
       />
       {features.photoReviews && (
         <div className="mt-3">
@@ -133,7 +133,7 @@ export function ReviewForm({
         <Button type="submit" size="sm" disabled={submitting || uploading}>
           {submitting ? "Saving…" : initialRating > 0 ? "Update review" : "Post review"}
         </Button>
-        {saved && <span className="text-sm font-semibold text-emerald-600">Thanks! ✓</span>}
+        {saved && <span className="text-sm font-semibold text-success">Thanks! ✓</span>}
       </div>
     </form>
   );

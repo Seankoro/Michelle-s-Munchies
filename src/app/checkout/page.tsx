@@ -1,6 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  cloneElement,
+  isValidElement,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import Link from "next/link";
 import { useCart } from "@/components/cart/CartContext";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
@@ -11,15 +19,23 @@ import {
   formatLongDate,
   type FulfillmentType,
 } from "@/lib/order";
-import { applyPromo, placeOrder, recordCheckoutIntentAction } from "./actions";
+import {
+  applyPromo,
+  getDayCapacityAction,
+  placeOrder,
+  recordCheckoutIntentAction,
+  type DayCapacity,
+} from "./actions";
 import { subscribeNewsletterAction } from "@/lib/newsletter-actions";
 import type { StoreSettings } from "@/lib/settings";
 import { fetchClientSettingsRow } from "@/lib/client-settings";
 import { singaporeNow } from "@/lib/time";
 import { isValidSgPhone, normalizeSgPhone } from "@/lib/phone";
+import { EMAIL_RE } from "@/lib/text";
 import { useFeatures } from "@/components/features/FeaturesProvider";
 import { CutoffBanner } from "@/components/checkout/CutoffBanner";
 import { buttonClasses } from "@/components/ui/Button";
+import { MascotSays } from "@/components/ui/MascotSays";
 import { cn } from "@/lib/cn";
 import { Toggle } from "@/components/ui/Toggle";
 import { inputClass } from "@/lib/ui";
@@ -37,14 +53,28 @@ function Field({
   children: ReactNode;
   optional?: boolean;
 }) {
+  // Point the control at its error text and flag it invalid, so screen readers
+  // announce the problem and tie it to the right field.
+  const errorId = `${htmlFor}-error`;
+  const field =
+    error && isValidElement(children)
+      ? cloneElement(children as ReactElement<Record<string, unknown>>, {
+          "aria-invalid": true,
+          "aria-describedby": errorId,
+        })
+      : children;
   return (
     <div>
       <label htmlFor={htmlFor} className="mb-1 block text-sm font-semibold text-ink">
         {label}
         {optional && <span className="ml-1 font-normal text-muted">(optional)</span>}
       </label>
-      {children}
-      {error && <p className="mt-1 text-sm text-rose-deep">{error}</p>}
+      {field}
+      {error && (
+        <p id={errorId} role="alert" className="mt-1 text-sm text-rose-deep">
+          {error}
+        </p>
+      )}
     </div>
   );
 }
@@ -86,6 +116,7 @@ export default function CheckoutPage() {
   const [fulfillment, setFulfillment] = useState<FulfillmentType>("pickup");
   const [date, setDate] = useState(earliest);
   const [timeWindow, setTimeWindow] = useState(mockSettings.timeWindows[0]);
+  const [dayCapacity, setDayCapacity] = useState<DayCapacity | null>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -97,6 +128,8 @@ export default function CheckoutPage() {
   const [giftMessage, setGiftMessage] = useState("");
   const [recipientName, setRecipientName] = useState("");
   const [recipientPhone, setRecipientPhone] = useState("");
+  // Gift + delivery: let the recipient fill in their own address and time slot.
+  const [letRecipientSchedule, setLetRecipientSchedule] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
 
@@ -166,6 +199,21 @@ export default function CheckoutPage() {
     };
   }, []);
 
+  // Live capacity for the chosen date, so full slots show before submit.
+  useEffect(() => {
+    if (!date) {
+      setDayCapacity(null);
+      return;
+    }
+    let active = true;
+    void getDayCapacityAction(date).then((cap) => {
+      if (active) setDayCapacity(cap);
+    });
+    return () => {
+      active = false;
+    };
+  }, [date]);
+
   // Dietary-preference conflicts, warn softly if a cart item doesn't match the
   // signed-in customer's saved preferences.
   useEffect(() => {
@@ -220,7 +268,7 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (!features.abandonedCart || items.length === 0) return;
     const trimmed = email.trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return;
+    if (!EMAIL_RE.test(trimmed)) return;
     const id = window.setTimeout(() => {
       void recordCheckoutIntentAction(
         trimmed,
@@ -239,7 +287,7 @@ export default function CheckoutPage() {
     : 0;
   const roomAfterPromo = maxDiscountCents - promoDiscountCents;
   const pointsDiscountCents =
-    applyPoints && pointsBalance > 0
+    applyPoints && pointsBalance > 0 && pointValueCents > 0
       ? Math.floor(Math.min(pointsBalance * pointValueCents, roomAfterPromo) / pointValueCents) *
         pointValueCents
       : 0;
@@ -297,8 +345,10 @@ export default function CheckoutPage() {
   if (items.length === 0) {
     return (
       <main className="mx-auto max-w-3xl px-6 py-20 text-center">
-        <p className="text-5xl" aria-hidden="true">🎀</p>
-        <h1 className="mt-4 font-display text-3xl font-semibold">Your cart is empty</h1>
+        <div className="flex justify-center">
+          <MascotSays lines={["Nothing to check out yet… let's fix that."]} />
+        </div>
+        <h1 className="mt-6 font-display text-3xl font-semibold">Your cart is empty</h1>
         <p className="mt-2 text-muted">Add a treat or two before checking out.</p>
         <Link href="/menu" className={buttonClasses({ className: "mt-8", size: "lg" })}>
           Browse the menu
@@ -307,24 +357,47 @@ export default function CheckoutPage() {
     );
   }
 
+  // Gift + delivery where the recipient will fill in their own address and slot,
+  // so the buyer needn't know either. The date still anchors the bake schedule.
+  const giftSelfSchedule = isGift && fulfillment === "delivery" && letRecipientSchedule;
+
   function validate(): Record<string, string> {
     const next: Record<string, string> = {};
     if (!name.trim()) next.name = "Please tell us your name.";
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) next.email = "Enter a valid email.";
+    if (!EMAIL_RE.test(email)) next.email = "Enter a valid email.";
     if (!isValidSgPhone(phone)) next.phone = "Enter a Singapore mobile number, e.g. 9123 4567.";
     if (!date) next.date = "Pick a date.";
     else if (date < earliest)
       next.date = `Earliest available is ${formatLongDate(earliest)} (we bake to order).`;
     else if (settings.blackoutDates.includes(date))
       next.date = "We're away that day. Please choose another date.";
-    if (!timeWindow) next.timeWindow = "Pick a time window.";
-    if (fulfillment === "delivery") {
+    // The recipient picks the time window themselves when self-scheduling.
+    if (!timeWindow && !giftSelfSchedule) next.timeWindow = "Pick a time window.";
+    // Block a window that is already full up front, with the same rule the
+    // server enforces, so a default-selected full slot fails before submit.
+    else if (
+      timeWindow &&
+      !giftSelfSchedule &&
+      dayCapacity?.perWindowCap &&
+      dayCapacity.perWindowCap > 0 &&
+      (dayCapacity.windowCounts[timeWindow] ?? 0) >= dayCapacity.perWindowCap
+    ) {
+      next.timeWindow = "That time slot is fully booked. Please pick another window.";
+    }
+    if (fulfillment === "delivery" && !giftSelfSchedule) {
       if (!line1.trim()) next.line1 = "Delivery address is required.";
       if (!/^\d{6}$/.test(postalCode)) next.postalCode = "Enter a 6-digit Singapore postal code.";
     }
     if (isGift && !recipientName.trim()) next.recipientName = "Who’s this gift for?";
     if (isGift && recipientPhone.trim() && !isValidSgPhone(recipientPhone))
       next.recipientPhone = "Enter a Singapore mobile number, e.g. 9123 4567.";
+    if (features.structuredNotes) {
+      for (const prompt of settings.notePrompts) {
+        if (prompt.required && !(noteAnswers[prompt.id] ?? "").trim()) {
+          next[`note-${prompt.id}`] = "Please answer this one.";
+        }
+      }
+    }
     if (subtotalCents < settings.minOrderCents) {
       next.order = `Minimum order is ${formatPrice(settings.minOrderCents)}.`;
     }
@@ -352,7 +425,7 @@ export default function CheckoutPage() {
         scheduledDate: date,
         timeWindow,
         address:
-          fulfillment === "delivery"
+          fulfillment === "delivery" && !giftSelfSchedule
             ? { line1: line1.trim(), unit: unit.trim() || undefined, postalCode }
             : undefined,
         name: name.trim(),
@@ -367,6 +440,7 @@ export default function CheckoutPage() {
             ? normalizeSgPhone(recipientPhone) ?? recipientPhone.trim()
             : undefined
           : undefined,
+        recipientScheduling: giftSelfSchedule,
         noteAnswers: settings.notePrompts.map((p) => ({
           id: p.id,
           label: p.label,
@@ -390,7 +464,14 @@ export default function CheckoutPage() {
 
     // Full navigation handles both the external Stripe Checkout URL and the
     // internal tracking page. The cart is cleared on the tracking page, so a
-    // cancelled payment leaves the cart intact for another try.
+    // cancelled payment leaves the cart intact for another try. The marker
+    // tells the tracking page this arrival follows a placed order, so email
+    // revisits never wipe a future cart.
+    try {
+      window.sessionStorage.setItem("mm-order-placed", "1");
+    } catch {
+      // Storage blocked: the tracking page falls back to clearing anyway.
+    }
     window.location.href = result.redirectUrl;
   }
 
@@ -398,6 +479,28 @@ export default function CheckoutPage() {
     <main className="mx-auto max-w-5xl px-6 py-12">
       <h1 className="font-display text-4xl font-semibold">Checkout</h1>
       <p className="mt-2 text-muted">No account needed. Just a few details and you&rsquo;re set.</p>
+      {/* Answer "when do I pay?" before the form starts, not in a footnote. */}
+      <ol className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm font-semibold">
+        {["Your details", "Confirm on WhatsApp", "Pay by PayNow"].map((step, index) => (
+          <li key={step} className="flex items-center gap-2">
+            {index > 0 && (
+              <span aria-hidden="true" className="text-muted">
+                →
+              </span>
+            )}
+            <span
+              className={cn(
+                "flex h-6 w-6 items-center justify-center rounded-full text-xs",
+                index === 0 ? "bg-rose-deep text-white" : "bg-blush-soft text-rose-deep",
+              )}
+              aria-hidden="true"
+            >
+              {index + 1}
+            </span>
+            {step}
+          </li>
+        ))}
+      </ol>
 
       <form
         onSubmit={(event) => {
@@ -430,7 +533,7 @@ export default function CheckoutPage() {
                   </span>
                   <span className="mt-1 block text-sm text-muted">
                     {type === "pickup"
-                      ? "Free · collect from us"
+                      ? "Free · pick up from us"
                       : subtotalCents >= settings.freeDeliveryMinCents
                         ? "Free delivery!"
                         : `${formatPrice(settings.deliveryFeeCents)} islandwide`}
@@ -446,7 +549,16 @@ export default function CheckoutPage() {
           </section>
 
           {/* Delivery address */}
-          {fulfillment === "delivery" && (
+          {fulfillment === "delivery" && giftSelfSchedule && (
+            <section className="flex flex-col gap-2">
+              <h2 className="font-display text-xl font-semibold">Delivery address</h2>
+              <p className="rounded-xl bg-blush-soft/50 px-4 py-3 text-sm text-rose-deep">
+                💌 The recipient will add their own address using the link we give you to share, so
+                you don&rsquo;t need it here.
+              </p>
+            </section>
+          )}
+          {fulfillment === "delivery" && !giftSelfSchedule && (
             <section className="flex flex-col gap-4">
               <h2 className="font-display text-xl font-semibold">Delivery address</h2>
               <Field label="Address" htmlFor="line1" error={errors.line1}>
@@ -495,7 +607,18 @@ export default function CheckoutPage() {
               />
             )}
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Date" htmlFor="date" error={errors.date}>
+              <Field
+                label="Date"
+                htmlFor="date"
+                error={
+                  errors.date ||
+                  (date && date < earliest
+                    ? `Earliest available is ${formatLongDate(earliest)} (we bake to order).`
+                    : date && settings.blackoutDates.includes(date)
+                      ? "We're away that day. Please choose another date."
+                      : undefined)
+                }
+              >
                 <input
                   id="date"
                   type="date"
@@ -505,21 +628,47 @@ export default function CheckoutPage() {
                   onChange={(e) => setDate(e.target.value)}
                 />
               </Field>
-              <Field label="Time window" htmlFor="timeWindow" error={errors.timeWindow}>
-                <select
-                  id="timeWindow"
-                  className={inputClass}
-                  value={timeWindow}
-                  onChange={(e) => setTimeWindow(e.target.value)}
-                >
-                  {settings.timeWindows.map((window) => (
-                    <option key={window} value={window}>
-                      {window}
-                    </option>
-                  ))}
-                </select>
-              </Field>
+              {giftSelfSchedule ? (
+                <Field label="Time window" htmlFor="timeWindow">
+                  <p
+                    id="timeWindow"
+                    className="rounded-xl bg-marble/60 px-4 py-3 text-sm text-muted"
+                  >
+                    The recipient chooses their own time on the day you pick.
+                  </p>
+                </Field>
+              ) : (
+                <Field label="Time window" htmlFor="timeWindow" error={errors.timeWindow}>
+                  <select
+                    id="timeWindow"
+                    className={inputClass}
+                    value={timeWindow}
+                    onChange={(e) => setTimeWindow(e.target.value)}
+                  >
+                    {settings.timeWindows.map((window) => {
+                      const cap = dayCapacity?.perWindowCap ?? null;
+                      const used = dayCapacity?.windowCounts[window] ?? 0;
+                      const left = cap && cap > 0 ? cap - used : null;
+                      const full = left != null && left <= 0;
+                      return (
+                        <option key={window} value={window} disabled={full && window !== timeWindow}>
+                          {window}
+                          {left != null ? (full ? " · full" : ` · ${left} left`) : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </Field>
+              )}
             </div>
+            {dayCapacity &&
+              dayCapacity.dailyOrderCap != null &&
+              dayCapacity.dailyOrderCap > 0 &&
+              dayCapacity.dayCount >= dayCapacity.dailyOrderCap && (
+                <p role="status" className="rounded-xl bg-blush-soft/60 px-3 py-2 text-sm text-rose-deep">
+                  {formatLongDate(date)} is fully booked. Please choose another date.
+                </p>
+              )}
           </section>
 
           {/* Contact */}
@@ -648,7 +797,11 @@ export default function CheckoutPage() {
                     className={inputClass}
                     value={recipientPhone}
                     onChange={(e) => setRecipientPhone(e.target.value)}
-                    placeholder="So our courier can reach them on delivery"
+                    placeholder={
+                      fulfillment === "delivery"
+                        ? "So our courier can reach them on delivery"
+                        : "In case we need to reach them"
+                    }
                   />
                 </Field>
                 <Field label="Gift message" htmlFor="giftMessage" optional>
@@ -662,6 +815,25 @@ export default function CheckoutPage() {
                   />
                 </Field>
                 {fulfillment === "delivery" && (
+                  <div className="flex items-start gap-3 rounded-xl border border-line bg-white p-3">
+                    <Toggle
+                      checked={letRecipientSchedule}
+                      onChange={setLetRecipientSchedule}
+                      label="Let them choose the delivery time and address"
+                      className="mt-0.5"
+                    />
+                    <span className="text-sm">
+                      <span className="block font-semibold text-ink">
+                        Let them pick the time and address
+                      </span>
+                      <span className="block text-muted">
+                        Don&rsquo;t know where they&rsquo;ll be? We&rsquo;ll give you a link to
+                        share so they fill it in themselves.
+                      </span>
+                    </span>
+                  </div>
+                )}
+                {fulfillment === "delivery" && !letRecipientSchedule && (
                   <p className="text-sm text-muted">
                     💌 We&rsquo;ll deliver to the address above, so make sure it&rsquo;s the
                     recipient&rsquo;s.
@@ -697,7 +869,7 @@ export default function CheckoutPage() {
 
             {/* Promo code */}
             {features.promos && (
-            <div className="mt-4">
+            <div className="mt-4" aria-live="polite">
               {appliedPromo ? (
                 <div className="flex items-center justify-between gap-2 rounded-xl bg-blush-soft/60 p-3 text-sm text-rose-deep">
                   <span>
@@ -721,7 +893,8 @@ export default function CheckoutPage() {
                     value={promoInput}
                     onChange={(e) => setPromoInput(e.target.value)}
                     placeholder="Promo code"
-                    className={cn(inputClass, "py-2 text-sm uppercase")}
+                    aria-label="Promo code"
+                    className={cn(inputClass, "py-2 text-base uppercase sm:text-sm")}
                   />
                   <button
                     type="button"
@@ -746,7 +919,7 @@ export default function CheckoutPage() {
                   className="mt-0.5"
                 />
                 <span>
-                  🏆 Use my {pointsBalance} {pointsBalance === 1 ? "point" : "points"}
+                  ✨ Use my {pointsBalance} {pointsBalance === 1 ? "point" : "points"}
                   {pointsDiscountCents > 0 && <> (−{formatPrice(pointsDiscountCents)})</>}
                 </span>
               </div>
@@ -780,19 +953,27 @@ export default function CheckoutPage() {
               </div>
             </dl>
 
-            <p className="mt-4 rounded-xl bg-marble/60 px-3 py-2 text-xs text-muted">
-              No payment is taken here. Place your order, then send it to us on WhatsApp from the next
-              page and we will confirm and share PayNow details.
+            <p className="mt-4 rounded-xl bg-marble/60 px-3 py-2 text-sm text-muted">
+              No payment is taken here. Place your order, then send it to us on WhatsApp from the
+              next page. We&rsquo;ll confirm it and reply with PayNow details so you can pay by
+              transfer.
             </p>
 
             {dietaryConflicts.length > 0 && (
-              <p className="mt-2 rounded-xl bg-blush-soft/60 px-3 py-2 text-sm text-rose-deep">
+              <p
+                role="status"
+                className="mt-2 rounded-xl bg-blush-soft/60 px-3 py-2 text-sm text-rose-deep"
+              >
                 Heads up: {dietaryConflicts.join(", ")} may not match your saved dietary
                 preferences. You can still order if that&rsquo;s fine.
               </p>
             )}
 
-            {errors.order && <p className="mt-2 text-sm text-rose-deep">{errors.order}</p>}
+            {errors.order && (
+              <p role="alert" className="mt-2 text-sm text-rose-deep">
+                {errors.order}
+              </p>
+            )}
 
             <button
               type="submit"
@@ -801,9 +982,12 @@ export default function CheckoutPage() {
             >
               {submitting ? "Placing order…" : `Place order · ${formatPrice(totalCents)}`}
             </button>
+            <p className="mt-2 text-center text-xs text-muted">
+              You&rsquo;ll pay by PayNow after confirming on WhatsApp.
+            </p>
             <Link
               href="/cart"
-              className="mt-3 block text-center text-sm font-semibold text-rose transition hover:text-rose-deep"
+              className="mt-3 block text-center text-sm font-semibold text-rose-deep transition hover:text-rose"
             >
               Back to cart
             </Link>

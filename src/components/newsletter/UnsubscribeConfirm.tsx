@@ -36,7 +36,7 @@ export function UnsubscribeConfirm({ token }: { token: string }) {
         {state === "busy" ? "Unsubscribing…" : "Unsubscribe me"}
       </button>
       {state === "error" && <p className="mt-3 text-sm text-rose-deep">{error}</p>}
-      <Link href="/" className="mt-4 block text-sm font-semibold text-rose hover:text-rose-deep">
+      <Link href="/" className="mt-4 block text-sm font-semibold text-rose-deep hover:text-rose">
         Back to the bakery
       </Link>
     </div>

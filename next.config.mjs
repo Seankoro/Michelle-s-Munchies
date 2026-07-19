@@ -1,10 +1,17 @@
+import { withSentryConfig } from "@sentry/nextjs";
+
+// next/image needs the Supabase Storage host allow-listed. Derive it from the
+// same env var the CSP uses so pointing at a new Supabase project needs no
+// code change here.
+const supabaseHost = process.env.NEXT_PUBLIC_SUPABASE_URL
+  ? new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).hostname
+  : "ddwesutmtlytbcluqcuc.supabase.co";
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {
     // Product images will be served from Supabase Storage.
-    remotePatterns: [
-      { protocol: "https", hostname: "ddwesutmtlytbcluqcuc.supabase.co" },
-    ],
+    remotePatterns: [{ protocol: "https", hostname: supabaseHost }],
   },
   // Security headers applied to every route. The CSP is a touch looser in dev
   // (Next's HMR needs eval + websockets); production tightens those.
@@ -18,7 +25,7 @@ const nextConfig = {
       "style-src 'self' 'unsafe-inline'",
       `img-src 'self' data: blob: ${supabase}`.trim(),
       "font-src 'self' data:",
-      `connect-src 'self' ${supabase} https://api.stripe.com${isDev ? " ws: wss:" : ""}`.trim(),
+      `connect-src 'self' ${supabase} https://api.stripe.com https://*.ingest.de.sentry.io${isDev ? " ws: wss:" : ""}`.trim(),
       "frame-src https://js.stripe.com https://checkout.stripe.com https://accounts.google.com",
       "frame-ancestors 'none'",
       "form-action 'self'",
@@ -64,4 +71,11 @@ const nextConfig = {
   },
 };
 
-export default nextConfig;
+// Error reporting only. Source-map upload is off until a Sentry auth token is
+// configured, so builds need no Sentry account access.
+export default withSentryConfig(nextConfig, {
+  silent: true,
+  telemetry: false,
+  sourcemaps: { disable: true },
+  disableLogger: true,
+});

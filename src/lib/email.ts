@@ -1,6 +1,9 @@
 import "server-only";
+import * as Sentry from "@sentry/nextjs";
 import { Resend } from "resend";
-import { orderStatusLabels, type OrderStatus } from "@/lib/order";
+import { formatLongDate, orderStatusLabels, type OrderStatus } from "@/lib/order";
+import { formatPrice } from "@/lib/catalog";
+import { getShopWhatsAppNumber, buildOrderWhatsAppUrl, buildFulfillmentLabel } from "@/lib/whatsapp";
 import { escapeHtml } from "@/lib/text";
 
 let cached: Resend | null = null;
@@ -14,10 +17,6 @@ function getResend(): Resend | null {
 
 const FROM = process.env.RESEND_FROM_EMAIL ?? "Michelle's Munchies <onboarding@resend.dev>";
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
-
-function money(cents: number): string {
-  return `S$${(cents / 100).toFixed(2)}`;
-}
 
 /** Minimal data each email needs, a subset of an order. */
 export type OrderEmailData = {
@@ -33,6 +32,9 @@ export type OrderEmailData = {
   }[];
   subtotalCents: number;
   deliveryFeeCents: number;
+  /** Combined promo + points discount already applied to totalCents. */
+  discountCents?: number;
+  promoCode?: string | null;
   totalCents: number;
   fulfillmentType: "pickup" | "delivery";
   scheduledDate: string;
@@ -51,9 +53,9 @@ function giftBlock(order: OrderEmailData, forOwner: boolean): string {
     ? `<p style="margin:8px 0 0;font-style:italic">&ldquo;${escapeHtml(order.giftMessage)}&rdquo;</p>`
     : "";
   const ownerNote = forOwner
-    ? `<p style="margin:8px 0 0;font-size:13px;color:#8a767e">Please include a handwritten card and leave the price off anything in the package.</p>`
+    ? `<p style="margin:8px 0 0;font-size:13px;color:#8b746d">Please include a handwritten card and leave the price off anything in the package.</p>`
     : "";
-  return `<div style="background:#fae3ea;border-radius:12px;padding:14px 16px;margin:12px 0">
+  return `<div style="background:#ffe3e8;border-radius:12px;padding:14px 16px;margin:12px 0">
       <p style="margin:0;font-weight:700">🎁 ${forOwner ? "Gift order" : `A gift for ${recipient}`}</p>
       ${forOwner ? `<p style="margin:6px 0 0">For: <strong>${recipient}</strong></p>` : ""}
       ${message}
@@ -71,7 +73,7 @@ function noteAnswersBlock(order: OrderEmailData): string {
         `<li style="padding:2px 0"><strong>${escapeHtml(a.label)}:</strong> ${escapeHtml(a.answer)}</li>`,
     )
     .join("");
-  return `<div style="background:#f4f0ec;border-radius:12px;padding:12px 16px;margin:12px 0">
+  return `<div style="background:#fbeef1;border-radius:12px;padding:12px 16px;margin:12px 0">
       <p style="margin:0 0 4px;font-weight:700">Order details</p>
       <ul style="margin:0;padding-left:18px">${rows}</ul>
     </div>`;
@@ -80,10 +82,10 @@ function noteAnswersBlock(order: OrderEmailData): string {
 function shell(heading: string, bodyHtml: string, trackingToken?: string): string {
   const trackUrl = trackingToken ? `${SITE_URL}/track/${trackingToken}` : null;
   return `
-  <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#fdf8f4;padding:24px;color:#4a3a40">
-    <div style="max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #ece1e5;border-radius:18px;overflow:hidden">
-      <div style="background:#fae3ea;padding:20px 24px;text-align:center">
-        <div style="font-size:22px;font-weight:700">🎀 Michelle&rsquo;s Munchies</div>
+  <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#fff7f9;padding:24px;color:#3d2823">
+    <div style="max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #f1dbe0;border-radius:18px;overflow:hidden">
+      <div style="background:#ffe3e8;padding:20px 24px;text-align:center">
+        <div style="font-size:22px;font-weight:700"><img src="${SITE_URL}/logo.png" alt="" width="34" height="34" style="vertical-align:middle;margin-right:8px"/>Michelle&rsquo;s Munchies</div>
       </div>
       <div style="padding:24px">
         <h1 style="font-size:20px;margin:0 0 12px">${heading}</h1>
@@ -91,12 +93,12 @@ function shell(heading: string, bodyHtml: string, trackingToken?: string): strin
         ${
           trackUrl
             ? `<p style="margin:24px 0 0;text-align:center">
-                 <a href="${trackUrl}" style="display:inline-block;background:#b8466f;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:999px">Track your order</a>
+                 <a href="${trackUrl}" style="display:inline-block;background:#bc4a6a;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:999px">Track your order</a>
                </p>`
             : ""
         }
       </div>
-      <div style="padding:16px 24px;border-top:1px solid #ece1e5;color:#8a767e;font-size:12px;text-align:center">
+      <div style="padding:16px 24px;border-top:1px solid #f1dbe0;color:#8b746d;font-size:12px;text-align:center">
         Michelle&rsquo;s Munchies · Singapore
       </div>
     </div>
@@ -108,22 +110,28 @@ function itemRows(order: OrderEmailData): string {
     .map((item) => {
       const opts =
         item.selectedOptions.length > 0
-          ? ` <span style="color:#8a767e">(${item.selectedOptions.map((o) => o.valueLabel).join(", ")})</span>`
+          ? ` <span style="color:#8b746d">(${item.selectedOptions.map((o) => escapeHtml(o.valueLabel)).join(", ")})</span>`
           : "";
       return `<tr>
-        <td style="padding:4px 0">${item.quantity}× ${item.name}${opts}</td>
-        <td style="padding:4px 0;text-align:right">${money(item.unitPriceCents * item.quantity)}</td>
+        <td style="padding:4px 0">${item.quantity}× ${escapeHtml(item.name)}${opts}</td>
+        <td style="padding:4px 0;text-align:right">${formatPrice(item.unitPriceCents * item.quantity)}</td>
       </tr>`;
     })
     .join("");
 
   return `<table style="width:100%;border-collapse:collapse;font-size:14px;margin:12px 0">
     ${rows}
-    <tr><td colspan="2" style="border-top:1px solid #ece1e5;padding-top:8px"></td></tr>
-    <tr><td style="color:#8a767e">Subtotal</td><td style="text-align:right">${money(order.subtotalCents)}</td></tr>
-    <tr><td style="color:#8a767e">${order.fulfillmentType === "pickup" ? "Pickup" : "Delivery"}</td>
-        <td style="text-align:right">${order.deliveryFeeCents === 0 ? "Free" : money(order.deliveryFeeCents)}</td></tr>
-    <tr><td style="font-weight:700">Total</td><td style="text-align:right;font-weight:700">${money(order.totalCents)}</td></tr>
+    <tr><td colspan="2" style="border-top:1px solid #f1dbe0;padding-top:8px"></td></tr>
+    <tr><td style="color:#8b746d">Subtotal</td><td style="text-align:right">${formatPrice(order.subtotalCents)}</td></tr>
+    <tr><td style="color:#8b746d">${order.fulfillmentType === "pickup" ? "Pickup" : "Delivery"}</td>
+        <td style="text-align:right">${order.deliveryFeeCents === 0 ? "Free" : formatPrice(order.deliveryFeeCents)}</td></tr>
+    ${
+      order.discountCents && order.discountCents > 0
+        ? `<tr><td style="color:#bc4a6a">Discount${order.promoCode ? ` (${escapeHtml(order.promoCode)})` : ""}</td>
+        <td style="text-align:right;color:#bc4a6a">−${formatPrice(order.discountCents)}</td></tr>`
+        : ""
+    }
+    <tr><td style="font-weight:700">Total</td><td style="text-align:right;font-weight:700">${formatPrice(order.totalCents)}</td></tr>
   </table>`;
 }
 
@@ -137,10 +145,16 @@ async function send(to: string, subject: string, html: string): Promise<void> {
     const { error } = await resend.emails.send({ from: FROM, to, subject, html });
     if (error) {
       console.error(`[email] Resend rejected "${subject}" to ${to}:`, error);
+      Sentry.captureMessage(`Resend rejected "${subject}"`, {
+        level: "error",
+        extra: { to, error },
+      });
     }
   } catch (error) {
-    // Email must never break the order flow, log and move on.
+    // Email must never break the order flow. Log, report, and move on so the
+    // customer's order still succeeds while Michelle finds out something broke.
     console.error(`[email] Failed to send "${subject}" to ${to}:`, error);
+    Sentry.captureException(error, { extra: { subject, to } });
   }
 }
 
@@ -149,10 +163,41 @@ export async function sendOrderEmails(order: OrderEmailData): Promise<void> {
   const fulfilment =
     order.fulfillmentType === "pickup" ? "Self-pickup" : "Delivery";
 
+  // Orders are unpaid at placement, nothing happens until the customer
+  // confirms on WhatsApp. This email is the safety net for anyone who closed
+  // the tab before tapping the WhatsApp button on the tracking page, so it
+  // must carry the same confirm link, not imply baking has started.
+  const waNumber = getShopWhatsAppNumber();
+  const waUrl = waNumber
+    ? buildOrderWhatsAppUrl(waNumber, {
+        orderNumber: order.orderNumber,
+        items: order.items.map((item) => ({
+          quantity: item.quantity,
+          name: item.name,
+          options: item.selectedOptions.map((o) => o.valueLabel),
+        })),
+        totalLabel: formatPrice(order.totalCents),
+        customerName: order.name,
+        fulfillmentLabel: buildFulfillmentLabel(
+          order.fulfillmentType,
+          formatLongDate(order.scheduledDate),
+          order.timeWindow,
+        ),
+      })
+    : null;
+  const confirmBlock = waUrl
+    ? `<div style="background:#ffe3e8;border-radius:12px;padding:16px;margin:12px 0;text-align:center">
+        <p style="margin:0;font-weight:700">One more step</p>
+        <p style="margin:6px 0 12px;font-size:14px">Send your order to us on WhatsApp. We&rsquo;ll confirm it and reply with PayNow details so you can pay by transfer.</p>
+        <a href="${waUrl}" style="display:inline-block;background:#bc4a6a;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:999px">Confirm on WhatsApp</a>
+      </div>`
+    : "";
+
   const customerBody = `
-    <p>Hi ${order.name.split(" ")[0]}, thanks for your order! We&rsquo;ve received it and will start baking.</p>
+    <p>Hi ${escapeHtml(order.name.split(" ")[0])}, thanks for your order! We&rsquo;ve received it, and once it&rsquo;s confirmed on WhatsApp, Michelle starts baking.</p>
+    ${confirmBlock}
     <p style="margin:8px 0"><strong>Order ${order.orderNumber}</strong><br/>
-      ${fulfilment} · ${order.scheduledDate} · ${order.timeWindow}</p>
+      ${fulfilment} · ${formatLongDate(order.scheduledDate)} · ${escapeHtml(order.timeWindow)}</p>
     ${giftBlock(order, false)}
     ${itemRows(order)}`;
   await send(order.email, `We got your order, ${order.orderNumber}`, shell("Order received 🎀", customerBody, order.trackingToken));
@@ -160,15 +205,25 @@ export async function sendOrderEmails(order: OrderEmailData): Promise<void> {
   const owner = process.env.OWNER_NOTIFICATION_EMAIL;
   if (owner) {
     const ownerBody = `
-      <p>New order from <strong>${order.name}</strong> (${order.email}).</p>
+      <p>New order from <strong>${escapeHtml(order.name)}</strong> (${escapeHtml(order.email)}).</p>
       <p style="margin:8px 0"><strong>Order ${order.orderNumber}</strong><br/>
-        ${fulfilment} · ${order.scheduledDate} · ${order.timeWindow}</p>
+        ${fulfilment} · ${formatLongDate(order.scheduledDate)} · ${escapeHtml(order.timeWindow)}</p>
       ${giftBlock(order, true)}
       ${noteAnswersBlock(order)}
       ${itemRows(order)}`;
     await send(owner, `${order.isGift ? "New gift order" : "New order"}: ${order.orderNumber}`, shell("New order received", ownerBody));
   }
 }
+
+/** One warm line per status, these are the emails customers actually enjoy. */
+const statusLines: Partial<Record<OrderStatus, string>> = {
+  received: "your order is in Michelle's bake book.",
+  confirmed: "your order is confirmed and on Michelle's baking list.",
+  baking: "your treats are in the oven right now.",
+  ready: "everything is boxed up and tied with a bow. See you soon!",
+  out_for_delivery: "your box is on its way to you.",
+  completed: "we hope every bite was worth it. Come back hungry!",
+};
 
 /** Customer notification when Michelle advances the order's status. */
 export async function sendStatusEmail(params: {
@@ -179,11 +234,103 @@ export async function sendStatusEmail(params: {
   status: OrderStatus;
 }): Promise<void> {
   const label = orderStatusLabels[params.status];
+  const line = statusLines[params.status] ?? "here&rsquo;s an update on your order.";
   const body = `
-    <p>Hi ${params.name.split(" ")[0]}, here&rsquo;s an update on your order.</p>
+    <p>Hi ${escapeHtml(params.name.split(" ")[0])}, ${line}</p>
     <p style="margin:8px 0"><strong>Order ${params.orderNumber}</strong> is now
-      <strong style="color:#b8466f">${label}</strong>.</p>`;
+      <strong style="color:#bc4a6a">${label}</strong>.</p>`;
   await send(params.email, `Order ${params.orderNumber}: ${label}`, shell("Order update", body, params.trackingToken));
+}
+
+/** After a completed order, invite the buyer to review the treats they bought. */
+export async function sendReviewRequestEmail(params: {
+  to: string;
+  name: string;
+  orderNumber: string;
+  products: { name: string; slug: string }[];
+}): Promise<void> {
+  if (params.products.length === 0) return;
+  const links = params.products
+    .map(
+      (p) =>
+        `<li style="padding:4px 0"><a href="${SITE_URL}/menu/${p.slug}" style="color:#bc4a6a;font-weight:700;text-decoration:none">${escapeHtml(p.name)}</a></li>`,
+    )
+    .join("");
+  const body = `
+    <p>Hi ${escapeHtml(params.name.split(" ")[0])}, we hope every bite of order ${params.orderNumber} was worth it!</p>
+    <p style="margin:8px 0">A quick star rating helps other customers and means the world to a small home bakery. Tap a treat to leave a review:</p>
+    <ul style="margin:8px 0;padding-left:18px">${links}</ul>`;
+  await send(params.to, "How were your treats? 🎀", shell("Leave a review", body));
+}
+
+/** Tell the owner a customer added items to an existing order. */
+export async function sendItemsAddedEmail(
+  orderNumber: string,
+  customerName: string,
+  addedItems: string[],
+): Promise<void> {
+  const owner = process.env.OWNER_NOTIFICATION_EMAIL;
+  if (!owner || addedItems.length === 0) return;
+  const list = addedItems
+    .map((line) => `<li style="padding:2px 0">${escapeHtml(line)}</li>`)
+    .join("");
+  const body = `
+    <p><strong>${escapeHtml(customerName)}</strong> added items to order ${orderNumber}:</p>
+    <ul style="margin:8px 0;padding-left:18px">${list}</ul>
+    <p style="font-size:13px;color:#8b746d">The order total was updated. Same date and delivery.</p>`;
+  await send(owner, `Items added to ${orderNumber}`, shell("Order updated", body));
+}
+
+/** Tell the owner a gift recipient has filled in their delivery details. */
+export async function sendGiftScheduledEmail(
+  orderNumber: string,
+  recipientName: string | null,
+  address: { line1: string; unit?: string; postalCode: string },
+  timeWindow: string,
+): Promise<void> {
+  const owner = process.env.OWNER_NOTIFICATION_EMAIL;
+  if (!owner) return;
+  const who = recipientName?.trim() ? escapeHtml(recipientName.trim()) : "The recipient";
+  const line = `${escapeHtml(address.line1)}${address.unit ? `, ${escapeHtml(address.unit)}` : ""}, Singapore ${escapeHtml(address.postalCode)}`;
+  const body = `
+    <p><strong>${who}</strong> confirmed delivery details for gift order ${orderNumber}:</p>
+    <p style="margin:8px 0"><strong>When:</strong> ${escapeHtml(timeWindow)}</p>
+    <p style="margin:8px 0"><strong>Where:</strong> ${line}</p>`;
+  await send(owner, `Gift ${orderNumber} scheduled`, shell("Gift details confirmed", body));
+}
+
+/** Warm nudge for a customer who hasn't ordered in a while. */
+export async function sendWinbackEmail(to: string, name: string): Promise<void> {
+  const first = (name || "there").split(" ")[0];
+  const body = `
+    <p>Hi ${escapeHtml(first)}, it&rsquo;s been a while! Michelle has been baking up a storm and we&rsquo;d love to treat you again.</p>
+    <p style="margin:24px 0 0;text-align:center">
+      <a href="${SITE_URL}/menu" style="display:inline-block;background:#bc4a6a;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:999px">See what&rsquo;s fresh</a>
+    </p>`;
+  await send(to, "We miss you at Michelle's Munchies 🎀", shell("Come back for a treat", body));
+}
+
+/** Reminder that a saved occasion is coming up, with a nudge to reorder in time. */
+export async function sendOccasionReminderEmail(
+  to: string,
+  name: string,
+  label: string,
+  daysBefore: number,
+): Promise<void> {
+  const first = (name || "there").split(" ")[0];
+  const when =
+    daysBefore <= 0
+      ? "is today"
+      : daysBefore === 1
+        ? "is tomorrow"
+        : `is in ${daysBefore} days`;
+  const body = `
+    <p>Hi ${escapeHtml(first)}, a little reminder: <strong>${escapeHtml(label)}</strong> ${when}. 🎀</p>
+    <p>Order now so Michelle has time to bake something special. Lead times mean the earlier the better!</p>
+    <p style="margin:24px 0 0;text-align:center">
+      <a href="${SITE_URL}/menu" style="display:inline-block;background:#bc4a6a;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:999px">Order a treat</a>
+    </p>`;
+  await send(to, `${label} is coming up 🎀`, shell("A treat-worthy date is near", body));
 }
 
 /** Gentle nudge for a cart that was started but not checked out. */
@@ -198,7 +345,7 @@ export async function sendAbandonedCartEmail(
     <p>You left some treats in your cart. They&rsquo;re still waiting for you! 🎀</p>
     <ul style="margin:8px 0;padding-left:18px">${list}</ul>
     <p style="margin:24px 0 0;text-align:center">
-      <a href="${SITE_URL}/cart" style="display:inline-block;background:#b8466f;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:999px">Finish your order</a>
+      <a href="${SITE_URL}/cart" style="display:inline-block;background:#bc4a6a;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:999px">Finish your order</a>
     </p>`;
   await send(to, "Still thinking it over? 🎀", shell("Your cart is waiting", body));
 }
@@ -212,9 +359,9 @@ export async function sendNewsletterEmail(
 ): Promise<void> {
   const unsubUrl = `${SITE_URL}/unsubscribe?token=${unsubscribeToken}`;
   const body = `${bodyHtml}
-    <p style="margin:24px 0 0;font-size:12px;color:#8a767e;text-align:center">
+    <p style="margin:24px 0 0;font-size:12px;color:#8b746d;text-align:center">
       You're getting this because you signed up at Michelle's Munchies.
-      <a href="${unsubUrl}" style="color:#8a767e">Unsubscribe</a>.
+      <a href="${unsubUrl}" style="color:#8b746d">Unsubscribe</a>.
     </p>`;
   await send(to, subject, shell(subject, body));
 }
@@ -253,7 +400,7 @@ export async function sendBirthdayEmail(to: string, points: number): Promise<voi
     <p style="margin:8px 0">We&rsquo;ve popped <strong>${points} reward points</strong> into your
       account as a little treat. Enjoy something sweet on us.</p>
     <p style="margin:24px 0 0;text-align:center">
-      <a href="${SITE_URL}/menu" style="display:inline-block;background:#b8466f;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:999px">Treat yourself</a>
+      <a href="${SITE_URL}/menu" style="display:inline-block;background:#bc4a6a;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:999px">Treat yourself</a>
     </p>`;
   await send(to, "Happy birthday! 🎂 A treat from us", shell("Happy birthday!", body));
 }
@@ -269,7 +416,7 @@ export async function sendBackInStockEmail(
     <p>Good news! <strong>${escapeHtml(productName)}</strong> is back in stock.</p>
     <p style="margin:8px 0">Pop back in to order before it sells out again.</p>
     <p style="margin:24px 0 0;text-align:center">
-      <a href="${url}" style="display:inline-block;background:#b8466f;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:999px">Order now</a>
+      <a href="${url}" style="display:inline-block;background:#bc4a6a;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:999px">Order now</a>
     </p>`;
   await send(to, `${productName} is back! 🎀`, shell("Back in stock", body));
 }

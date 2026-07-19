@@ -54,7 +54,7 @@ export function NotifyBackInStock({
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="you@email.com"
-          className="flex-1 rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none focus:border-rose"
+          className="flex-1 rounded-xl border border-line bg-white px-3 py-2 text-sm focus:border-rose"
         />
         <button
           type="submit"

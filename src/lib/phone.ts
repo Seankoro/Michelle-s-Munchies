@@ -25,3 +25,12 @@ export function normalizeSgPhone(input: string): string | null {
   if (!local) return null;
   return `+65 ${local.slice(0, 4)} ${local.slice(4)}`;
 }
+
+/**
+ * Country-coded digits for a wa.me link, e.g. "6591234567", or null if the
+ * input is not a valid SG mobile. wa.me wants digits only, no plus or spaces.
+ */
+export function toWhatsAppDigits(input: string): string | null {
+  const local = toLocalDigits(input);
+  return local ? `65${local}` : null;
+}

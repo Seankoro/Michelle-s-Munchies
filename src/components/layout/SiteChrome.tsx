@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { SiteHeader } from "./SiteHeader";
-import { SiteFooter } from "./SiteFooter";
+import { SiteFooter, type FooterChannel } from "./SiteFooter";
 import { WishlistProvider } from "@/components/wishlist/WishlistContext";
 import { FeaturesProvider } from "@/components/features/FeaturesProvider";
 import type { FeatureFlags } from "@/lib/settings";
@@ -17,9 +17,11 @@ import type { FeatureFlags } from "@/lib/settings";
 export function SiteChrome({
   children,
   features,
+  footerChannels,
 }: {
   children: ReactNode;
   features: FeatureFlags;
+  footerChannels: FooterChannel[];
 }) {
   const pathname = usePathname();
   const isAdmin = pathname?.startsWith("/admin");
@@ -29,9 +31,18 @@ export function SiteChrome({
   return (
     <FeaturesProvider value={features}>
       <WishlistProvider>
+        {/* Skip link: keyboard/screen-reader users bypass the header nav. */}
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-lg focus:bg-rose-deep focus:px-4 focus:py-2 focus:font-semibold focus:text-white focus:shadow-soft"
+        >
+          Skip to content
+        </a>
         <SiteHeader />
-        {children}
-        <SiteFooter />
+        <div id="main-content" tabIndex={-1} className="outline-none">
+          {children}
+        </div>
+        <SiteFooter channels={footerChannels} />
       </WishlistProvider>
     </FeaturesProvider>
   );

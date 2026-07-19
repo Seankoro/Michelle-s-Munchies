@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Button } from "@/components/ui/Button";
 
 export function ReferralCard({
   code,
@@ -25,8 +26,8 @@ export function ReferralCard({
   }
 
   return (
-    <div className="rounded-2xl bg-sky/30 p-5">
-      <p className="text-sm font-semibold text-sky-deep">🎁 Invite friends</p>
+    <div className="rounded-2xl bg-blush-soft/70 p-5">
+      <p className="text-sm font-semibold text-rose-deep">🎁 Invite friends</p>
       <p className="mt-1 text-sm text-ink">
         Share your code. When a friend places their first order, you earn{" "}
         <span className="font-semibold">{referrerPoints} points</span> and they get{" "}
@@ -36,13 +37,9 @@ export function ReferralCard({
         <span className="rounded-xl border border-line bg-white px-4 py-2 font-display text-lg font-semibold tracking-[0.2em] text-ink">
           {code}
         </span>
-        <button
-          type="button"
-          onClick={copyLink}
-          className="rounded-full bg-rose-deep px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110"
-        >
+        <Button type="button" size="sm" onClick={copyLink}>
           {copied ? "Link copied ✓" : "Copy invite link"}
-        </button>
+        </Button>
       </div>
     </div>
   );

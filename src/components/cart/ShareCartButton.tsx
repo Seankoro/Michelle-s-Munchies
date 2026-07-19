@@ -17,8 +17,12 @@ export function ShareCartButton() {
     const payload = encodeSharedCart(
       items.map((i) => ({
         productId: i.productId,
-        valueLabels: i.selectedOptions.map((o) => o.valueLabel),
+        selections: i.selectedOptions.map((o) => ({
+          optionName: o.optionName,
+          valueLabel: o.valueLabel,
+        })),
         quantity: i.quantity,
+        name: i.name,
       })),
     );
     const url = `${window.location.origin}/cart/shared?c=${encodeURIComponent(payload)}`;
@@ -36,7 +40,7 @@ export function ShareCartButton() {
     <button
       type="button"
       onClick={share}
-      className="mt-3 block w-full text-center text-sm font-semibold text-rose transition hover:text-rose-deep"
+      className="mt-3 block w-full text-center text-sm font-semibold text-rose-deep transition hover:text-rose"
     >
       {copied ? "Link copied ✓" : "🔗 Share this order"}
     </button>

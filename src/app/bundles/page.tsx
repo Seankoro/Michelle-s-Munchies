@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { fetchActiveBundles } from "@/lib/bundles";
 import { fetchStoreSettings } from "@/lib/settings";
 import { BundleCard } from "@/components/product/BundleCard";
+import { Reveal } from "@/components/ui/Reveal";
 
 export const metadata: Metadata = {
   title: "Bundles",
@@ -14,11 +15,13 @@ export default async function BundlesPage() {
   const bundles = await fetchActiveBundles();
 
   return (
-    <main className="mx-auto max-w-none px-6 py-10 lg:px-10">
-      <h1 className="font-display text-4xl font-semibold">Bundles</h1>
-      <p className="mt-2 text-muted">
-        Curated sets, ready to gift or share.
-      </p>
+    <main className="mx-auto max-w-none px-6 py-12 lg:px-10">
+      <Reveal>
+        <header className="text-center">
+          <h1 className="font-display text-4xl font-semibold sm:text-5xl">Bundles</h1>
+          <p className="mx-auto mt-3 max-w-xl text-muted">Curated sets, ready to gift or share.</p>
+        </header>
+      </Reveal>
       {bundles.length === 0 ? (
         <p className="mt-8 text-muted">No bundles available right now. Check back soon!</p>
       ) : (

@@ -20,7 +20,7 @@ Install the dependencies.
 npm install
 ```
 
-Add a `.env.local` file in the project root. At minimum set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` so the app can reach your Supabase project. Resend, Stripe, and Twilio keys are optional and switch on email, card payments, and SMS when present.
+Add a `.env.local` file in the project root. Copy `.env.local.example` for the full annotated list. To browse the menu you only need `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Checkout and order management also need `SUPABASE_SERVICE_ROLE_KEY`, the admin panel needs `ADMIN_EMAILS`, and the order confirmation flow needs `WHATSAPP_NUMBER`. Resend, Stripe, and Twilio keys are optional and switch on email, card payments, and WhatsApp or SMS notifications when present.
 
 Start the dev server.
 
@@ -47,3 +47,10 @@ The app runs at http://localhost:3000.
 ## Deployment
 
 The app deploys on Vercel from the main branch. Set the same environment variables in the Vercel project, then point Supabase Auth and any payment or email providers at the production domain.
+
+Two extra steps the dashboard won't remind you about:
+
+- Set up an external scheduler (for example cron-job.org) to GET `/api/cron` hourly with the header `Authorization: Bearer $CRON_SECRET`. It runs abandoned-cart reminders, birthday rewards, and seasonal drop notifications.
+- Content lives in the admin panel: upload product photos, set store settings, and write the mascot's speech bubble line under Settings, "Michelle says". The brand images in `public/` (`logo.png`, `icon.png`, `apple-icon.png`, `og.png`) ship with the repo.
+
+If you point the app at a different Supabase project, `next.config.mjs` derives the image host from `NEXT_PUBLIC_SUPABASE_URL` automatically.

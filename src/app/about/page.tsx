@@ -15,8 +15,8 @@ export default function AboutPage() {
     <main className="mx-auto max-w-4xl px-6 py-12">
       <Reveal>
         <header className="text-center">
-          <p className="mb-3 text-sm font-semibold uppercase tracking-[0.2em] text-rose">
-            Our Story
+          <p className="mb-3 text-sm font-semibold uppercase tracking-[0.2em] text-rose-deep">
+            Our story
           </p>
           <h1 className="font-display text-4xl font-semibold sm:text-5xl">
             Baked at home, in small batches

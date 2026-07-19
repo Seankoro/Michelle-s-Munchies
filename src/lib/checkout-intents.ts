@@ -35,11 +35,11 @@ export async function markConverted(email: string): Promise<void> {
   const supabase = createAdminClient();
   await supabase
     .from("checkout_intents")
-    .update({ converted_order_id: null, reminded_at: new Date().toISOString() })
+    .update({ reminded_at: new Date().toISOString() })
     .eq("email", email.trim().toLowerCase())
     .is("reminded_at", null);
   // Stamping reminded_at on conversion prevents a later reminder. We don't have
-  // the order id here, so converted_order_id stays null but the intent is closed.
+  // the order id here, so converted_order_id stays null and the intent is closed.
 }
 
 /**

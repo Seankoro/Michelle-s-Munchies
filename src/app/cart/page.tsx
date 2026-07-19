@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { useCart } from "@/components/cart/CartContext";
 import { useFeatures } from "@/components/features/FeaturesProvider";
@@ -9,6 +10,7 @@ import { createBrowserSupabase } from "@/lib/supabase/browser";
 import { fetchClientSettingsRow } from "@/lib/client-settings";
 import { formatPrice, mockSettings } from "@/lib/catalog";
 import { buttonClasses } from "@/components/ui/Button";
+import { MascotSays } from "@/components/ui/MascotSays";
 
 export default function CartPage() {
   const { items, updateQuantity, removeItem, subtotalCents, hydrated } = useCart();
@@ -16,6 +18,8 @@ export default function CartPage() {
 
   // Live free-delivery threshold, falling back to the default until loaded.
   const [freeMin, setFreeMin] = useState(mockSettings.freeDeliveryMinCents);
+  // Live minimum order, so a below-minimum cart never sails into checkout.
+  const [minOrder, setMinOrder] = useState(mockSettings.minOrderCents);
   // Spend-gift nudge details, null until loaded or when off.
   const [giftThreshold, setGiftThreshold] = useState<number | null>(null);
   const [giftName, setGiftName] = useState<string | null>(null);
@@ -25,6 +29,7 @@ export default function CartPage() {
       const row = await fetchClientSettingsRow();
       if (!active || !row) return;
       if (typeof row.free_delivery_min_cents === "number") setFreeMin(row.free_delivery_min_cents);
+      if (typeof row.min_order_cents === "number") setMinOrder(row.min_order_cents);
       if (row.free_gift_threshold_cents && row.free_gift_product_id) {
         setGiftThreshold(row.free_gift_threshold_cents);
         const { data: product } = await createBrowserSupabase()
@@ -51,10 +56,10 @@ export default function CartPage() {
   if (items.length === 0) {
     return (
       <main className="mx-auto max-w-3xl px-6 py-20 text-center">
-        <p className="text-5xl" aria-hidden="true">
-          🎀
-        </p>
-        <h1 className="mt-4 font-display text-3xl font-semibold">Your cart is empty</h1>
+        <div className="flex justify-center">
+          <MascotSays lines={["Nothing in here yet… let's fix that."]} />
+        </div>
+        <h1 className="mt-6 font-display text-3xl font-semibold">Your cart is empty</h1>
         <p className="mt-2 text-muted">Let&rsquo;s find you something freshly baked.</p>
         <Link href="/menu" className={buttonClasses({ className: "mt-8", size: "lg" })}>
           Browse the menu
@@ -65,6 +70,7 @@ export default function CartPage() {
 
   const remaining = Math.max(0, freeMin - subtotalCents);
   const qualifiesForFreeDelivery = remaining === 0;
+  const belowMin = subtotalCents < minOrder;
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
@@ -76,9 +82,21 @@ export default function CartPage() {
             key={item.key}
             className="flex gap-4 rounded-2xl border border-line bg-white p-4"
           >
-            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-blush-soft text-2xl">
-              <span aria-hidden="true">🧁</span>
-            </div>
+            {item.imageUrl ? (
+              <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl">
+                <Image
+                  src={item.imageUrl}
+                  alt=""
+                  fill
+                  sizes="64px"
+                  className="object-cover"
+                />
+              </div>
+            ) : (
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-blush-soft text-2xl">
+                <span aria-hidden="true">🧁</span>
+              </div>
+            )}
 
             <div className="flex flex-1 flex-col gap-1">
               <div className="flex items-start justify-between gap-2">
@@ -101,6 +119,15 @@ export default function CartPage() {
                 </p>
               )}
 
+              {item.personalisation && (item.personalisation.message || item.personalisation.photoUrl) && (
+                <p className="mt-1 flex items-center gap-2 text-sm text-rose-deep">
+                  {item.personalisation.message && (
+                    <span>✍️ &ldquo;{item.personalisation.message}&rdquo;</span>
+                  )}
+                  {item.personalisation.photoUrl && <span>📎 Photo added</span>}
+                </p>
+              )}
+
               <div className="mt-2 flex items-center justify-between">
                 <div className="inline-flex items-center rounded-full border border-line">
                   <button
@@ -111,7 +138,13 @@ export default function CartPage() {
                   >
                     −
                   </button>
-                  <span className="w-8 text-center text-sm font-semibold">{item.quantity}</span>
+                  <span
+                    aria-live="polite"
+                    aria-atomic="true"
+                    className="w-8 text-center text-sm font-semibold"
+                  >
+                    {item.quantity}
+                  </span>
                   <button
                     type="button"
                     aria-label="Increase quantity"
@@ -157,18 +190,29 @@ export default function CartPage() {
           <span className="font-semibold">{formatPrice(subtotalCents)}</span>
         </div>
         <p className="mt-1 text-xs text-muted">
-          Delivery fee (if any) and pickup/delivery scheduling are calculated at checkout.
+          You&rsquo;ll pick your date and choose pickup or delivery next. Pickup is always free.
         </p>
 
+        {belowMin && (
+          <p className="mt-3 rounded-xl bg-marble/60 px-3 py-2 text-sm text-muted">
+            Our minimum order is {formatPrice(minOrder)}. Add {formatPrice(minOrder - subtotalCents)}{" "}
+            more to check out.
+          </p>
+        )}
         <Link
           href="/checkout"
-          className={buttonClasses({ size: "lg", className: "mt-5 w-full" })}
+          aria-disabled={belowMin}
+          tabIndex={belowMin ? -1 : undefined}
+          className={buttonClasses({
+            size: "lg",
+            className: `mt-5 w-full${belowMin ? " pointer-events-none opacity-50" : ""}`,
+          })}
         >
           Proceed to checkout
         </Link>
         <Link
           href="/menu"
-          className="mt-3 block text-center text-sm font-semibold text-rose transition hover:text-rose-deep"
+          className="mt-3 block text-center text-sm font-semibold text-rose-deep transition hover:text-rose"
         >
           Continue shopping
         </Link>

@@ -2,6 +2,8 @@
 
 import { randomUUID } from "node:crypto";
 import { fetchProducts } from "@/lib/products";
+import { createManualOrder, type ManualOrderInput } from "@/lib/orders-db";
+import { validateImageUpload } from "@/lib/image-upload";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { isAdminEmail, requireAdmin } from "@/lib/admin-auth";
@@ -14,8 +16,11 @@ import {
   fetchAdminOrders,
   fetchAdminSettings,
   fetchPromos,
+  recordDeposit,
+  rescheduleOrder,
   setPromoActive,
   updateOrderStatus,
+  updateOwnerNote,
   updatePaymentStatus,
   updateProduct,
   updateSettings,
@@ -108,9 +113,47 @@ export async function updatePaymentStatusAction(
   await updatePaymentStatus(orderNumber, paymentStatus);
 }
 
+export async function updateOwnerNoteAction(orderNumber: string, note: string): Promise<void> {
+  await requireAdmin();
+  await updateOwnerNote(orderNumber, note);
+}
+
+export async function rescheduleOrderAdminAction(
+  orderNumber: string,
+  date: string,
+  timeWindow: string,
+): Promise<void> {
+  await requireAdmin();
+  await rescheduleOrder(orderNumber, date, timeWindow);
+}
+
+export async function recordDepositAction(orderNumber: string, cents: number): Promise<void> {
+  await requireAdmin();
+  await recordDeposit(orderNumber, cents);
+}
+
 export async function cancelOrderAction(orderNumber: string): Promise<CancelResult> {
   await requireAdmin();
   return cancelAndRefundOrder(orderNumber);
+}
+
+export type ManualOrderResult = { ok: true; orderNumber: string } | { ok: false; error: string };
+
+export async function createManualOrderAction(input: ManualOrderInput): Promise<ManualOrderResult> {
+  await requireAdmin();
+  if (!input.name.trim()) return { ok: false, error: "Add the customer's name." };
+  if (!input.scheduledDate) return { ok: false, error: "Pick a date." };
+  if (!input.timeWindow) return { ok: false, error: "Pick a time window." };
+  if (input.items.length === 0) return { ok: false, error: "Add at least one item." };
+  try {
+    const { orderNumber } = await createManualOrder(input);
+    return { ok: true, orderNumber };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Could not create the order.",
+    };
+  }
 }
 
 export async function updateSettingsAction(patch: Partial<AdminSettings>): Promise<void> {
@@ -178,21 +221,17 @@ export type UploadResult = { ok: true; url: string } | { ok: false; error: strin
 export async function uploadProductImageAction(formData: FormData): Promise<UploadResult> {
   await requireAdmin();
   const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) {
+  if (!(file instanceof File)) {
     return { ok: false, error: "No file provided." };
   }
-  if (!file.type.startsWith("image/")) {
-    return { ok: false, error: "Please choose an image file." };
-  }
-  if (file.size > 5 * 1024 * 1024) {
-    return { ok: false, error: "Image must be under 5 MB." };
-  }
-  const ext = (file.name.split(".").pop() ?? "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
-  const path = `${randomUUID()}.${ext}`;
+  const image = validateImageUpload(file);
+  if (!image.ok) return { ok: false, error: image.error };
+
+  const path = `${randomUUID()}.${image.ext}`;
   const supabase = createAdminClient();
   const { error } = await supabase.storage
     .from("product-images")
-    .upload(path, file, { contentType: file.type, upsert: false });
+    .upload(path, file, { contentType: image.contentType, upsert: false });
   if (error) return { ok: false, error: error.message };
   const { data } = supabase.storage.from("product-images").getPublicUrl(path);
   return { ok: true, url: data.publicUrl };

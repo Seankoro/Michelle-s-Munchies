@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { RibbonBow } from "@/components/ui/RibbonBow";
+import { AuthCard } from "@/components/account/AuthCard";
 import { Button } from "@/components/ui/Button";
 import { updatePassword } from "../actions";
 import { inputClass } from "@/lib/ui";
@@ -35,14 +35,7 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <main className="mx-auto flex max-w-md flex-col px-6 py-16">
-      <div className="rounded-2xl border border-line bg-white p-8 shadow-soft">
-        <div className="flex flex-col items-center text-center">
-          <RibbonBow withTails={false} className="h-10 w-12" />
-          <h1 className="mt-3 font-display text-2xl font-semibold">Set a new password</h1>
-          <p className="mt-1 text-sm text-muted">Choose a new password for your account.</p>
-        </div>
-
+    <AuthCard title="Set a new password" subtitle="Choose a new password for your account.">
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -77,7 +70,11 @@ export default function ResetPasswordPage() {
             />
           </div>
 
-          {error && <p className="text-sm text-rose-deep">{error}</p>}
+          {error && (
+            <p role="alert" className="text-sm text-rose-deep">
+              {error}
+            </p>
+          )}
 
           <Button type="submit" size="lg" disabled={loading} className="w-full">
             {loading ? "Saving…" : "Save new password"}
@@ -86,11 +83,10 @@ export default function ResetPasswordPage() {
 
         <p className="mt-6 text-center text-sm text-muted">
           Link expired?{" "}
-          <Link href="/account/forgot" className="font-semibold text-rose hover:text-rose-deep">
+          <Link href="/account/forgot" className="font-semibold text-rose-deep hover:text-rose">
             Request a new one
           </Link>
         </p>
-      </div>
-    </main>
+    </AuthCard>
   );
 }

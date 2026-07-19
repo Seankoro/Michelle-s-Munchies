@@ -1,11 +1,13 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { sendStatusEmail, sendLowStockEmail } from "@/lib/email";
+import { sendStatusEmail, sendLowStockEmail, sendReviewRequestEmail } from "@/lib/email";
 import { notifyCustomerStatus } from "@/lib/sms";
 import { notifySubscribers } from "@/lib/stock-notify";
-import { fetchStoreSettings } from "@/lib/settings";
+import { fetchStoreSettings, parseMascotMessages } from "@/lib/settings";
+import { rowToFeatureFlags } from "@/lib/feature-flags";
 import { refundOrder } from "@/lib/payments";
+import type { PromoDiscountType } from "@/lib/promos";
 import type { AdminSettings } from "@/components/admin/AdminStore";
 import type { NotePrompt } from "@/lib/settings";
 import type {
@@ -14,11 +16,12 @@ import type {
   OrderStatus,
   PaymentStatus,
 } from "@/lib/order";
-import type { CartItem, Product, SelectedOption } from "@/lib/types";
+import type { CartItem, Personalisation, Product, SelectedOption } from "@/lib/types";
 
 // ---- Orders. Not public-readable, admin and service-role only ----------
 type OrderItemRow = {
   id: string;
+  personalisation: Personalisation | null;
   product_id: string | null;
   product_name: string;
   unit_price_cents: number;
@@ -41,6 +44,8 @@ type OrderRow = {
   gift_message: string | null;
   recipient_name: string | null;
   recipient_phone: string | null;
+  owner_note: string | null;
+  deposit_cents: number | null;
   subtotal_cents: number;
   delivery_fee_cents: number;
   total_cents: number;
@@ -57,6 +62,7 @@ function rowToAdminOrder(row: OrderRow): AdminOrder {
     unitPriceCents: item.unit_price_cents,
     quantity: item.quantity,
     selectedOptions: item.selected_options ?? [],
+    ...(item.personalisation ? { personalisation: item.personalisation } : {}),
   }));
 
   return {
@@ -75,6 +81,8 @@ function rowToAdminOrder(row: OrderRow): AdminOrder {
     giftMessage: row.gift_message ?? undefined,
     recipientName: row.recipient_name ?? undefined,
     recipientPhone: row.recipient_phone ?? undefined,
+    ownerNote: row.owner_note ?? undefined,
+    depositCents: row.deposit_cents,
     subtotalCents: row.subtotal_cents,
     deliveryFeeCents: row.delivery_fee_cents,
     totalCents: row.total_cents,
@@ -83,12 +91,19 @@ function rowToAdminOrder(row: OrderRow): AdminOrder {
   };
 }
 
+/** How many recent orders the admin snapshot loads. Bounds an otherwise
+ *  unbounded fetch that runs on mount and every tab refocus. Far beyond a home
+ *  bakery's volume; if a shop ever nears it, move the lifetime and all-time
+ *  Insights figures to a server-side aggregate rather than raising this. */
+const ADMIN_ORDER_LIMIT = 1000;
+
 export async function fetchAdminOrders(): Promise<AdminOrder[]> {
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("orders")
     .select("*, order_items(*)")
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .limit(ADMIN_ORDER_LIMIT);
   if (error) throw new Error(`Failed to load orders: ${error.message}`);
   return ((data as OrderRow[] | null) ?? []).map(rowToAdminOrder);
 }
@@ -128,9 +143,85 @@ export async function updateOrderStatus(orderNumber: string, status: OrderStatus
       trackingToken: row.tracking_token,
     });
   }
+
+  if (status === "completed") await maybeSendReviewRequest(orderNumber);
+}
+
+/**
+ * On a completed, paid order from a signed-in customer, email a review request
+ * once. Verified-buyer reviews need an account and a paid purchase, so guests
+ * and unpaid orders are skipped, and review_request_sent_at is claimed
+ * atomically so re-completing an order never re-nudges. Never throws.
+ */
+async function maybeSendReviewRequest(orderNumber: string) {
+  const supabase = createAdminClient();
+  if (!(await fetchStoreSettings()).features.reviews) return;
+
+  const { data } = await supabase
+    .from("orders")
+    .select("id, user_id, email, customer_name, payment_status, review_request_sent_at")
+    .eq("order_number", orderNumber)
+    .maybeSingle();
+  const order = data as {
+    id: string;
+    user_id: string | null;
+    email: string;
+    customer_name: string;
+    payment_status: string;
+    review_request_sent_at: string | null;
+  } | null;
+  if (
+    !order ||
+    !order.user_id ||
+    order.payment_status !== "paid" ||
+    order.review_request_sent_at
+  ) {
+    return;
+  }
+
+  // Claim the send atomically so a re-completed order never re-nudges.
+  const { data: claim } = await supabase
+    .from("orders")
+    .update({ review_request_sent_at: new Date().toISOString() })
+    .eq("id", order.id)
+    .is("review_request_sent_at", null)
+    .select("id")
+    .maybeSingle();
+  if (!claim) return;
+
+  const { data: itemRows } = await supabase
+    .from("order_items")
+    .select("product_id")
+    .eq("order_id", order.id);
+  const productIds = [
+    ...new Set(
+      ((itemRows as { product_id: string | null }[] | null) ?? [])
+        .map((i) => i.product_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  if (productIds.length === 0) return;
+
+  const { data: prodRows } = await supabase
+    .from("products")
+    .select("name, slug")
+    .in("id", productIds);
+  const products = (prodRows as { name: string; slug: string }[] | null) ?? [];
+  if (products.length === 0) return;
+
+  await sendReviewRequestEmail({ to: order.email, name: order.customer_name, orderNumber, products });
 }
 
 export async function updatePaymentStatus(orderNumber: string, paymentStatus: PaymentStatus) {
+  // Reaching "paid" must run the same side effects as a Stripe payment: award
+  // loyalty points, deduct any the customer redeemed, decrement tracked stock,
+  // and reward referrals. PayNow orders are marked paid here by hand, not by a
+  // webhook, so without this those never fire and redeemed points could be
+  // re-spent forever. markOrderPaid guards the transition, so it is idempotent.
+  if (paymentStatus === "paid") {
+    await markOrderPaid(orderNumber, null);
+    return;
+  }
   const supabase = createAdminClient();
   const { error } = await supabase
     .from("orders")
@@ -139,9 +230,52 @@ export async function updatePaymentStatus(orderNumber: string, paymentStatus: Pa
   if (error) throw new Error(`Failed to update payment: ${error.message}`);
 }
 
+/** Admin reschedule: move an order's date and time window. No customer-facing caps. */
+export async function rescheduleOrder(orderNumber: string, date: string, timeWindow: string) {
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from("orders")
+    .update({ scheduled_date: date, time_window: timeWindow, updated_at: new Date().toISOString() })
+    .eq("order_number", orderNumber);
+  if (error) throw new Error(`Failed to reschedule: ${error.message}`);
+}
+
+/** Record a deposit already collected on an order. 0 clears it back to null. */
+export async function recordDeposit(orderNumber: string, cents: number) {
+  const supabase = createAdminClient();
+  const value = cents > 0 ? Math.round(cents) : null;
+  const { error } = await supabase
+    .from("orders")
+    .update({ deposit_cents: value, updated_at: new Date().toISOString() })
+    .eq("order_number", orderNumber);
+  if (error) throw new Error(`Failed to record deposit: ${error.message}`);
+}
+
+/** Save Michelle's private note on an order. An empty string clears it back to null. */
+export async function updateOwnerNote(orderNumber: string, note: string) {
+  const supabase = createAdminClient();
+  const trimmed = note.trim();
+  const { error } = await supabase
+    .from("orders")
+    .update({ owner_note: trimmed || null, updated_at: new Date().toISOString() })
+    .eq("order_number", orderNumber);
+  if (error) throw new Error(`Failed to save note: ${error.message}`);
+}
+
 /** Add ordered quantities back to any tracked product, reversing a paid decrement. */
 async function restockOrder(orderId: string) {
   const supabase = createAdminClient();
+  // Only restock if stock was actually taken, and only once. Clearing the
+  // decrement stamp atomically means a re-cancel can't add the same units back
+  // twice, and an order that never decremented (unpaid) is a no-op.
+  const { data: claim } = await supabase
+    .from("orders")
+    .update({ stock_decremented_at: null })
+    .eq("id", orderId)
+    .not("stock_decremented_at", "is", null)
+    .select("id")
+    .maybeSingle();
+  if (!claim) return;
   const { data: itemRows } = await supabase
     .from("order_items")
     .select("product_id, quantity")
@@ -188,8 +322,11 @@ export async function cancelAndRefundOrder(orderNumber: string): Promise<CancelR
   let refunded = false;
   if (order.payment_status === "paid" && order.stripe_payment_intent_id) {
     refunded = await refundOrder(order.stripe_payment_intent_id);
-    if (refunded) await restockOrder(order.id);
   }
+  // Put stock back for any order that took it, however it was paid (Stripe card
+  // OR a PayNow/manual order marked paid here). restockOrder self-guards on the
+  // decrement stamp, so it is a no-op for orders that never touched stock.
+  await restockOrder(order.id);
   const { error: updErr } = await supabase
     .from("orders")
     .update({
@@ -209,6 +346,17 @@ export async function cancelAndRefundOrder(orderNumber: string): Promise<CancelR
  */
 async function decrementStockForOrder(orderId: string) {
   const supabase = createAdminClient();
+  // Atomically claim the decrement so an order's stock drops exactly once,
+  // whichever path (Stripe webhook or admin Mark paid) marks it paid, even if
+  // paid is toggled off and on again.
+  const { data: claim } = await supabase
+    .from("orders")
+    .update({ stock_decremented_at: new Date().toISOString() })
+    .eq("id", orderId)
+    .is("stock_decremented_at", null)
+    .select("id")
+    .maybeSingle();
+  if (!claim) return; // already decremented for this order
   const { lowStockThreshold } = await fetchStoreSettings();
   const ownerEmail = process.env.OWNER_NOTIFICATION_EMAIL;
   const { data: itemRows } = await supabase
@@ -361,6 +509,7 @@ function toProductColumns(patch: Partial<Product>) {
   if (patch.shortDescription !== undefined) columns.short_description = patch.shortDescription;
   if (patch.longDescription !== undefined) columns.long_description = patch.longDescription;
   if (patch.basePriceCents !== undefined) columns.base_price_cents = patch.basePriceCents;
+  if (patch.costCents !== undefined) columns.cost_cents = patch.costCents;
   if (patch.category !== undefined) columns.category = patch.category;
   if (patch.isAvailable !== undefined) columns.is_available = patch.isAvailable;
   if (patch.isBestSeller !== undefined) columns.is_best_seller = patch.isBestSeller;
@@ -374,6 +523,10 @@ function toProductColumns(patch: Partial<Product>) {
   if (patch.stockCount !== undefined) columns.stock_count = patch.stockCount;
   if (patch.availableFrom !== undefined) columns.available_from = patch.availableFrom;
   if (patch.flavourBox !== undefined) columns.flavour_box = patch.flavourBox;
+  if (patch.personalisation !== undefined) {
+    columns.personalisation_label = patch.personalisation?.label ?? null;
+    columns.personalisation_allow_photo = patch.personalisation?.allowPhoto ?? false;
+  }
   return columns;
 }
 
@@ -513,6 +666,7 @@ type SettingsRow = {
   birthday_reward_points: number | null;
   abandoned_after_hours: number | null;
   note_prompts: NotePrompt[] | null;
+  mascot_message: string | null;
   feature_build_a_box: boolean | null;
   feature_bundles: boolean | null;
   feature_spend_gift: boolean | null;
@@ -529,6 +683,7 @@ type SettingsRow = {
   feature_newsletter: boolean | null;
   feature_drops: boolean | null;
   feature_dietary_prefs: boolean | null;
+  feature_occasion_reminders: boolean | null;
 };
 
 export async function fetchAdminSettings(): Promise<AdminSettings> {
@@ -557,33 +712,12 @@ export async function fetchAdminSettings(): Promise<AdminSettings> {
     abandonedAfterHours: row.abandoned_after_hours ?? 4,
     notePrompts: Array.isArray(row.note_prompts) ? row.note_prompts : [],
     lowStockThreshold: row.low_stock_threshold,
+    mascotMessages: parseMascotMessages(row.mascot_message),
     pointsPerDollar: row.points_per_dollar ?? 1,
     pointValueCents: row.point_value_cents ?? 5,
     referralReferrerPoints: row.referral_referrer_points ?? 50,
     referralRefereePoints: row.referral_referee_points ?? 30,
-    features: {
-      rewards: row.feature_rewards ?? true,
-      wishlist: row.feature_wishlist ?? true,
-      reviews: row.feature_reviews ?? true,
-      promos: row.feature_promos ?? true,
-      gifting: row.feature_gifting ?? true,
-      referrals: row.feature_referrals ?? true,
-      buildABox: row.feature_build_a_box ?? true,
-      bundles: row.feature_bundles ?? true,
-      spendGift: row.feature_spend_gift ?? true,
-      backInStock: row.feature_back_in_stock ?? true,
-      photoReviews: row.feature_photo_reviews ?? true,
-      cartSharing: row.feature_cart_sharing ?? true,
-      wishlistSharing: row.feature_wishlist_sharing ?? true,
-      instagram: row.feature_instagram_feed ?? true,
-      birthdayRewards: row.feature_birthday_rewards ?? true,
-      abandonedCart: row.feature_abandoned_cart ?? true,
-      structuredNotes: row.feature_structured_notes ?? true,
-      orderChanges: row.feature_order_changes ?? true,
-      newsletter: row.feature_newsletter ?? true,
-      drops: row.feature_drops ?? true,
-      dietaryPrefs: row.feature_dietary_prefs ?? true,
-    },
+    features: rowToFeatureFlags(row as unknown as Record<string, boolean | null | undefined>),
   };
 }
 
@@ -607,6 +741,11 @@ export async function updateSettings(patch: Partial<AdminSettings>) {
     columns.referral_referee_points = patch.referralRefereePoints;
   if (patch.perWindowCap !== undefined) columns.per_window_cap = patch.perWindowCap;
   if (patch.dailyCutoffTime !== undefined) columns.daily_cutoff_time = patch.dailyCutoffTime;
+  if (patch.mascotMessages !== undefined) {
+    // Stored one message per line; null when there are none so the column stays clean.
+    const cleaned = patch.mascotMessages.map((m) => m.trim()).filter(Boolean);
+    columns.mascot_message = cleaned.length ? cleaned.join("\n") : null;
+  }
   if (patch.freeGiftThresholdCents !== undefined)
     columns.free_gift_threshold_cents = patch.freeGiftThresholdCents;
   if (patch.freeGiftProductId !== undefined)
@@ -639,6 +778,7 @@ export async function updateSettings(patch: Partial<AdminSettings>) {
     columns.feature_newsletter = patch.features.newsletter;
     columns.feature_drops = patch.features.drops;
     columns.feature_dietary_prefs = patch.features.dietaryPrefs;
+    columns.feature_occasion_reminders = patch.features.occasionReminders;
   }
 
   const { error } = await supabase.from("settings").update(columns).eq("id", 1);
@@ -646,7 +786,7 @@ export async function updateSettings(patch: Partial<AdminSettings>) {
 }
 
 // ---- Promo codes -----------------------------------------------------------
-export type PromoDiscountType = "percent" | "amount" | "free_delivery";
+// PromoDiscountType is imported from promos.ts at the top so the two can't drift.
 
 export type PromoCode = {
   id: string;

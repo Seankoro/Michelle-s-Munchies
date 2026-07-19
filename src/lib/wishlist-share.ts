@@ -1,5 +1,5 @@
 import "server-only";
-import { randomBytes } from "node:crypto";
+import { newToken } from "@/lib/tokens";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchProducts } from "@/lib/products";
 
@@ -10,6 +10,8 @@ export type SharedFavourite = {
   priceCents: number;
   imageUrl: string | null;
   hasOptions: boolean;
+  /** Sold-out favourites still show, badged, but are never auto-added to a cart. */
+  isAvailable: boolean;
 };
 
 /** Mint or return the existing unguessable share token for a user's wishlist. */
@@ -23,7 +25,7 @@ export async function getOrCreateShareToken(userId: string): Promise<string> {
   const row = existing as { token: string } | null;
   if (row) return row.token;
 
-  const token = randomBytes(16).toString("hex");
+  const token = newToken();
   const { error } = await supabase.from("wishlist_shares").insert({ token, user_id: userId });
   if (error) throw new Error(`Could not create share link: ${error.message}`);
   return token;
@@ -60,5 +62,6 @@ export async function fetchSharedFavourites(token: string): Promise<SharedFavour
       priceCents: p.basePriceCents,
       imageUrl: p.imageUrls && p.imageUrls.length > 0 ? p.imageUrls[0] : null,
       hasOptions: p.options.length > 0,
+      isAvailable: p.isAvailable,
     }));
 }

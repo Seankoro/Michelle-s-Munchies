@@ -6,6 +6,7 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchStoreSettings } from "@/lib/settings";
 import { upsertReview } from "@/lib/reviews";
+import { validateImageUpload } from "@/lib/image-upload";
 
 export type ReviewResult = { ok: true } | { error: string };
 
@@ -51,16 +52,15 @@ export async function uploadReviewImageAction(formData: FormData): Promise<Uploa
   if (!user) return { ok: false, error: "Please sign in first." };
 
   const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) return { ok: false, error: "No file provided." };
-  if (!file.type.startsWith("image/")) return { ok: false, error: "Please choose an image file." };
-  if (file.size > 5 * 1024 * 1024) return { ok: false, error: "Image must be under 5 MB." };
+  if (!(file instanceof File)) return { ok: false, error: "No file provided." };
+  const image = validateImageUpload(file);
+  if (!image.ok) return { ok: false, error: image.error };
 
-  const ext = (file.name.split(".").pop() ?? "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
-  const path = `${user.id}/${randomUUID()}.${ext}`;
+  const path = `${user.id}/${randomUUID()}.${image.ext}`;
   const admin = createAdminClient();
   const { error } = await admin.storage
     .from("review-images")
-    .upload(path, file, { contentType: file.type, upsert: false });
+    .upload(path, file, { contentType: image.contentType, upsert: false });
   if (error) return { ok: false, error: error.message };
   const { data } = admin.storage.from("review-images").getPublicUrl(path);
   return { ok: true, url: data.publicUrl };

@@ -6,6 +6,7 @@ import { fetchStoreSettings } from "@/lib/settings";
 import { fetchSharedFavourites } from "@/lib/wishlist-share";
 import { formatPrice } from "@/lib/catalog";
 import { ImagePlaceholder } from "@/components/ui/ImagePlaceholder";
+import { Badge } from "@/components/ui/Badge";
 import { AddAllFavouritesButton } from "@/components/account/AddAllFavouritesButton";
 
 export const metadata: Metadata = { title: "A shared wishlist" };
@@ -45,6 +46,11 @@ export default async function SharedWishlistPage({ params }: Params) {
                     />
                   ) : (
                     <ImagePlaceholder aspect="square" label="Treat" icon="🧁" />
+                  )}
+                  {!fav.isAvailable && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-white/55">
+                      <Badge tone="soldout">Sold out</Badge>
+                    </div>
                   )}
                 </div>
                 <div className="flex flex-1 flex-col gap-1 p-4">

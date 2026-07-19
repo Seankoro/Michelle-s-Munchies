@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
-import { fetchProducts } from "@/lib/products";
+import { fetchProducts, toCardProduct } from "@/lib/products";
 import { fetchStoreSettings } from "@/lib/settings";
+import { fetchAllRatings } from "@/lib/reviews";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { MenuBrowser } from "@/components/product/MenuBrowser";
 import { Reveal } from "@/components/ui/Reveal";
@@ -14,10 +15,14 @@ export const metadata: Metadata = {
 export default async function MenuPage() {
   const products = await fetchProducts();
   const categories = Array.from(new Set(products.map((product) => product.category)));
+  const settings = await fetchStoreSettings();
+
+  // Star lines on the cards, social proof where browsing actually happens.
+  const ratings = settings.features.reviews ? await fetchAllRatings() : {};
 
   // Pre-apply the signed-in customer's saved dietary preferences when enabled.
   let initialDietary: DietaryTag[] = [];
-  if ((await fetchStoreSettings()).features.dietaryPrefs) {
+  if (settings.features.dietaryPrefs) {
     const supabase = await createServerSupabase();
     const {
       data: { user },
@@ -38,7 +43,7 @@ export default async function MenuPage() {
     <main className="mx-auto max-w-none px-6 py-12 lg:px-10">
       <Reveal>
         <header className="text-center">
-          <h1 className="font-display text-4xl font-semibold sm:text-5xl">Our Menu</h1>
+          <h1 className="font-display text-4xl font-semibold sm:text-5xl">Our menu</h1>
           <p className="mx-auto mt-3 max-w-xl text-muted">
             Everything is baked to order. Browse, choose your options, and add to cart.
             You&rsquo;ll pick pickup or delivery at checkout.
@@ -47,7 +52,12 @@ export default async function MenuPage() {
       </Reveal>
 
       <div className="mt-10">
-        <MenuBrowser products={products} categories={categories} initialDietary={initialDietary} />
+        <MenuBrowser
+          products={products.map(toCardProduct)}
+          categories={categories}
+          initialDietary={initialDietary}
+          ratings={ratings}
+        />
       </div>
     </main>
   );

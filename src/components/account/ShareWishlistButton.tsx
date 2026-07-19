@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useFeatures } from "@/components/features/FeaturesProvider";
+import { Button } from "@/components/ui/Button";
 import { getWishlistShareLinkAction } from "@/app/account/actions";
 
 /** Copies a read-only link to the signed-in user's favourites. */
@@ -32,14 +33,15 @@ export function ShareWishlistButton() {
 
   return (
     <div className="mt-3">
-      <button
+      <Button
         type="button"
+        variant="secondary"
+        size="sm"
         onClick={share}
         disabled={status === "loading"}
-        className="rounded-full border border-line px-4 py-2 text-sm font-semibold transition hover:border-rose disabled:opacity-50"
       >
         {status === "copied" ? "Link copied ✓" : status === "loading" ? "…" : "🔗 Share my wishlist"}
-      </button>
+      </Button>
       {status === "error" && <p className="mt-1 text-sm text-rose-deep">{message}</p>}
     </div>
   );

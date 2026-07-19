@@ -1,19 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAdmin, type AdminSettings } from "@/components/admin/AdminStore";
 import type { NotePrompt } from "@/lib/settings";
 import type { Product } from "@/lib/types";
 import { formatLongDate } from "@/lib/order";
 import { cn } from "@/lib/cn";
 import { Toggle } from "@/components/ui/Toggle";
+import { PanelLoading } from "@/components/admin/PanelLoading";
 import { compactInputClass as inputClass } from "@/lib/ui";
 
 export default function AdminSettingsPage() {
   const { settings, updateSettings, hydrated, products } = useAdmin();
   // Mount the form only once settings have loaded, so its initial field values
   // come from the saved settings, not the pre-hydration defaults.
-  if (!hydrated) return null;
+  if (!hydrated) return <PanelLoading />;
   return <SettingsForm settings={settings} onSave={updateSettings} products={products} />;
 }
 
@@ -23,7 +24,7 @@ function SettingsForm({
   products,
 }: {
   settings: AdminSettings;
-  onSave: (patch: Partial<AdminSettings>) => void;
+  onSave: (patch: Partial<AdminSettings>) => Promise<boolean>;
   products: Product[];
 }) {
   const [deliveryFee, setDeliveryFee] = useState((settings.deliveryFeeCents / 100).toFixed(2));
@@ -56,59 +57,173 @@ function SettingsForm({
     settings.lowStockThreshold == null ? "" : String(settings.lowStockThreshold),
   );
   const [notePrompts, setNotePrompts] = useState<NotePrompt[]>(settings.notePrompts);
+  const [mascotMsgs, setMascotMsgs] = useState<string[]>(settings.mascotMessages);
   const [saved, setSaved] = useState(false);
 
   function toCents(text: string) {
     return Math.max(0, Math.round(parseFloat(text || "0") * 100));
   }
 
-  function handleSave() {
-    onSave({
-      deliveryFeeCents: toCents(deliveryFee),
-      freeDeliveryMinCents: toCents(freeMin),
-      minOrderCents: toCents(minOrder),
-      leadTimeDays: Math.max(0, parseInt(leadTime || "0", 10)),
-      dailyOrderCap: (() => {
-        const n = parseInt(dailyCap, 10);
-        return Number.isFinite(n) && n > 0 ? n : null;
-      })(),
-      perWindowCap: (() => {
-        const n = parseInt(perWindowCap, 10);
-        return Number.isFinite(n) && n > 0 ? n : null;
-      })(),
-      dailyCutoffTime: cutoffTime || null,
-      freeGiftThresholdCents: giftThreshold.trim() ? toCents(giftThreshold) : null,
-      freeGiftProductId: giftProductId || null,
-      birthdayRewardPoints: Math.max(0, parseInt(birthdayPoints || "0", 10)),
-      abandonedAfterHours: Math.max(1, parseInt(abandonedHours || "4", 10)),
-      lowStockThreshold: (() => {
-        const n = parseInt(lowStock, 10);
-        return Number.isFinite(n) && n > 0 ? n : null;
-      })(),
-      notePrompts,
-      pickupLocation,
-      timeWindows: windowsText
-        .split("\n")
-        .map((w) => w.trim())
-        .filter(Boolean),
-      blackoutDates: blackout,
-      pointsPerDollar: Math.max(0, parseInt(pointsPerDollar || "0", 10)),
-      pointValueCents: toCents(pointValue),
-      referralReferrerPoints: Math.max(0, parseInt(referrerPts || "0", 10)),
-      referralRefereePoints: Math.max(0, parseInt(refereePts || "0", 10)),
-      features,
-    });
+  const optInt = (text: string) => {
+    const n = parseInt(text, 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+
+  // The full desired settings from the current form state. Shared by the save
+  // handler and the dirty check, so "unsaved changes" can never drift from what
+  // Save would actually write.
+  const buildPatch = (): AdminSettings => ({
+    deliveryFeeCents: toCents(deliveryFee),
+    freeDeliveryMinCents: toCents(freeMin),
+    minOrderCents: toCents(minOrder),
+    leadTimeDays: Math.max(0, parseInt(leadTime || "0", 10)),
+    dailyOrderCap: optInt(dailyCap),
+    perWindowCap: optInt(perWindowCap),
+    dailyCutoffTime: cutoffTime || null,
+    freeGiftThresholdCents: giftThreshold.trim() ? toCents(giftThreshold) : null,
+    freeGiftProductId: giftProductId || null,
+    birthdayRewardPoints: Math.max(0, parseInt(birthdayPoints || "0", 10)),
+    abandonedAfterHours: Math.max(1, parseInt(abandonedHours || "4", 10)),
+    lowStockThreshold: optInt(lowStock),
+    notePrompts,
+    mascotMessages: mascotMsgs.map((m) => m.trim()).filter(Boolean),
+    pickupLocation,
+    timeWindows: windowsText
+      .split("\n")
+      .map((w) => w.trim())
+      .filter(Boolean),
+    blackoutDates: blackout,
+    pointsPerDollar: Math.max(0, parseInt(pointsPerDollar || "0", 10)),
+    pointValueCents: toCents(pointValue),
+    referralReferrerPoints: Math.max(0, parseInt(referrerPts || "0", 10)),
+    referralRefereePoints: Math.max(0, parseInt(refereePts || "0", 10)),
+    features,
+  });
+
+  // The saved settings normalised through the same builder, so comparison is
+  // apples-to-apples and formatting quirks never read as a false change.
+  const baseline = useMemo(
+    () =>
+      JSON.stringify({
+        deliveryFeeCents: settings.deliveryFeeCents,
+        freeDeliveryMinCents: settings.freeDeliveryMinCents,
+        minOrderCents: settings.minOrderCents,
+        leadTimeDays: settings.leadTimeDays,
+        dailyOrderCap: settings.dailyOrderCap,
+        perWindowCap: settings.perWindowCap,
+        dailyCutoffTime: settings.dailyCutoffTime,
+        freeGiftThresholdCents: settings.freeGiftThresholdCents,
+        freeGiftProductId: settings.freeGiftProductId,
+        birthdayRewardPoints: settings.birthdayRewardPoints,
+        abandonedAfterHours: settings.abandonedAfterHours,
+        lowStockThreshold: settings.lowStockThreshold,
+        notePrompts: settings.notePrompts,
+        mascotMessages: settings.mascotMessages,
+        pickupLocation: settings.pickupLocation,
+        timeWindows: settings.timeWindows,
+        blackoutDates: settings.blackoutDates,
+        pointsPerDollar: settings.pointsPerDollar,
+        pointValueCents: settings.pointValueCents,
+        referralReferrerPoints: settings.referralReferrerPoints,
+        referralRefereePoints: settings.referralRefereePoints,
+        features: settings.features,
+      }),
+    [settings],
+  );
+  const dirty = JSON.stringify(buildPatch()) !== baseline;
+
+  async function handleSave() {
+    // "Saved ✓" only after the write actually reached the server. On failure
+    // the store rolls the form state back and shows the shell error banner.
+    const ok = await onSave(buildPatch());
+    if (!ok) return;
     setSaved(true);
     window.setTimeout(() => setSaved(false), 2000);
   }
 
+  // Warn before a full page unload (tab close, refresh, external link) if there
+  // are unsaved edits. In-app sidebar navigation stays free; the sticky bar
+  // keeps the pending changes visible instead.
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
+  const sections: [string, string][] = [
+    ["says", "Michelle says"],
+    ["delivery", "Delivery"],
+    ["pickup", "Pickup"],
+    ["blackout", "Blackout"],
+    ["rewards", "Rewards"],
+    ["merch", "Merchandising"],
+    ["notes", "Order notes"],
+    ["features", "Features"],
+  ];
+
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-2xl pb-24">
       <h1 className="font-display text-3xl font-semibold">Settings</h1>
       <p className="mt-1 text-muted">Delivery, scheduling, and pickup details.</p>
 
+      {/* Quick jump to a section, so a long form is not all scrolling. */}
+      <div className="-mx-6 mt-4 flex gap-2 overflow-x-auto px-6 pb-1 no-scrollbar sm:mx-0 sm:flex-wrap sm:px-0">
+        {sections.map(([id, label]) => (
+          <a
+            key={id}
+            href={`#settings-${id}`}
+            className="shrink-0 rounded-full border border-line bg-white px-3 py-1.5 text-xs font-semibold text-ink transition hover:border-rose"
+          >
+            {label}
+          </a>
+        ))}
+      </div>
+
       <div className="mt-6 flex flex-col gap-6">
-        <section className="rounded-2xl border border-line bg-white p-5">
+        <section id="settings-says" className="scroll-mt-24 rounded-2xl border border-line bg-white p-5">
+          <h2 className="font-display text-lg font-semibold">Michelle says</h2>
+          <p className="mt-1 text-sm font-normal text-muted">
+            Lines for the speech bubble next to the mascot on the home page. Add as many as you like.
+            The mascot cycles through yours plus a couple of automatic lines, which always stay, so
+            adding your own never turns those off.
+          </p>
+          <div className="mt-3 flex flex-col gap-2">
+            {mascotMsgs.map((msg, index) => (
+              <div key={index} className="flex items-center gap-2">
+                <input
+                  className={`${inputClass} flex-1 font-normal`}
+                  value={msg}
+                  onChange={(e) =>
+                    setMascotMsgs((prev) => prev.map((m, i) => (i === index ? e.target.value : m)))
+                  }
+                  maxLength={140}
+                  aria-label={`Mascot message ${index + 1}`}
+                  placeholder="e.g. Lava cakes are back this weekend!"
+                />
+                <button
+                  type="button"
+                  onClick={() => setMascotMsgs((prev) => prev.filter((_, i) => i !== index))}
+                  aria-label="Remove message"
+                  className="rounded-full p-2 text-muted transition hover:bg-blush-soft active:scale-90"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+          {mascotMsgs.length < 10 && (
+            <button
+              type="button"
+              onClick={() => setMascotMsgs((prev) => [...prev, ""])}
+              className="mt-2 rounded-full border border-line px-4 py-1.5 text-sm font-semibold transition hover:border-rose active:scale-95"
+            >
+              + Add a line
+            </button>
+          )}
+        </section>
+
+        <section id="settings-delivery" className="scroll-mt-24 rounded-2xl border border-line bg-white p-5">
           <h2 className="font-display text-lg font-semibold">Delivery &amp; orders</h2>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-sm font-semibold">
@@ -182,7 +297,7 @@ function SettingsForm({
           </div>
         </section>
 
-        <section className="rounded-2xl border border-line bg-white p-5">
+        <section id="settings-pickup" className="scroll-mt-24 rounded-2xl border border-line bg-white p-5">
           <h2 className="font-display text-lg font-semibold">Pickup &amp; scheduling</h2>
           <label className="mt-4 flex flex-col gap-1 text-sm font-semibold">
             Pickup location (shown to customers)
@@ -202,7 +317,7 @@ function SettingsForm({
           </label>
         </section>
 
-        <section className="rounded-2xl border border-line bg-white p-5">
+        <section id="settings-blackout" className="scroll-mt-24 rounded-2xl border border-line bg-white p-5">
           <h2 className="font-display text-lg font-semibold">Blackout dates</h2>
           <p className="mt-1 text-sm text-muted">Days you&rsquo;re away. Customers can&rsquo;t order for these.</p>
           <div className="mt-3 flex flex-wrap gap-2">
@@ -217,7 +332,7 @@ function SettingsForm({
                   type="button"
                   aria-label={`Remove ${date}`}
                   onClick={() => setBlackout((prev) => prev.filter((d) => d !== date))}
-                  className="text-rose-deep transition hover:text-rose active:scale-90"
+                  className="-m-1 flex h-7 w-7 items-center justify-center rounded-full text-rose-deep transition hover:text-rose active:scale-90"
                 >
                   ✕
                 </button>
@@ -246,7 +361,7 @@ function SettingsForm({
           </div>
         </section>
 
-        <section className="rounded-2xl border border-line bg-white p-5">
+        <section id="settings-rewards" className="scroll-mt-24 rounded-2xl border border-line bg-white p-5">
           <h2 className="font-display text-lg font-semibold">Rewards</h2>
           <p className="mt-1 text-sm text-muted">
             How customers earn and redeem loyalty points.
@@ -309,7 +424,7 @@ function SettingsForm({
           </div>
         </section>
 
-        <section className="rounded-2xl border border-line bg-white p-5">
+        <section id="settings-merch" className="scroll-mt-24 rounded-2xl border border-line bg-white p-5">
           <h2 className="font-display text-lg font-semibold">Merchandising &amp; lifecycle</h2>
           <p className="mt-1 text-sm text-muted">
             Spend-gift, birthday rewards, and abandoned-cart timing (each also has an on/off
@@ -373,7 +488,7 @@ function SettingsForm({
           </div>
         </section>
 
-        <section className="rounded-2xl border border-line bg-white p-5">
+        <section id="settings-notes" className="scroll-mt-24 rounded-2xl border border-line bg-white p-5">
           <h2 className="font-display text-lg font-semibold">Structured order notes</h2>
           <p className="mt-1 text-sm text-muted">
             Custom questions shown at checkout (e.g. &ldquo;Occasion?&rdquo;). Requires the
@@ -446,7 +561,7 @@ function SettingsForm({
           </div>
         </section>
 
-        <section className="rounded-2xl border border-line bg-white p-5">
+        <section id="settings-features" className="scroll-mt-24 rounded-2xl border border-line bg-white p-5">
           <h2 className="font-display text-lg font-semibold">Features</h2>
           <p className="mt-1 text-sm text-muted">
             Turn customer features on or off. Switched off, they disappear from the storefront.
@@ -460,7 +575,7 @@ function SettingsForm({
                 ["promos", "Promo codes", "Discount codes at checkout."],
                 ["gifting", "Gift orders", "Send an order as a gift with a message."],
                 ["referrals", "Referrals", "Refer-a-friend reward codes."],
-                ["buildABox", "DIY", "Let customers mix their own box of treats."],
+                ["buildABox", "Build a box", "Let customers mix their own box of treats."],
                 ["bundles", "Bundles", "Curated set menus sold as one item."],
                 ["spendGift", "Spend-gift nudge", "Free gift over a spend threshold."],
                 ["backInStock", "Back-in-stock alerts", "Email customers when a sold-out item returns."],
@@ -475,6 +590,7 @@ function SettingsForm({
                 ["newsletter", "Newsletter", "Collect sign-ups and send updates."],
                 ["drops", "Seasonal drops", "Schedule items to go live with a waitlist."],
                 ["dietaryPrefs", "Dietary preferences", "Customers save dietary needs for a tailored menu."],
+                ["occasionReminders", "Occasion reminders", "Customers save birthdays and we email a reorder nudge."],
               ] as const
             ).map(([key, label, desc]) => (
               <div key={key} className="flex items-start gap-3">
@@ -493,15 +609,26 @@ function SettingsForm({
           </div>
         </section>
 
-        <div className="flex items-center gap-4">
-          <button
-            type="button"
-            onClick={handleSave}
-            className="rounded-full bg-rose-deep px-6 py-2.5 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:brightness-110 active:scale-95"
-          >
-            Save settings
-          </button>
-          {saved && <span className="text-sm font-semibold text-emerald-600">Saved ✓</span>}
+        <div className="sticky bottom-4 z-10">
+          <div className="flex items-center justify-between gap-4 rounded-2xl border border-line bg-white/95 px-5 py-3 shadow-soft backdrop-blur">
+            <span role="status" aria-live="polite" className="text-sm">
+              {saved ? (
+                <span className="font-semibold text-success">Saved ✓</span>
+              ) : dirty ? (
+                <span className="font-semibold text-warning-ink">You have unsaved changes</span>
+              ) : (
+                <span className="text-muted">All changes saved</span>
+              )}
+            </span>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={!dirty}
+              className="rounded-full bg-rose-deep px-6 py-2.5 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:brightness-110 active:scale-95 disabled:pointer-events-none disabled:opacity-50"
+            >
+              Save settings
+            </button>
+          </div>
         </div>
       </div>
     </div>

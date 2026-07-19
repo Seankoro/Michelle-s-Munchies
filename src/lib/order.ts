@@ -8,8 +8,8 @@ export type DeliveryAddress = {
   postalCode: string;
 };
 
-/** A placed order as shown on the success page, client-side until Supabase. */
-export type PlacedOrder = {
+/** The base shape of a placed order, extended by AdminOrder below. */
+type PlacedOrder = {
   orderNumber: string;
   items: CartItem[];
   fulfillmentType: FulfillmentType;
@@ -87,7 +87,7 @@ export function earliestFulfillmentDate(
 }
 
 /** True if `now`'s local time is at or after the "HH:MM" cutoff. */
-export function isPastCutoff(now: Date, cutoffTime: string): boolean {
+function isPastCutoff(now: Date, cutoffTime: string): boolean {
   const [h, m] = cutoffTime.split(":").map(Number);
   if (!Number.isFinite(h)) return false;
   const cutoff = new Date(now);
@@ -106,9 +106,6 @@ export function formatLongDate(iso: string): string {
     year: "numeric",
   });
 }
-
-/** sessionStorage key for handing the placed order to the success page. */
-export const LAST_ORDER_KEY = "mm-last-order";
 
 // ---------------------------------------------------------------------------
 // Order lifecycle, managed in admin
@@ -144,6 +141,20 @@ export const orderStatusLabels: Record<OrderStatus, string> = {
   cancelled: "Cancelled",
 };
 
+/**
+ * Statuses early enough for a customer to still change the order (reschedule,
+ * add items, cancel). One source of truth so the self-serve panels can't drift.
+ */
+export const EARLY_STATUSES: OrderStatus[] = ["received", "confirmed"];
+export const isChangeable = (status: OrderStatus | string): boolean =>
+  EARLY_STATUSES.includes(status as OrderStatus);
+
+/** Rank a time window by the owner's configured order, unknowns sorting last. */
+export const windowRank = (timeWindows: string[], w: string | null): number => {
+  const i = timeWindows.indexOf(w ?? "");
+  return i === -1 ? timeWindows.length : i;
+};
+
 export const paymentStatusLabels: Record<PaymentStatus, string> = {
   pending: "Payment pending",
   paid: "Paid",
@@ -155,4 +166,8 @@ export const paymentStatusLabels: Record<PaymentStatus, string> = {
 export type AdminOrder = PlacedOrder & {
   status: OrderStatus;
   paymentStatus: PaymentStatus;
+  /** Michelle's private note to herself, never shown to the customer. */
+  ownerNote?: string;
+  /** Deposit already collected. 0/null means none; balance = total - deposit. */
+  depositCents?: number | null;
 };

@@ -1,5 +1,6 @@
 "use client";
 
+import { Button } from "@/components/ui/Button";
 import { signOut } from "@/app/account/actions";
 
 export function SignOutButton() {
@@ -11,12 +12,8 @@ export function SignOutButton() {
   }
 
   return (
-    <button
-      type="button"
-      onClick={handleSignOut}
-      className="rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:border-rose"
-    >
+    <Button type="button" variant="secondary" size="sm" onClick={handleSignOut}>
       Sign out
-    </button>
+    </Button>
   );
 }

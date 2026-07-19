@@ -10,11 +10,19 @@ import { AllergenChips } from "./AllergenChips";
 import { QuickPick } from "./QuickPick";
 import { FavouriteButton } from "@/components/wishlist/FavouriteButton";
 import { useCart } from "@/components/cart/CartContext";
+import { menuCartKey } from "@/lib/cart-key";
 import { useFeatures } from "@/components/features/FeaturesProvider";
 import { formatPrice } from "@/lib/catalog";
 import { cn } from "@/lib/cn";
 
-export function ProductCard({ product }: { product: Product }) {
+export function ProductCard({
+  product,
+  rating,
+}: {
+  product: Product;
+  /** Average review rating for a small star line, omitted when no reviews. */
+  rating?: { avg: number; count: number };
+}) {
   const { addItem } = useCart();
   const { drops } = useFeatures();
   const [quickOpen, setQuickOpen] = useState(false);
@@ -33,15 +41,17 @@ export function ProductCard({ product }: { product: Product }) {
       setQuickOpen(true);
       return;
     }
-    // Simple items add instantly from the card.
+    // Simple items add instantly from the card. Key must match the canonical
+    // OptionPicker/reorder/shared-cart key so the same treat merges.
     addItem({
-      key: product.id,
+      key: menuCartKey(product.id, []),
       productId: product.id,
       slug: product.slug,
       name: product.name,
       unitPriceCents: product.basePriceCents,
       quantity: 1,
       selectedOptions: [],
+      imageUrl: product.imageUrls?.[0],
     });
     setAdded(true);
     window.setTimeout(() => setAdded(false), 1600);
@@ -97,6 +107,19 @@ export function ProductCard({ product }: { product: Product }) {
             <AllergenChips allergens={product.allergens} />
           </div>
 
+          {rating && rating.count > 0 && (
+            <p className="-mt-1 text-sm text-ink">
+              <span aria-hidden="true" className="text-rose-deep">
+                ★
+              </span>{" "}
+              {rating.avg.toFixed(1)}
+              <span className="text-muted">
+                {" "}
+                ({rating.count} review{rating.count === 1 ? "" : "s"})
+              </span>
+            </p>
+          )}
+
           <p className="line-clamp-2 text-sm text-muted">{product.shortDescription}</p>
 
           <div className="mt-auto flex items-center justify-between gap-2 pt-1">
@@ -113,13 +136,15 @@ export function ProductCard({ product }: { product: Product }) {
                   ? `${product.name} is coming soon`
                   : soldOut
                     ? `${product.name} is sold out`
-                    : hasOptions
-                      ? `Choose options for ${product.name}`
-                      : `Add ${product.name} to cart`
+                    : added
+                      ? `${product.name} added to cart`
+                      : hasOptions
+                        ? `Choose options for ${product.name}`
+                        : `Add ${product.name} to cart`
               }
               className={cn(
                 "rounded-full px-4 py-2 text-sm font-semibold text-white transition active:scale-95 disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60",
-                added ? "animate-pop bg-sky-deep" : "bg-rose-deep hover:brightness-110",
+                added ? "animate-pop bg-success" : "bg-rose-deep hover:brightness-110",
               )}
             >
               {upcoming

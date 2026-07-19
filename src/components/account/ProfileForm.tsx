@@ -59,8 +59,10 @@ export function ProfileForm({
       className="flex flex-col gap-4"
     >
       <div>
-        <label className="mb-1 block text-sm font-semibold">Email</label>
-        <input className={`${inputClass} opacity-70`} value={email} readOnly />
+        <label htmlFor="email" className="mb-1 block text-sm font-semibold">
+          Email
+        </label>
+        <input id="email" className={`${inputClass} opacity-70`} value={email} readOnly />
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
@@ -106,10 +108,11 @@ export function ProfileForm({
                 key={tag}
                 type="button"
                 onClick={() => toggleDiet(tag)}
+                aria-pressed={dietaryPrefs.includes(tag)}
                 className={cn(
                   "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
                   dietaryPrefs.includes(tag)
-                    ? "border-rose-deep bg-blush-soft text-rose-deep"
+                    ? "border-rose-deep bg-blush-soft text-ink"
                     : "border-line bg-white text-ink hover:border-rose",
                 )}
               >
@@ -119,12 +122,18 @@ export function ProfileForm({
           </div>
         </div>
       )}
-      {error && <p className="text-sm text-rose-deep">{error}</p>}
+      {error && (
+        <p role="alert" className="text-sm text-rose-deep">
+          {error}
+        </p>
+      )}
       <div className="flex items-center gap-3">
         <Button type="submit" disabled={saving}>
           {saving ? "Saving…" : "Save profile"}
         </Button>
-        {saved && <span className="text-sm font-semibold text-emerald-600">Saved ✓</span>}
+        <span role="status" aria-live="polite" className="text-sm font-semibold text-success">
+          {saved ? "Saved ✓" : ""}
+        </span>
       </div>
     </form>
   );

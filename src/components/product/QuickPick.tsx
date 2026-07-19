@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import type { Product } from "@/lib/types";
 import { OptionPicker } from "./OptionPicker";
 import { Button, buttonClasses } from "@/components/ui/Button";
@@ -45,12 +46,23 @@ export function QuickPick({
       <div
         ref={panelRef}
         onClick={(event) => event.stopPropagation()}
-        className="w-full max-w-md rounded-t-2xl bg-white p-5 shadow-soft sm:rounded-2xl"
+        className="flex max-h-[85dvh] w-full max-w-md flex-col rounded-t-2xl bg-white shadow-soft sm:rounded-2xl"
       >
-        <div className="flex items-start justify-between gap-4">
+        {/* Fixed header so the close button stays reachable while options scroll. */}
+        <div className="flex shrink-0 items-start justify-between gap-4 rounded-t-2xl border-b border-line bg-white px-5 py-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-blush-soft text-2xl">
-              <span aria-hidden="true">🧁</span>
+            <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-xl bg-blush-soft text-2xl">
+              {product.imageUrls?.[0] ? (
+                <Image
+                  src={product.imageUrls[0]}
+                  alt=""
+                  width={56}
+                  height={56}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <span aria-hidden="true">🧁</span>
+              )}
             </div>
             <div>
               <h2 className="font-display text-lg font-semibold">{product.name}</h2>
@@ -67,7 +79,7 @@ export function QuickPick({
           </button>
         </div>
 
-        <div className="mt-5">
+        <div className="overflow-y-auto px-5 py-5">
           {added ? (
             <div className="text-center">
               <p className="text-4xl" aria-hidden="true">

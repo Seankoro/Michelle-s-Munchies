@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { RibbonNav } from "./RibbonNav";
 import { MobileMenu } from "./MobileMenu";
-import { RibbonBow } from "@/components/ui/RibbonBow";
 import { CartButton } from "@/components/cart/CartButton";
 import { AccountNav } from "./AccountNav";
 import { primaryNav } from "@/lib/nav";
@@ -16,7 +16,7 @@ export function SiteHeader() {
   // Feature-gated storefront destinations, inserted after "Menu".
   const extraLinks = [
     features.bundles ? { href: "/bundles", label: "Bundles" } : null,
-    features.buildABox ? { href: "/build-a-box", label: "DIY" } : null,
+    features.buildABox ? { href: "/build-a-box", label: "Build a box" } : null,
   ].filter((l): l is { href: string; label: string } => l !== null);
 
   return (
@@ -27,7 +27,7 @@ export function SiteHeader() {
         <div className="flex items-center gap-2">
           <MobileMenu />
           <Link href="/" className="flex items-center gap-2" aria-label="Michelle's Munchies home">
-            <RibbonBow withTails={false} className="hidden h-7 w-9 md:block" />
+            <Image src="/logo.png" alt="" width={512} height={512} className="hidden h-14 w-14 md:block" />
             <span className="font-display text-xl font-semibold sm:text-2xl">
               Michelle&rsquo;s Munchies
             </span>

@@ -1,6 +1,7 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchStoreSettings } from "@/lib/settings";
+import { singaporeDateString } from "@/lib/time";
 import { sendBirthdayEmail } from "@/lib/email";
 
 /**
@@ -14,10 +15,10 @@ export async function grantBirthdayRewards(): Promise<number> {
   if (!settings.features.birthdayRewards || settings.birthdayRewardPoints <= 0) return 0;
 
   const supabase = createAdminClient();
-  const now = new Date();
-  const year = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const dd = String(now.getDate()).padStart(2, "0");
+  // "Today" must be Singapore's calendar day, not the server's UTC day, or the
+  // match fires on the wrong date for the first 8 hours of each SG day.
+  const [y, mm, dd] = singaporeDateString().split("-");
+  const year = Number(y);
 
   const { data } = await supabase
     .from("profiles")

@@ -1,19 +1,22 @@
 "use client";
 
-import { useRef, useState, type ChangeEvent } from "react";
+import { useState, type ChangeEvent } from "react";
 import Image from "next/image";
 import { useAdmin } from "@/components/admin/AdminStore";
 import { uploadProductImageAction } from "@/lib/admin-actions";
 import { allergenMeta, dietaryMeta, formatPrice } from "@/lib/catalog";
-import type { Allergen, DietaryTag, FlavourBoxConfig, Product } from "@/lib/types";
+import type { Allergen, DietaryTag, FlavourBoxConfig, IngredientLine, Product } from "@/lib/types";
 import { cn } from "@/lib/cn";
 import { Toggle } from "@/components/ui/Toggle";
-import { useDialog } from "@/lib/useDialog";
+import { AdminModal } from "@/components/admin/AdminModal";
+import { TableStateRow } from "@/components/admin/TableStateRow";
 import { slugify } from "@/lib/text";
 import { compactInputClass as inputClass } from "@/lib/ui";
 
 const ALL_ALLERGENS = Object.keys(allergenMeta) as Allergen[];
 const ALL_DIETARY = Object.keys(dietaryMeta) as DietaryTag[];
+/** Column count of the products table, so the state-row colSpan is defined once. */
+const TABLE_COLUMNS = 7;
 
 /** ISO timestamp → value for a <input type="datetime-local">, in local time. */
 function isoToLocalInput(iso: string | null | undefined): string {
@@ -44,12 +47,14 @@ function blankProduct(): Product {
     photoCount: 1,
     options: [],
     flavourBox: null,
+    personalisation: null,
   };
 }
 
 export default function AdminProductsPage() {
   const {
     products,
+    hydrated,
     toggleAvailability,
     toggleBestSeller,
     toggleRecommended,
@@ -149,6 +154,14 @@ export default function AdminProductsPage() {
                 </td>
               </tr>
             ))}
+            {!hydrated && (
+              <TableStateRow colSpan={TABLE_COLUMNS}>Loading products…</TableStateRow>
+            )}
+            {hydrated && products.length === 0 && (
+              <TableStateRow colSpan={TABLE_COLUMNS}>
+                No products yet. Tap “+ Add product” to create your first treat.
+              </TableStateRow>
+            )}
           </tbody>
         </table>
       </div>
@@ -182,6 +195,9 @@ function ProductFormModal({
 }) {
   const [draft, setDraft] = useState<Product>(product);
   const [priceText, setPriceText] = useState((product.basePriceCents / 100).toFixed(2));
+  const [costText, setCostText] = useState(
+    product.costCents != null ? (product.costCents / 100).toFixed(2) : "",
+  );
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
@@ -268,6 +284,28 @@ function ProductFormModal({
     }));
   }
 
+  // ---- Ingredients (name is customer-facing; amount + unit feed the shopping list) ----
+  function addIngredientRow() {
+    setDraft((prev) => ({
+      ...prev,
+      ingredients: [...(prev.ingredients ?? []), { name: "", amount: null, unit: null }],
+    }));
+  }
+  function updateIngredient(index: number, patch: Partial<IngredientLine>) {
+    setDraft((prev) => ({
+      ...prev,
+      ingredients: (prev.ingredients ?? []).map((ing, i) =>
+        i === index ? { ...ing, ...patch } : ing,
+      ),
+    }));
+  }
+  function removeIngredient(index: number) {
+    setDraft((prev) => ({
+      ...prev,
+      ingredients: (prev.ingredients ?? []).filter((_, i) => i !== index),
+    }));
+  }
+
   // ---- Per-item build-your-own box sizes ----
   function addBoxSize() {
     setDraft((prev) => {
@@ -307,41 +345,32 @@ function ProductFormModal({
 
   function handleSave() {
     const cents = Math.max(0, Math.round(parseFloat(priceText || "0") * 100));
+    const costCents = costText.trim()
+      ? Math.max(0, Math.round(parseFloat(costText) * 100))
+      : null;
     const slug = draft.slug.trim() || slugify(draft.name);
-    onSave({ ...draft, basePriceCents: cents, slug });
+    // Drop blank rows and normalise, so the stored recipe stays tidy.
+    const ingredients = (draft.ingredients ?? [])
+      .map((ing) => ({
+        name: ing.name.trim(),
+        amount: ing.amount != null && ing.amount > 0 ? ing.amount : null,
+        unit: ing.unit?.trim() || null,
+      }))
+      .filter((ing) => ing.name);
+    onSave({ ...draft, basePriceCents: cents, costCents, slug, ingredients });
   }
 
-  const panelRef = useRef<HTMLDivElement>(null);
-  useDialog(true, onClose, panelRef);
-
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={isNew ? "Add product" : `Edit ${product.name}`}
-      onClick={onClose}
-      className="fixed inset-0 z-50 flex items-end justify-center bg-ink/40 sm:items-center sm:p-4"
+    <AdminModal
+      onClose={onClose}
+      ariaLabel={isNew ? "Add product" : `Edit ${product.name}`}
+      title={
+        <h2 className="font-display text-xl font-semibold">
+          {isNew ? "Add product" : "Edit product"}
+        </h2>
+      }
     >
-      <div
-        ref={panelRef}
-        onClick={(e) => e.stopPropagation()}
-        className="max-h-[90vh] w-full max-w-lg animate-[fade-up_0.2s_ease-out] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-soft sm:rounded-2xl"
-      >
-        <div className="flex items-center justify-between">
-          <h2 className="font-display text-xl font-semibold">
-            {isNew ? "Add product" : "Edit product"}
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="rounded-full p-2 text-muted transition hover:bg-blush-soft active:scale-90"
-          >
-            ✕
-          </button>
-        </div>
-
-        <div className="mt-4 flex flex-col gap-4">
+        <div className="flex flex-col gap-4">
           <label className="flex flex-col gap-1 text-sm font-semibold">
             Name
             <input
@@ -368,6 +397,19 @@ function ProductFormModal({
                 onChange={(e) => setPriceText(e.target.value)}
                 inputMode="decimal"
               />
+            </label>
+            <label className="flex flex-col gap-1 text-sm font-semibold">
+              Cost to make (S$)
+              <input
+                className={inputClass}
+                value={costText}
+                onChange={(e) => setCostText(e.target.value)}
+                inputMode="decimal"
+                placeholder="Optional"
+              />
+              <span className="font-normal text-muted">
+                Ingredients + packaging, just for your margin figures. Never shown to customers.
+              </span>
             </label>
             <label className="flex flex-col gap-1 text-sm font-semibold">
               Stock count
@@ -458,7 +500,7 @@ function ProductFormModal({
                 />
               </label>
             </div>
-            {uploadError && <p className="mt-1 text-sm text-red-600">{uploadError}</p>}
+            {uploadError && <p className="mt-1 text-sm text-danger">{uploadError}</p>}
           </div>
 
           <fieldset>
@@ -501,6 +543,103 @@ function ProductFormModal({
                 </button>
               ))}
             </div>
+          </fieldset>
+
+          <fieldset>
+            <legend className="text-sm font-semibold">Ingredients</legend>
+            <p className="mt-1 text-xs text-muted">
+              Customers see the names on the product page. The amount and unit are just for you, so
+              the shopping list can total how much to buy. Leave the amount blank to skip totalling.
+            </p>
+            <div className="mt-3 flex flex-col gap-2">
+              {(draft.ingredients ?? []).map((ing, index) => (
+                <div key={index} className="flex flex-wrap items-center gap-2">
+                  <input
+                    className={cn(inputClass, "min-w-32 flex-1")}
+                    value={ing.name}
+                    onChange={(e) => updateIngredient(index, { name: e.target.value })}
+                    placeholder="Ingredient, e.g. flour"
+                  />
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    className={cn(inputClass, "w-20")}
+                    value={ing.amount ?? ""}
+                    onChange={(e) =>
+                      updateIngredient(index, {
+                        amount: e.target.value.trim()
+                          ? Math.max(0, parseFloat(e.target.value) || 0)
+                          : null,
+                      })
+                    }
+                    placeholder="Amt"
+                    aria-label="Amount per treat"
+                  />
+                  <input
+                    className={cn(inputClass, "w-24")}
+                    value={ing.unit ?? ""}
+                    onChange={(e) => updateIngredient(index, { unit: e.target.value })}
+                    placeholder="Unit, e.g. g"
+                    aria-label="Unit"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeIngredient(index)}
+                    aria-label="Remove ingredient"
+                    className="rounded-full p-2 text-muted transition hover:bg-blush-soft active:scale-90"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={addIngredientRow}
+              className="mt-2 rounded-full border border-line px-4 py-1.5 text-sm font-semibold transition hover:border-rose active:scale-95"
+            >
+              + Add ingredient
+            </button>
+          </fieldset>
+
+          <fieldset>
+            <legend className="text-sm font-semibold">Personalisation</legend>
+            <p className="mt-1 text-xs text-muted">
+              Let customers add a short message to this treat, like a name to pipe on a cake. Leave
+              the prompt blank to keep it off.
+            </p>
+            <label className="mt-2 flex flex-col gap-1 text-sm font-semibold">
+              Prompt shown to customers
+              <input
+                className={inputClass}
+                value={draft.personalisation?.label ?? ""}
+                onChange={(e) =>
+                  set(
+                    "personalisation",
+                    e.target.value.trim()
+                      ? { label: e.target.value, allowPhoto: draft.personalisation?.allowPhoto ?? false }
+                      : null,
+                  )
+                }
+                placeholder="e.g. Message to pipe on top"
+              />
+            </label>
+            {draft.personalisation && (
+              <label className="mt-3 flex items-center gap-2 text-sm font-semibold">
+                <Toggle
+                  checked={draft.personalisation.allowPhoto}
+                  onChange={(v) =>
+                    set("personalisation", {
+                      label: draft.personalisation?.label ?? "",
+                      allowPhoto: v,
+                    })
+                  }
+                  label="Allow a reference photo"
+                />
+                Allow a reference photo
+              </label>
+            )}
           </fieldset>
 
           <div className="flex flex-wrap gap-4 rounded-xl bg-marble/40 p-3 text-sm">
@@ -607,7 +746,7 @@ function ProductFormModal({
                           type="button"
                           onClick={() => removeValue(optionIndex, valueIndex)}
                           aria-label="Remove choice"
-                          className="rounded-full p-1.5 text-muted transition hover:bg-blush-soft active:scale-90"
+                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-blush-soft active:scale-90"
                         >
                           ✕
                         </button>
@@ -706,7 +845,7 @@ function ProductFormModal({
                       type="button"
                       onClick={() => removeBoxSize(sizeIndex)}
                       aria-label="Remove size"
-                      className="rounded-full p-1.5 text-muted transition hover:bg-blush-soft active:scale-90"
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-blush-soft active:scale-90"
                     >
                       ✕
                     </button>
@@ -741,7 +880,6 @@ function ProductFormModal({
             {isNew ? "Add product" : "Save changes"}
           </button>
         </div>
-      </div>
-    </div>
+    </AdminModal>
   );
 }

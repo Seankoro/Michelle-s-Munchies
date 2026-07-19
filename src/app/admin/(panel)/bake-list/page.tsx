@@ -2,11 +2,15 @@
 
 import { useMemo } from "react";
 import { useAdmin } from "@/components/admin/AdminStore";
-import { formatLongDate, toISODate } from "@/lib/order";
+import { PanelLoading } from "@/components/admin/PanelLoading";
+import { formatLongDate, toISODate, windowRank } from "@/lib/order";
 import { buildOrdersIcs } from "@/lib/ics";
+import { useTickList } from "@/lib/useTickList";
+import { cn } from "@/lib/cn";
 
 export default function AdminBakeListPage() {
-  const { orders, hydrated } = useAdmin();
+  const { orders, hydrated, settings } = useAdmin();
+  const { has, toggle, clear } = useTickList("mm-bake-ticks");
 
   // What still needs baking, grouped by fulfillment date. Completed and
   // cancelled orders drop off. Sizes and options are kept separate, since a box
@@ -17,12 +21,19 @@ export default function AdminBakeListPage() {
     );
     const byDate = new Map<
       string,
-      { orderCount: number; items: Map<string, { label: string; qty: number }> }
+      {
+        orderCount: number;
+        items: Map<string, { label: string; qty: number }>;
+        windows: Set<string>;
+      }
     >();
 
     for (const order of active) {
-      const day = byDate.get(order.scheduledDate) ?? { orderCount: 0, items: new Map() };
+      const day =
+        byDate.get(order.scheduledDate) ??
+        { orderCount: 0, items: new Map(), windows: new Set<string>() };
       day.orderCount += 1;
+      if (order.timeWindow) day.windows.add(order.timeWindow);
       for (const item of order.items) {
         const opts = item.selectedOptions.map((o) => o.valueLabel).join(", ");
         const label = opts ? `${item.name} (${opts})` : item.name;
@@ -33,14 +44,19 @@ export default function AdminBakeListPage() {
       byDate.set(order.scheduledDate, day);
     }
 
+    // Order each day's windows by the owner's own list, so the sequence reads
+    // earliest-slot-first: what has to come out of the oven soonest.
     return [...byDate.entries()]
       .sort((a, b) => a[0].localeCompare(b[0])) // soonest first
       .map(([date, day]) => ({
         date,
         orderCount: day.orderCount,
+        windows: [...day.windows].sort(
+          (a, b) => windowRank(settings.timeWindows, a) - windowRank(settings.timeWindows, b),
+        ),
         items: [...day.items.values()].sort((x, y) => x.label.localeCompare(y.label)),
       }));
-  }, [orders]);
+  }, [orders, settings.timeWindows]);
 
   function exportCalendar() {
     const today = toISODate(new Date());
@@ -61,13 +77,27 @@ export default function AdminBakeListPage() {
     URL.revokeObjectURL(url);
   }
 
+  // Print a single day's sheet. The print stylesheet hides everything but the
+  // section that briefly carries `print-only-target`.
+  function printDay(date: string) {
+    const el = document.getElementById(`bake-${date}`);
+    if (!el) return;
+    el.classList.add("print-only-target");
+    const cleanup = () => {
+      el.classList.remove("print-only-target");
+      window.removeEventListener("afterprint", cleanup);
+    };
+    window.addEventListener("afterprint", cleanup);
+    window.print();
+  }
+
   return (
     <div className="max-w-2xl">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="font-display text-3xl font-semibold">Bake list</h1>
           <p className="mt-1 text-muted">
-            Everything still to make, by day. Completed and cancelled orders are excluded.
+            Everything still to make, by day. Tick items off as you bake, they stay ticked.
           </p>
         </div>
         <button
@@ -80,31 +110,77 @@ export default function AdminBakeListPage() {
       </div>
 
       {!hydrated ? (
-        null
+        <PanelLoading />
       ) : days.length === 0 ? (
         <p className="mt-8 rounded-2xl border border-line bg-white p-6 text-muted">
           Nothing to bake right now. New orders will show up here.
         </p>
       ) : (
         <div className="mt-6 flex flex-col gap-5">
-          {days.map((day) => (
-            <section key={day.date} className="rounded-2xl border border-line bg-white p-5">
-              <div className="flex items-baseline justify-between gap-3">
-                <h2 className="font-display text-lg font-semibold">{formatLongDate(day.date)}</h2>
-                <span className="text-sm text-muted">
-                  {day.orderCount} {day.orderCount === 1 ? "order" : "orders"}
-                </span>
-              </div>
-              <ul className="mt-3 flex flex-col gap-2 text-sm">
-                {day.items.map((item) => (
-                  <li key={item.label} className="flex items-center justify-between gap-3">
-                    <span>{item.label}</span>
-                    <span className="font-semibold">× {item.qty}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
+          {days.map((day) => {
+            const keys = day.items.map((item) => `${day.date}::${item.label}`);
+            const doneCount = keys.filter((key) => has(key)).length;
+            return (
+              <section
+                key={day.date}
+                id={`bake-${day.date}`}
+                className="rounded-2xl border border-line bg-white p-5"
+              >
+                <div className="flex flex-wrap items-baseline justify-between gap-3">
+                  <h2 className="font-display text-lg font-semibold">{formatLongDate(day.date)}</h2>
+                  <span className="text-sm text-muted">
+                    {day.orderCount} {day.orderCount === 1 ? "order" : "orders"}
+                    {doneCount > 0 && ` · ${doneCount}/${day.items.length} done`}
+                  </span>
+                </div>
+                {day.windows.length > 0 && (
+                  <p className="mt-1 text-xs font-semibold text-rose-deep">
+                    {day.windows.length > 1
+                      ? `Bake order: ${day.windows.join(" → ")}`
+                      : `Due: ${day.windows[0]}`}
+                  </p>
+                )}
+                <div className="mt-1 flex items-center gap-4 print-hide">
+                  {doneCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => clear(keys)}
+                      className="text-xs font-semibold text-rose-deep transition hover:text-rose"
+                    >
+                      Reset ticks
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => printDay(day.date)}
+                    className="text-xs font-semibold text-muted transition hover:text-ink"
+                  >
+                    🖨 Print this day
+                  </button>
+                </div>
+                <ul className="mt-3 flex flex-col gap-2 text-sm">
+                  {day.items.map((item) => {
+                    const key = `${day.date}::${item.label}`;
+                    const done = has(key);
+                    return (
+                      <li key={item.label} className="flex items-center justify-between gap-3">
+                        <label className="flex cursor-pointer items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={done}
+                            onChange={() => toggle(key)}
+                            className="h-4 w-4 shrink-0 accent-rose-deep"
+                          />
+                          <span className={cn(done && "text-muted line-through")}>{item.label}</span>
+                        </label>
+                        <span className={cn("font-semibold", done && "text-muted")}>× {item.qty}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            );
+          })}
         </div>
       )}
     </div>

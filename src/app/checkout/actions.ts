@@ -1,5 +1,6 @@
 "use server";
 
+import * as Sentry from "@sentry/nextjs";
 import { createOrder, type CreateOrderInput } from "@/lib/orders-db";
 import { createCheckoutSession } from "@/lib/payments";
 import { createServerSupabase } from "@/lib/supabase/server";
@@ -13,12 +14,48 @@ import { validatePromo, type PromoValidation } from "@/lib/promos";
 import { validateBundleForCheckout } from "@/lib/bundles";
 import { validateBoxForCheckout, validateFlavourBoxForCheckout } from "@/lib/boxes";
 import { recordIntent, markConverted } from "@/lib/checkout-intents";
+import { resolveCartLines } from "@/lib/cart-resolve";
 import { EMAIL_RE } from "@/lib/text";
 import { normalizeSgPhone } from "@/lib/phone";
 
 export type PlaceOrderResult =
   | { ok: true; redirectUrl: string }
   | { ok: false; error: string };
+
+/**
+ * How full a chosen date is, so the checkout can show slots-left and grey out a
+ * full time window before the customer fills the whole form. Counts non-cancelled
+ * orders; the client already has the caps from settings, so only counts are sent.
+ */
+export type DayCapacity = {
+  dayCount: number;
+  windowCounts: Record<string, number>;
+  dailyOrderCap: number | null;
+  perWindowCap: number | null;
+};
+
+export async function getDayCapacityAction(date: string): Promise<DayCapacity> {
+  const settings = await fetchStoreSettings();
+  const empty: DayCapacity = {
+    dayCount: 0,
+    windowCounts: {},
+    dailyOrderCap: settings.dailyOrderCap,
+    perWindowCap: settings.perWindowCap,
+  };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return empty;
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from("orders")
+    .select("time_window")
+    .eq("scheduled_date", date)
+    .neq("status", "cancelled");
+  const rows = (data as { time_window: string | null }[] | null) ?? [];
+  const windowCounts: Record<string, number> = {};
+  for (const row of rows) {
+    if (row.time_window) windowCounts[row.time_window] = (windowCounts[row.time_window] ?? 0) + 1;
+  }
+  return { ...empty, dayCount: rows.length, windowCounts };
+}
 
 function subtotalOf(items: CreateOrderInput["items"]): number {
   return items.reduce((sum, item) => sum + item.unitPriceCents * item.quantity, 0);
@@ -34,6 +71,7 @@ async function sanitizeSpecialLines(
   features: FeatureFlags,
 ): Promise<{ ok: true; items: CreateOrderInput["items"] } | { ok: false; error: string }> {
   const out: CreateOrderInput["items"] = [];
+  const plain: CreateOrderInput["items"] = [];
   for (const item of items) {
     if (item.productId.startsWith("bundle:")) {
       if (!features.bundles) return { ok: false, error: "Bundles aren’t available right now." };
@@ -66,8 +104,34 @@ async function sanitizeSpecialLines(
       if ("error" in v) return { ok: false, error: v.error };
       out.push({ ...item, unitPriceCents: v.priceCents });
     } else {
-      out.push(item);
+      plain.push(item);
     }
+  }
+
+  // Plain catalog lines are re-resolved against the live catalog too, so a
+  // deleted, sold-out, or repriced product (or a forged client price) never
+  // reaches an order. Names, options, and unit prices all come from the DB.
+  if (plain.length > 0) {
+    const resolved = await resolveCartLines(
+      plain.map((item) => ({
+        productId: item.productId,
+        productName: item.name,
+        quantity: item.quantity,
+        selections: item.selectedOptions.map((o) => ({
+          optionName: o.optionName,
+          valueLabel: o.valueLabel,
+        })),
+        personalisation: item.personalisation,
+      })),
+    );
+    if (resolved.skipped.length > 0) {
+      const names = resolved.skipped.map((s) => s.name).join(", ");
+      return {
+        ok: false,
+        error: `${names} ${resolved.skipped.length === 1 ? "is" : "are"} no longer available. Please update your cart.`,
+      };
+    }
+    out.push(...resolved.items);
   }
   return { ok: true, items: out };
 }
@@ -278,6 +342,13 @@ export async function placeOrder(
         promoDiscount = Math.min(result.discountCents, room);
         appliedPromo = result.code;
         room -= promoDiscount;
+      } else {
+        // Never silently drop a discount the customer saw on the button. The
+        // code can legitimately expire or hit its cap between Apply and here.
+        return {
+          ok: false,
+          error: `That promo code is no longer valid (${result.error}). Please remove it or try another, then place your order again.`,
+        };
       }
     }
 
@@ -300,7 +371,9 @@ export async function placeOrder(
         .single();
       const pointValue =
         (settingsRow as { point_value_cents: number } | null)?.point_value_cents ?? 5;
-      pointsDiscount = Math.floor(Math.min(balance * pointValue, room) / pointValue) * pointValue;
+      // A point value of 0 (owner set it blank) would make the discount NaN.
+      pointsDiscount =
+        pointValue > 0 ? Math.floor(Math.min(balance * pointValue, room) / pointValue) * pointValue : 0;
       pointsRedeemed = pointValue > 0 ? pointsDiscount / pointValue : 0;
       room -= pointsDiscount;
     }
@@ -345,9 +418,13 @@ export async function placeOrder(
 
     return { ok: true, redirectUrl: checkoutUrl ?? `/track/${created.trackingToken}` };
   } catch (error) {
+    // Validation problems are returned above, so anything thrown this far is an
+    // unexpected server or database fault. Log the detail for us, show the
+    // customer a plain line, never a raw Postgres or Stripe message.
+    Sentry.captureException(error);
     return {
       ok: false,
-      error: error instanceof Error ? error.message : "Something went wrong placing your order.",
+      error: "Something went wrong placing your order. Please try again, or send us a message on WhatsApp.",
     };
   }
 }

@@ -44,6 +44,13 @@ export type ProductOption = {
 export type FlavourBoxSize = { label: string; count: number; priceCents: number };
 export type FlavourBoxConfig = { flavourOption: string; sizes: FlavourBoxSize[] };
 
+/**
+ * One ingredient on a product. `name` is the only customer-facing part, shown on
+ * the detail page. `amount` and `unit` are admin-only, feeding the shopping-list
+ * totals (e.g. 200 + "g"), and are never shipped to a storefront client.
+ */
+export type IngredientLine = { name: string; amount?: number | null; unit?: string | null };
+
 export type Product = {
   id: string;
   slug: string;
@@ -51,13 +58,15 @@ export type Product = {
   shortDescription: string;
   longDescription: string;
   basePriceCents: number;
+  /** Ingredient/packaging cost per treat, for margin. null means not entered. */
+  costCents?: number | null;
   category: string;
   isAvailable: boolean;
   isBestSeller: boolean;
   isRecommended: boolean;
   allergens: Allergen[];
   dietaryTags: DietaryTag[];
-  ingredients?: string[];
+  ingredients?: IngredientLine[];
   storageInfo?: string;
   servingInfo?: string;
   /** Public URLs of uploaded product photos. Empty shows the placeholder. */
@@ -71,7 +80,16 @@ export type Product = {
   options: ProductOption[];
   /** Per-item build-your-own box config. null or absent means not offered. */
   flavourBox?: FlavourBoxConfig | null;
+  /**
+   * Personalisation prompt. A non-null label turns it on and is shown to the
+   * customer (e.g. "Message to pipe on top"); allowPhoto adds a reference-photo
+   * upload. null means the product isn't personalisable.
+   */
+  personalisation?: { label: string; allowPhoto: boolean } | null;
 };
+
+/** A customer's personalisation for one cart or order line. Both parts optional. */
+export type Personalisation = { message?: string; photoUrl?: string };
 
 /** A curated set menu sold as a single cart line. */
 export type BundleItem = {
@@ -124,4 +142,8 @@ export type CartItem = {
   unitPriceCents: number;
   quantity: number;
   selectedOptions: SelectedOption[];
+  /** First product photo, shown on the cart line. Optional so older saved carts still load. */
+  imageUrl?: string;
+  /** Customer's personalisation for this line, when the product allows it. */
+  personalisation?: Personalisation;
 };

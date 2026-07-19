@@ -123,7 +123,7 @@ export async function validateFlavourBoxForCheckout(
   chosenLabels: string[],
 ): Promise<{ priceCents: number } | { error: string } | null> {
   const product = await fetchProductById(productId);
-  if (!product || !product.flavourBox) return null;
+  if (!product || !product.flavourBox || !product.isAvailable) return null;
   const size = product.flavourBox.sizes.find((s) => s.count === count);
   if (!size) return { error: "That box size is no longer available." };
   if (chosenLabels.length !== count) {

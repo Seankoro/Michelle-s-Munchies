@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useDialog } from "@/lib/useDialog";
+import { useEffect, useState } from "react";
+import { AdminModal } from "@/components/admin/AdminModal";
 import { useAdmin } from "@/components/admin/AdminStore";
+import { PanelLoading } from "@/components/admin/PanelLoading";
 import {
   loadBoxTemplatesAction,
   createBoxTemplateAction,
@@ -46,8 +47,6 @@ export default function AdminBoxesPage() {
   const [boxes, setBoxes] = useState<AdminBoxTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState<Draft | null>(null);
-  const editorRef = useRef<HTMLDivElement>(null);
-  useDialog(!!draft, () => setDraft(null), editorRef);
   const [error, setError] = useState("");
 
   async function refresh() {
@@ -102,6 +101,7 @@ export default function AdminBoxesPage() {
   }
 
   async function remove(id: string) {
+    if (!window.confirm("Delete this box template? This can’t be undone.")) return;
     await deleteBoxTemplateAction(id);
     await refresh();
   }
@@ -119,12 +119,12 @@ export default function AdminBoxesPage() {
     );
   }
 
-  if (!hydrated || loading) return null;
+  if (!hydrated || loading) return <PanelLoading />;
 
   return (
     <div className="max-w-3xl">
       <div className="flex items-center justify-between">
-        <h1 className="font-display text-3xl font-semibold">Build-a-box</h1>
+        <h1 className="font-display text-3xl font-semibold">Build a box</h1>
         <button
           type="button"
           onClick={() => {
@@ -175,30 +175,16 @@ export default function AdminBoxesPage() {
       </ul>
 
       {draft && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={draft.id ? "Edit box" : "New box"}
-          onClick={() => setDraft(null)}
-          className="fixed inset-0 z-50 flex items-end justify-center bg-ink/40 sm:items-center sm:p-4"
+        <AdminModal
+          onClose={() => setDraft(null)}
+          ariaLabel={draft.id ? "Edit box" : "New box"}
+          title={
+            <h2 className="font-display text-lg font-semibold">
+              {draft.id ? "Edit box" : "New box"}
+            </h2>
+          }
         >
-          <div
-            ref={editorRef}
-            onClick={(e) => e.stopPropagation()}
-            className="max-h-[90vh] w-full max-w-lg animate-[fade-up_0.2s_ease-out] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-soft sm:rounded-2xl"
-          >
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="font-display text-lg font-semibold">{draft.id ? "Edit box" : "New box"}</h2>
-              <button
-                type="button"
-                onClick={() => setDraft(null)}
-                aria-label="Close"
-                className="rounded-full p-2 text-muted transition hover:bg-blush-soft active:scale-90"
-              >
-                ✕
-              </button>
-            </div>
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-sm font-semibold">
               Name
               <input
@@ -253,7 +239,10 @@ export default function AdminBoxesPage() {
           </p>
           <div className="mt-2 grid gap-1 sm:grid-cols-2">
             {products.map((p) => (
-              <label key={p.id} className="flex items-center gap-2 text-sm">
+              <label
+                key={p.id}
+                className="flex cursor-pointer items-center gap-2 py-1.5 text-sm"
+              >
                 <input
                   type="checkbox"
                   checked={draft.productIds.includes(p.id)}
@@ -292,8 +281,7 @@ export default function AdminBoxesPage() {
               Cancel
             </button>
           </div>
-          </div>
-        </div>
+        </AdminModal>
       )}
     </div>
   );

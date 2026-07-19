@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { cn } from "@/lib/cn";
+import { useDialog } from "@/lib/useDialog";
 import { RibbonBow } from "@/components/ui/RibbonBow";
 import { primaryNav } from "@/lib/nav";
 import { useFeatures } from "@/components/features/FeaturesProvider";
-import { createBrowserSupabase } from "@/lib/supabase/browser";
+import { signOutAndRedirect } from "@/lib/supabase/browser";
+import { useSignedIn } from "@/lib/useSignedIn";
 
 /**
  * Mobile-only navigation. The Menu ribbon opens a full-height side bar from the
@@ -18,49 +21,29 @@ import { createBrowserSupabase } from "@/lib/supabase/browser";
  */
 export function MobileMenu() {
   const [open, setOpen] = useState(false);
-  const [signedIn, setSignedIn] = useState(false);
-  const [authReady, setAuthReady] = useState(false);
+  const { signedIn, ready: authReady } = useSignedIn();
   const panelId = useId();
   const features = useFeatures();
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  const firstLinkRef = useRef<HTMLAnchorElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Escape, focus trap, scroll lock, and focus restore for the drawer.
+  useDialog(open, () => setOpen(false), panelRef);
+
+  async function handleSignOut() {
+    setOpen(false);
+    await signOutAndRedirect("/");
+  }
 
   const links = [
     ...primaryNav,
     ...(features.bundles ? [{ href: "/bundles", label: "Bundles" }] : []),
-    ...(features.buildABox ? [{ href: "/build-a-box", label: "DIY" }] : []),
+    ...(features.buildABox ? [{ href: "/build-a-box", label: "Build a box" }] : []),
   ];
 
-  useEffect(() => {
-    const supabase = createBrowserSupabase();
-    supabase.auth.getUser().then(({ data }) => {
-      setSignedIn(Boolean(data.user));
-      setAuthReady(true);
-    });
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSignedIn(Boolean(session?.user));
-      setAuthReady(true);
-    });
-    return () => sub.subscription.unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    if (!open) return;
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setOpen(false);
-        buttonRef.current?.focus();
-      }
-    }
-    document.addEventListener("keydown", onKeyDown);
-    firstLinkRef.current?.focus();
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [open]);
 
   return (
     <div className="md:hidden">
       <button
-        ref={buttonRef}
         type="button"
         aria-expanded={open}
         aria-controls={panelId}
@@ -84,9 +67,12 @@ export function MobileMenu() {
         )}
       />
 
-      {/* Left side bar */}
+      {/* Left side bar. `inert` keeps the off-screen drawer out of the tab
+          order and away from screen readers while closed. */}
       <div
         id={panelId}
+        ref={panelRef}
+        inert={!open}
         className={cn(
           "fixed left-0 top-0 z-50 flex h-full w-72 max-w-[85%] flex-col overflow-y-auto border-r border-line bg-white p-4 shadow-soft transition-transform duration-300 ease-out",
           open ? "translate-x-0" : "-translate-x-full",
@@ -94,7 +80,7 @@ export function MobileMenu() {
       >
         <div className="flex items-center justify-between gap-2">
           <span className="flex items-center gap-2">
-            <RibbonBow withTails={false} className="h-7 w-9" />
+            <Image src="/logo.png" alt="" width={512} height={512} className="h-9 w-9" />
             <span className="font-display text-lg font-semibold">Michelle&rsquo;s Munchies</span>
           </span>
           <button
@@ -109,11 +95,10 @@ export function MobileMenu() {
 
         <nav aria-label="Site" className="mt-4">
           <ul className="flex flex-col">
-            {links.map((link, index) => (
+            {links.map((link) => (
               <li key={link.href}>
                 <Link
                   href={link.href}
-                  ref={index === 0 ? firstLinkRef : undefined}
                   onClick={() => setOpen(false)}
                   className="block rounded-xl px-3 py-2.5 font-semibold text-ink transition hover:bg-blush-soft"
                 >
@@ -131,13 +116,32 @@ export function MobileMenu() {
             Track an order
           </Link>
           {authReady ? (
-            <Link
-              href={signedIn ? "/account" : "/account/sign-in"}
-              onClick={() => setOpen(false)}
-              className="block rounded-xl px-3 py-2.5 font-semibold text-ink transition hover:bg-blush-soft"
-            >
-              {signedIn ? "Account" : "Sign in"}
-            </Link>
+            signedIn ? (
+              <>
+                <Link
+                  href="/account"
+                  onClick={() => setOpen(false)}
+                  className="block rounded-xl px-3 py-2.5 font-semibold text-ink transition hover:bg-blush-soft"
+                >
+                  Account
+                </Link>
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  className="block w-full rounded-xl px-3 py-2.5 text-left font-semibold text-ink transition hover:bg-blush-soft active:scale-[0.98]"
+                >
+                  Sign out
+                </button>
+              </>
+            ) : (
+              <Link
+                href="/account/sign-in"
+                onClick={() => setOpen(false)}
+                className="block rounded-xl px-3 py-2.5 font-semibold text-ink transition hover:bg-blush-soft"
+              >
+                Sign in
+              </Link>
+            )
           ) : (
             <span aria-hidden="true" className="m-1 block h-9 animate-pulse rounded-xl bg-marble/60" />
           )}

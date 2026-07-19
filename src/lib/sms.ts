@@ -1,5 +1,7 @@
 import "server-only";
+import * as Sentry from "@sentry/nextjs";
 import { orderStatusLabels, type OrderStatus } from "@/lib/order";
+import { formatPrice } from "@/lib/catalog";
 
 /**
  * Twilio SMS and WhatsApp notifications.
@@ -15,10 +17,6 @@ import { orderStatusLabels, type OrderStatus } from "@/lib/order";
  */
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
-
-function money(cents: number): string {
-  return `S$${(cents / 100).toFixed(2)}`;
-}
 
 type TwilioConfig = {
   accountSid: string;
@@ -46,11 +44,10 @@ function getConfig(): TwilioConfig | null {
 
 /** Normalise a raw phone into the channel address Twilio expects. */
 function toAddress(phone: string, whatsapp: boolean): string {
-  const trimmed = phone.trim();
-  if (whatsapp) {
-    return trimmed.startsWith("whatsapp:") ? trimmed : `whatsapp:${trimmed}`;
-  }
-  return trimmed;
+  // Stored numbers are display-format "+65 XXXX XXXX"; Twilio needs bare E.164,
+  // so strip spaces and any separators down to digits and the leading plus.
+  const clean = phone.trim().replace(/[^\d+]/g, "");
+  return whatsapp ? `whatsapp:${clean}` : clean;
 }
 
 async function sendMessage(toPhone: string, body: string): Promise<void> {
@@ -81,10 +78,15 @@ async function sendMessage(toPhone: string, body: string): Promise<void> {
     if (!res.ok) {
       const detail = await res.text();
       console.error(`[sms] Twilio rejected message to ${toPhone} (${res.status}): ${detail}`);
+      Sentry.captureMessage(`Twilio rejected message (${res.status})`, {
+        level: "error",
+        extra: { detail },
+      });
     }
   } catch (error) {
-    // Notifications must never break the order flow, log and move on.
+    // Notifications must never break the order flow. Log, report, move on.
     console.error(`[sms] Failed to send message to ${toPhone}:`, error);
+    Sentry.captureException(error);
   }
 }
 
@@ -101,7 +103,7 @@ export async function notifyOwnerNewOrder(order: {
   const gift = order.isGift ? " 🎁 (gift)" : "";
   const body =
     `🎀 New order ${order.orderNumber}${gift}\n` +
-    `${order.name} · ${order.fulfillmentType} · ${money(order.totalCents)}`;
+    `${order.name} · ${order.fulfillmentType} · ${formatPrice(order.totalCents)}`;
   await sendMessage(owner, body);
 }
 

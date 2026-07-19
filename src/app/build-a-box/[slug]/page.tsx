@@ -21,7 +21,7 @@ export default async function BoxDetailPage({ params }: Params) {
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-10 lg:px-10">
-      <Link href="/build-a-box" className="text-sm font-semibold text-rose transition hover:text-rose-deep">
+      <Link href="/build-a-box" className="text-sm font-semibold text-rose-deep transition hover:text-rose">
         ← Back to boxes
       </Link>
       <h1 className="mt-6 font-display text-4xl font-semibold">{box.name}</h1>

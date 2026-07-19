@@ -1,9 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import { timingSafeEqual } from "node:crypto";
 import { fetchStoreSettings } from "@/lib/settings";
 import { sendAbandonedReminders } from "@/lib/checkout-intents";
 import { grantBirthdayRewards } from "@/lib/birthday";
 import { notifyLaunchedDrops } from "@/lib/stock-notify";
+import { sendWinbackNudges } from "@/lib/winback";
+import { sendOccasionReminders } from "@/lib/occasions";
 
 export const dynamic = "force-dynamic";
 
@@ -22,33 +25,72 @@ function authorized(request: NextRequest): boolean {
 /**
  * Scheduled work, triggered hourly by an external scheduler that calls this URL.
  * Protected by a secret bearer token so it can't be triggered to spam emails.
- * Runs abandoned-cart reminders and birthday rewards, each gated by its feature flag.
+ * Runs abandoned-cart reminders, birthday rewards, and seasonal-drop go-live
+ * notifications, each gated by its feature flag.
  */
+// Sentry cron monitor: the route checks in on every run, so Sentry alerts
+// when the EXTERNAL scheduler silently stops calling us — a failure mode error
+// tracking alone can never see. Auto-creates the monitor on first check-in.
+const MONITOR_SLUG = "hourly-jobs";
+const MONITOR_CONFIG = {
+  schedule: { type: "interval", value: 1, unit: "hour" },
+  checkinMargin: 15,
+  maxRuntime: 10,
+  timezone: "Asia/Singapore",
+} as const;
+
 export async function GET(request: NextRequest) {
   if (!authorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Only production check-ins count toward the schedule; a stray dev run would
+  // otherwise register a "development" environment that then reads as missed.
+  const monitored = process.env.NODE_ENV === "production";
+  const checkInId = monitored
+    ? Sentry.captureCheckIn({ monitorSlug: MONITOR_SLUG, status: "in_progress" }, MONITOR_CONFIG)
+    : null;
+
   const settings = await fetchStoreSettings();
   const result: Record<string, number | string> = {};
 
-  if (settings.features.abandonedCart) {
-    result.abandonedReminders = await sendAbandonedReminders(settings.abandonedAfterHours);
-  } else {
-    result.abandonedReminders = "skipped (feature off)";
+  // Each job is isolated so one failure never blocks the others, and every
+  // failure is reported rather than silently ending the hourly run.
+  async function run(name: string, enabled: boolean, job: () => Promise<number>) {
+    if (!enabled) {
+      result[name] = "skipped (feature off)";
+      return;
+    }
+    try {
+      result[name] = await job();
+    } catch (error) {
+      console.error(`[cron] ${name} failed:`, error);
+      Sentry.captureException(error, { extra: { job: name } });
+      result[name] = "failed";
+    }
   }
 
-  if (settings.features.birthdayRewards) {
-    result.birthdayRewards = await grantBirthdayRewards();
-  } else {
-    result.birthdayRewards = "skipped (feature off)";
-  }
+  await run("abandonedReminders", settings.features.abandonedCart, () =>
+    sendAbandonedReminders(settings.abandonedAfterHours),
+  );
+  await run("birthdayRewards", settings.features.birthdayRewards, () => grantBirthdayRewards());
+  await run("dropsChecked", settings.features.drops, () => notifyLaunchedDrops());
+  // Win-back rides the same automated-lifecycle-email switch as abandoned cart.
+  await run("winbackNudges", settings.features.abandonedCart, () => sendWinbackNudges());
+  await run("occasionReminders", settings.features.occasionReminders, () =>
+    sendOccasionReminders(),
+  );
 
-  if (settings.features.drops) {
-    result.dropsChecked = await notifyLaunchedDrops();
-  } else {
-    result.dropsChecked = "skipped (feature off)";
+  if (checkInId) {
+    const anyFailed = Object.values(result).includes("failed");
+    Sentry.captureCheckIn(
+      { checkInId, monitorSlug: MONITOR_SLUG, status: anyFailed ? "error" : "ok" },
+      MONITOR_CONFIG,
+    );
   }
+  // Serverless functions can freeze right after responding, so push any
+  // buffered check-ins and captured errors out before returning.
+  await Sentry.flush(2000);
 
   return NextResponse.json({ ok: true, ...result });
 }

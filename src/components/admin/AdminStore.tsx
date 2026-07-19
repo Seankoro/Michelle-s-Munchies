@@ -1,19 +1,34 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import type { Product } from "@/lib/types";
 import type { AdminOrder, OrderStatus, PaymentStatus } from "@/lib/order";
 import type { FeatureFlags, NotePrompt } from "@/lib/settings";
+import { ALL_FEATURES_ON } from "@/lib/feature-flags";
 import {
   cancelOrderAction,
+  createManualOrderAction,
   createProductAction,
   deleteProductAction,
   loadAdminData,
+  recordDepositAction,
+  rescheduleOrderAdminAction,
   updateOrderStatusAction,
+  updateOwnerNoteAction,
   updatePaymentStatusAction,
   updateProductAction,
   updateSettingsAction,
+  type ManualOrderResult,
 } from "@/lib/admin-actions";
+import type { ManualOrderInput } from "@/lib/orders-db";
 
 export type AdminSettings = {
   deliveryFeeCents: number;
@@ -36,6 +51,8 @@ export type AdminSettings = {
   abandonedAfterHours: number;
   notePrompts: NotePrompt[];
   lowStockThreshold: number | null;
+  /** Owner-written lines for the mascot's speech bubble, added to the automatic ones. */
+  mascotMessages: string[];
   pointsPerDollar: number;
   pointValueCents: number;
   referralReferrerPoints: number;
@@ -60,33 +77,12 @@ const defaultSettings: AdminSettings = {
   abandonedAfterHours: 4,
   notePrompts: [],
   lowStockThreshold: null,
+  mascotMessages: [],
   pointsPerDollar: 1,
   pointValueCents: 5,
   referralReferrerPoints: 50,
   referralRefereePoints: 30,
-  features: {
-    rewards: true,
-    wishlist: true,
-    reviews: true,
-    promos: true,
-    gifting: true,
-    referrals: true,
-    buildABox: true,
-    bundles: true,
-    spendGift: true,
-    backInStock: true,
-    photoReviews: true,
-    cartSharing: true,
-    wishlistSharing: true,
-    instagram: true,
-    birthdayRewards: true,
-    abandonedCart: true,
-    structuredNotes: true,
-    orderChanges: true,
-    newsletter: true,
-    drops: true,
-    dietaryPrefs: true,
-  },
+  features: { ...ALL_FEATURES_ON },
 };
 
 type AdminContextValue = {
@@ -95,6 +91,9 @@ type AdminContextValue = {
   settings: AdminSettings;
   hydrated: boolean;
   error: string | null;
+  /** Re-pull everything from the server. Safe to call any time. */
+  refresh: () => Promise<void>;
+  lastUpdated: Date | null;
   toggleAvailability: (id: string) => void;
   toggleBestSeller: (id: string) => void;
   toggleRecommended: (id: string) => void;
@@ -103,16 +102,22 @@ type AdminContextValue = {
   deleteProduct: (id: string) => void;
   updateOrderStatus: (orderNumber: string, status: OrderStatus) => void;
   updatePaymentStatus: (orderNumber: string, paymentStatus: PaymentStatus) => void;
+  updateOwnerNote: (orderNumber: string, note: string) => void;
+  rescheduleOrder: (orderNumber: string, date: string, timeWindow: string) => void;
+  recordDeposit: (orderNumber: string, cents: number) => void;
+  addManualOrder: (input: ManualOrderInput) => Promise<ManualOrderResult>;
   cancelOrder: (orderNumber: string) => Promise<{ ok: boolean; refunded?: boolean; error?: string }>;
-  updateSettings: (patch: Partial<AdminSettings>) => void;
+  updateSettings: (patch: Partial<AdminSettings>) => Promise<boolean>;
 };
 
 const AdminContext = createContext<AdminContextValue | null>(null);
 
 /**
- * Database-backed admin store. Reads everything once on mount via a server
- * action. Each mutation applies an optimistic local update and fires the
- * matching server action, which writes to Postgres with the service-role key.
+ * Database-backed admin store. Loads on mount and re-pulls when the tab
+ * regains focus, so an open admin tab never quietly serves stale orders. Each
+ * mutation applies an optimistic local update, awaits the matching server
+ * action, and on failure rolls the update back and surfaces the error in the
+ * shell banner, so "saved" on screen always means saved in Postgres.
  */
 export function AdminStoreProvider({ children }: { children: ReactNode }) {
   const [products, setProducts] = useState<Product[]>([]);
@@ -120,29 +125,84 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<AdminSettings>(defaultSettings);
   const [hydrated, setHydrated] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const lastFetchAt = useRef(0);
+
+  const refresh = useCallback(async () => {
+    try {
+      const data = await loadAdminData();
+      setProducts(data.products);
+      setOrders(data.orders);
+      setSettings(data.settings);
+      setLastUpdated(new Date());
+      setError(null);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to load admin data.");
+    } finally {
+      lastFetchAt.current = Date.now();
+    }
+  }, []);
 
   useEffect(() => {
-    let active = true;
-    loadAdminData()
-      .then((data) => {
-        if (!active) return;
-        setProducts(data.products);
-        setOrders(data.orders);
-        setSettings(data.settings);
-        setHydrated(true);
-      })
-      .catch((e: unknown) => {
-        if (!active) return;
-        setError(e instanceof Error ? e.message : "Failed to load admin data.");
-        setHydrated(true);
-      });
+    void refresh().finally(() => setHydrated(true));
+  }, [refresh]);
+
+  // Re-pull when the tab comes back to the foreground, throttled so quick
+  // tab-switches don't hammer the server.
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState !== "visible") return;
+      if (Date.now() - lastFetchAt.current < 30_000) return;
+      void refresh();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
     return () => {
-      active = false;
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
     };
-  }, []);
+  }, [refresh]);
+
+  /** Fire a server action for an optimistic update; roll back + surface on failure. */
+  function persist(action: Promise<unknown>, rollback: () => void, what: string) {
+    action.catch((e: unknown) => {
+      rollback();
+      setError(
+        e instanceof Error
+          ? `${what} didn't save (${e.message}). The change was undone, please try again.`
+          : `${what} didn't save. The change was undone, please try again.`,
+      );
+    });
+  }
 
   function patchProductLocal(id: string, patch: Partial<Product>) {
     setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+  }
+
+  function patchOrderLocal(orderNumber: string, patch: Partial<AdminOrder>) {
+    setOrders((prev) =>
+      prev.map((o) => (o.orderNumber === orderNumber ? { ...o, ...patch } : o)),
+    );
+  }
+
+  /** Optimistically patch one order, then persist with a snapshot rollback. */
+  function persistOrderPatch(
+    orderNumber: string,
+    patch: Partial<AdminOrder>,
+    action: Promise<unknown>,
+    what: string,
+  ) {
+    const before = orders.find((o) => o.orderNumber === orderNumber);
+    patchOrderLocal(orderNumber, patch);
+    persist(
+      action,
+      () => {
+        if (before) {
+          setOrders((prev) => prev.map((o) => (o.orderNumber === orderNumber ? before : o)));
+        }
+      },
+      what,
+    );
   }
 
   function toggleAvailability(id: string) {
@@ -150,7 +210,11 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
     if (!target) return;
     const isAvailable = !target.isAvailable;
     patchProductLocal(id, { isAvailable });
-    void updateProductAction(id, { isAvailable });
+    persist(
+      updateProductAction(id, { isAvailable }),
+      () => patchProductLocal(id, { isAvailable: target.isAvailable }),
+      "Availability",
+    );
   }
 
   function toggleBestSeller(id: string) {
@@ -158,7 +222,11 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
     if (!target) return;
     const isBestSeller = !target.isBestSeller;
     patchProductLocal(id, { isBestSeller });
-    void updateProductAction(id, { isBestSeller });
+    persist(
+      updateProductAction(id, { isBestSeller }),
+      () => patchProductLocal(id, { isBestSeller: target.isBestSeller }),
+      "Best-seller flag",
+    );
   }
 
   function toggleRecommended(id: string) {
@@ -166,12 +234,23 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
     if (!target) return;
     const isRecommended = !target.isRecommended;
     patchProductLocal(id, { isRecommended });
-    void updateProductAction(id, { isRecommended });
+    persist(
+      updateProductAction(id, { isRecommended }),
+      () => patchProductLocal(id, { isRecommended: target.isRecommended }),
+      "Recommended flag",
+    );
   }
 
   function updateProduct(id: string, patch: Partial<Product>) {
+    const before = products.find((p) => p.id === id);
     patchProductLocal(id, patch);
-    void updateProductAction(id, patch);
+    persist(
+      updateProductAction(id, patch),
+      () => {
+        if (before) setProducts((prev) => prev.map((p) => (p.id === id ? before : p)));
+      },
+      "Product change",
+    );
   }
 
   function addProduct(product: Product) {
@@ -184,22 +263,67 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
   }
 
   function deleteProduct(id: string) {
+    const before = products;
     setProducts((prev) => prev.filter((p) => p.id !== id));
-    void deleteProductAction(id);
+    persist(deleteProductAction(id), () => setProducts(before), "Delete");
   }
 
   function updateOrderStatus(orderNumber: string, status: OrderStatus) {
-    setOrders((prev) =>
-      prev.map((o) => (o.orderNumber === orderNumber ? { ...o, status } : o)),
+    persistOrderPatch(
+      orderNumber,
+      { status },
+      updateOrderStatusAction(orderNumber, status),
+      `Status for ${orderNumber}`,
     );
-    void updateOrderStatusAction(orderNumber, status);
   }
 
   function updatePaymentStatus(orderNumber: string, paymentStatus: PaymentStatus) {
-    setOrders((prev) =>
-      prev.map((o) => (o.orderNumber === orderNumber ? { ...o, paymentStatus } : o)),
+    persistOrderPatch(
+      orderNumber,
+      { paymentStatus },
+      updatePaymentStatusAction(orderNumber, paymentStatus),
+      `Payment status for ${orderNumber}`,
     );
-    void updatePaymentStatusAction(orderNumber, paymentStatus);
+  }
+
+  function rescheduleOrder(orderNumber: string, date: string, timeWindow: string) {
+    const before = orders.find((o) => o.orderNumber === orderNumber);
+    if (before && before.scheduledDate === date && before.timeWindow === timeWindow) return;
+    persistOrderPatch(
+      orderNumber,
+      { scheduledDate: date, timeWindow },
+      rescheduleOrderAdminAction(orderNumber, date, timeWindow),
+      `Reschedule for ${orderNumber}`,
+    );
+  }
+
+  function recordDeposit(orderNumber: string, cents: number) {
+    const depositCents = cents > 0 ? Math.round(cents) : null;
+    persistOrderPatch(
+      orderNumber,
+      { depositCents },
+      recordDepositAction(orderNumber, cents),
+      `Deposit for ${orderNumber}`,
+    );
+  }
+
+  function updateOwnerNote(orderNumber: string, note: string) {
+    const trimmed = note.trim();
+    const before = orders.find((o) => o.orderNumber === orderNumber);
+    if (before && (before.ownerNote ?? "") === trimmed) return; // nothing changed
+    persistOrderPatch(
+      orderNumber,
+      { ownerNote: trimmed || undefined },
+      updateOwnerNoteAction(orderNumber, trimmed),
+      `Note for ${orderNumber}`,
+    );
+  }
+
+  async function addManualOrder(input: ManualOrderInput): Promise<ManualOrderResult> {
+    const result = await createManualOrderAction(input);
+    // Pull the new order in so it appears in the list and every prep tool.
+    if (result.ok) await refresh();
+    return result;
   }
 
   async function cancelOrder(orderNumber: string) {
@@ -221,9 +345,21 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
     return { ok: false, error: result.error };
   }
 
-  function updateSettings(patch: Partial<AdminSettings>) {
+  async function updateSettings(patch: Partial<AdminSettings>): Promise<boolean> {
+    const before = settings;
     setSettings((prev) => ({ ...prev, ...patch }));
-    void updateSettingsAction(patch);
+    try {
+      await updateSettingsAction(patch);
+      return true;
+    } catch (e: unknown) {
+      setSettings(before);
+      setError(
+        e instanceof Error
+          ? `Settings didn't save (${e.message}). Your changes were undone.`
+          : "Settings didn't save. Your changes were undone, please try again.",
+      );
+      return false;
+    }
   }
 
   const value: AdminContextValue = {
@@ -232,6 +368,8 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
     settings,
     hydrated,
     error,
+    refresh,
+    lastUpdated,
     toggleAvailability,
     toggleBestSeller,
     toggleRecommended,
@@ -240,6 +378,10 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
     deleteProduct,
     updateOrderStatus,
     updatePaymentStatus,
+    updateOwnerNote,
+    rescheduleOrder,
+    recordDeposit,
+    addManualOrder,
     cancelOrder,
     updateSettings,
   };

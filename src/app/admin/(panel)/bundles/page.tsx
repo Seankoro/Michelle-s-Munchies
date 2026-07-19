@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useDialog } from "@/lib/useDialog";
+import { useEffect, useState } from "react";
+import { AdminModal } from "@/components/admin/AdminModal";
 import { useAdmin } from "@/components/admin/AdminStore";
+import { PanelLoading } from "@/components/admin/PanelLoading";
 import {
   loadBundlesAction,
   createBundleAction,
@@ -47,8 +48,6 @@ export default function AdminBundlesPage() {
   const [bundles, setBundles] = useState<AdminBundle[]>([]);
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState<Draft | null>(null);
-  const editorRef = useRef<HTMLDivElement>(null);
-  useDialog(!!draft, () => setDraft(null), editorRef);
   const [error, setError] = useState("");
 
   async function refresh() {
@@ -107,11 +106,12 @@ export default function AdminBundlesPage() {
   }
 
   async function remove(id: string) {
+    if (!window.confirm("Delete this bundle? This can’t be undone.")) return;
     await deleteBundleAction(id);
     await refresh();
   }
 
-  if (!hydrated || loading) return null;
+  if (!hydrated || loading) return <PanelLoading />;
 
   return (
     <div className="max-w-3xl">
@@ -164,32 +164,16 @@ export default function AdminBundlesPage() {
       </ul>
 
       {draft && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={draft.id ? "Edit bundle" : "New bundle"}
-          onClick={() => setDraft(null)}
-          className="fixed inset-0 z-50 flex items-end justify-center bg-ink/40 sm:items-center sm:p-4"
+        <AdminModal
+          onClose={() => setDraft(null)}
+          ariaLabel={draft.id ? "Edit bundle" : "New bundle"}
+          title={
+            <h2 className="font-display text-lg font-semibold">
+              {draft.id ? "Edit bundle" : "New bundle"}
+            </h2>
+          }
         >
-          <div
-            ref={editorRef}
-            onClick={(e) => e.stopPropagation()}
-            className="max-h-[90vh] w-full max-w-lg animate-[fade-up_0.2s_ease-out] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-soft sm:rounded-2xl"
-          >
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="font-display text-lg font-semibold">
-                {draft.id ? "Edit bundle" : "New bundle"}
-              </h2>
-              <button
-                type="button"
-                onClick={() => setDraft(null)}
-                aria-label="Close"
-                className="rounded-full p-2 text-muted transition hover:bg-blush-soft active:scale-90"
-              >
-                ✕
-              </button>
-            </div>
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-sm font-semibold">
               Name
               <input
@@ -254,6 +238,7 @@ export default function AdminBundlesPage() {
               <div key={index} className="flex gap-2">
                 <select
                   className={inputClass}
+                  aria-label="Product"
                   value={item.productId}
                   onChange={(e) =>
                     setDraft((d) => {
@@ -274,6 +259,7 @@ export default function AdminBundlesPage() {
                 <input
                   className={cn(inputClass, "max-w-20")}
                   value={String(item.quantity)}
+                  aria-label="Quantity"
                   inputMode="numeric"
                   onChange={(e) =>
                     setDraft((d) => {
@@ -327,8 +313,7 @@ export default function AdminBundlesPage() {
               Cancel
             </button>
           </div>
-          </div>
-        </div>
+        </AdminModal>
       )}
     </div>
   );

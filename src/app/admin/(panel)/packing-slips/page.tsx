@@ -2,6 +2,8 @@
 
 import { useMemo } from "react";
 import { useAdmin } from "@/components/admin/AdminStore";
+import { PanelLoading } from "@/components/admin/PanelLoading";
+import { singaporeDateString } from "@/lib/time";
 import { allergenMeta } from "@/lib/catalog";
 import { formatLongDate } from "@/lib/order";
 
@@ -21,7 +23,12 @@ export default function AdminPackingSlipsPage() {
   }, [products]);
 
   const days = useMemo(() => {
-    const active = orders.filter((o) => o.status !== "cancelled");
+    // Only orders that still need packing: not cancelled, not completed, and
+    // scheduled today (Singapore time) or later, so Print never outputs history.
+    const today = singaporeDateString();
+    const active = orders.filter(
+      (o) => o.status !== "cancelled" && o.status !== "completed" && o.scheduledDate >= today,
+    );
     const byDate = new Map<string, typeof active>();
     for (const order of active) {
       const list = byDate.get(order.scheduledDate) ?? [];
@@ -31,7 +38,7 @@ export default function AdminPackingSlipsPage() {
     return [...byDate.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [orders]);
 
-  if (!hydrated) return null;
+  if (!hydrated) return <PanelLoading />;
 
   return (
     <div className="max-w-3xl">
@@ -103,6 +110,16 @@ export default function AdminPackingSlipsPage() {
                               {allergens.length > 0 && (
                                 <span className="block text-xs text-muted">
                                   Contains: {allergens.join(", ")}
+                                </span>
+                              )}
+                              {item.personalisation?.message && (
+                                <span className="block text-xs font-semibold text-ink">
+                                  ✍️ &ldquo;{item.personalisation.message}&rdquo;
+                                </span>
+                              )}
+                              {item.personalisation?.photoUrl && (
+                                <span className="block text-xs text-muted">
+                                  📎 Reference photo on the order
                                 </span>
                               )}
                             </span>

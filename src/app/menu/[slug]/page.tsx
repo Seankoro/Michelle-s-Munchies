@@ -21,6 +21,7 @@ import { Stars } from "@/components/product/Stars";
 import { ReviewForm } from "@/components/product/ReviewForm";
 import { fetchReviews, getReviewContext } from "@/lib/reviews";
 import { formatLongDate } from "@/lib/order";
+import { jsonLd } from "@/lib/json-ld";
 import { Reveal } from "@/components/ui/Reveal";
 
 type Params = { params: Promise<{ slug: string }> };
@@ -40,19 +41,53 @@ export default async function ProductDetailPage({ params }: Params) {
   if (!product) notFound();
 
   const related = await fetchRelatedProducts(product);
-  const reviews = await fetchReviews(product.id);
-  const reviewCtx = await getReviewContext(product.id);
+  const settings = await fetchStoreSettings();
+  // Only touch reviews when the feature is on, so a disabled store never renders
+  // (or emits star JSON-LD for) content the page keeps hidden.
+  const reviews = settings.features.reviews ? await fetchReviews(product.id) : [];
+  const reviewCtx = settings.features.reviews
+    ? await getReviewContext(product.id)
+    : { signedIn: false, canReview: false, existing: null };
   const avgRating = reviews.length
     ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length
     : 0;
   const photoCount = product.photoCount ?? 1;
   const allergenText = product.allergens.map((a) => allergenMeta[a].label.toLowerCase());
-  const settings = await fetchStoreSettings();
   const leadTime = settings.leadTimeDays;
+
+  // Product structured data so search results can show price, stock, and stars.
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  const productJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: product.name,
+    description: product.shortDescription,
+    url: `${siteUrl}/menu/${product.slug}`,
+    ...(product.imageUrls && product.imageUrls.length > 0 ? { image: product.imageUrls } : {}),
+    offers: {
+      "@type": "Offer",
+      priceCurrency: "SGD",
+      price: (product.basePriceCents / 100).toFixed(2),
+      availability: product.isAvailable
+        ? "https://schema.org/InStock"
+        : "https://schema.org/OutOfStock",
+      url: `${siteUrl}/menu/${product.slug}`,
+    },
+    ...(reviews.length > 0
+      ? {
+          aggregateRating: {
+            "@type": "AggregateRating",
+            ratingValue: avgRating.toFixed(1),
+            reviewCount: reviews.length,
+          },
+        }
+      : {}),
+  };
 
   return (
     <main className="mx-auto max-w-none px-6 py-10 lg:px-10">
-      <Link href="/menu" className="text-sm font-semibold text-rose transition hover:text-rose-deep">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(productJsonLd) }} />
+      <Link href="/menu" className="text-sm font-semibold text-rose-deep transition hover:text-rose">
         ← Back to menu
       </Link>
 
@@ -131,6 +166,15 @@ export default async function ProductDetailPage({ params }: Params) {
             )}
             {formatPrice(product.basePriceCents)}
           </p>
+          {settings.features.reviews && reviews.length > 0 && (
+            <a
+              href="#reviews"
+              className="mt-2 inline-flex items-center gap-2 text-sm text-muted transition hover:text-ink"
+            >
+              <Stars value={avgRating} /> {avgRating.toFixed(1)} · {reviews.length} review
+              {reviews.length === 1 ? "" : "s"}
+            </a>
+          )}
           <p className="mt-4 text-muted">{product.longDescription}</p>
 
           <p className="mt-4 rounded-xl bg-blush-soft/60 px-4 py-3 text-sm text-rose-deep">
@@ -148,7 +192,7 @@ export default async function ProductDetailPage({ params }: Params) {
                 {product.flavourBox ? (
                   <FlavourBoxPicker product={product} />
                 ) : (
-                  <OptionPicker product={product} />
+                  <OptionPicker product={product} allowPersonalisation />
                 )}
               </div>
               {!product.isAvailable && <NotifyBackInStock productId={product.id} />}
@@ -177,7 +221,9 @@ export default async function ProductDetailPage({ params }: Params) {
               <summary className="cursor-pointer text-sm font-semibold text-ink">
                 Ingredients
               </summary>
-              <p className="mt-2 text-sm text-muted">{product.ingredients.join(", ")}.</p>
+              <p className="mt-2 text-sm text-muted">
+                {product.ingredients.map((i) => i.name).join(", ")}.
+              </p>
             </details>
           )}
 
@@ -206,7 +252,7 @@ export default async function ProductDetailPage({ params }: Params) {
 
       {/* Reviews */}
       {settings.features.reviews && (
-      <section className="mt-16">
+      <section id="reviews" className="scroll-mt-24 mt-16">
         <Reveal>
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="font-display text-2xl font-semibold">Reviews</h2>
@@ -233,7 +279,7 @@ export default async function ProductDetailPage({ params }: Params) {
               </p>
             ) : (
               <p className="rounded-2xl bg-marble/40 p-4 text-sm text-muted">
-                <Link href="/account/sign-in" className="font-semibold text-rose hover:text-rose-deep">
+                <Link href="/account/sign-in" className="font-semibold text-rose-deep hover:text-rose">
                   Sign in
                 </Link>{" "}
                 and order this treat to leave a review.

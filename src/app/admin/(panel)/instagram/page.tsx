@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useDialog } from "@/lib/useDialog";
+import { useEffect, useState } from "react";
+import { AdminModal } from "@/components/admin/AdminModal";
 import {
   loadInstagramPostsAction,
   createInstagramPostAction,
@@ -11,6 +11,7 @@ import {
 import type { AdminInstagramPost } from "@/lib/admin-content";
 import { compactInputClass as inputClass } from "@/lib/ui";
 import { Toggle } from "@/components/ui/Toggle";
+import { PanelLoading } from "@/components/admin/PanelLoading";
 
 type Draft = {
   id: string | null;
@@ -34,8 +35,6 @@ export default function AdminInstagramPage() {
   const [posts, setPosts] = useState<AdminInstagramPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState<Draft | null>(null);
-  const editorRef = useRef<HTMLDivElement>(null);
-  useDialog(!!draft, () => setDraft(null), editorRef);
   const [error, setError] = useState("");
 
 
@@ -73,11 +72,12 @@ export default function AdminInstagramPage() {
   }
 
   async function remove(id: string) {
+    if (!window.confirm("Remove this post from the grid?")) return;
     await deleteInstagramPostAction(id);
     await refresh();
   }
 
-  if (loading) return null;
+  if (loading) return <PanelLoading />;
 
   return (
     <div className="max-w-2xl">
@@ -143,30 +143,16 @@ export default function AdminInstagramPage() {
       </ul>
 
       {draft && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={draft.id ? "Edit post" : "New post"}
-          onClick={() => setDraft(null)}
-          className="fixed inset-0 z-50 flex items-end justify-center bg-ink/40 sm:items-center sm:p-4"
+        <AdminModal
+          onClose={() => setDraft(null)}
+          ariaLabel={draft.id ? "Edit post" : "New post"}
+          title={
+            <h2 className="font-display text-lg font-semibold">
+              {draft.id ? "Edit post" : "New post"}
+            </h2>
+          }
         >
-          <div
-            ref={editorRef}
-            onClick={(e) => e.stopPropagation()}
-            className="max-h-[90vh] w-full max-w-lg animate-[fade-up_0.2s_ease-out] overflow-y-auto rounded-t-2xl bg-white p-6 shadow-soft sm:rounded-2xl"
-          >
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="font-display text-lg font-semibold">{draft.id ? "Edit post" : "New post"}</h2>
-              <button
-                type="button"
-                onClick={() => setDraft(null)}
-                aria-label="Close"
-                className="rounded-full p-2 text-muted transition hover:bg-blush-soft active:scale-90"
-              >
-                ✕
-              </button>
-            </div>
-          <label className="mt-4 flex flex-col gap-1 text-sm font-semibold">
+          <label className="flex flex-col gap-1 text-sm font-semibold">
             Image URL
             <input
               className={inputClass}
@@ -228,8 +214,7 @@ export default function AdminInstagramPage() {
               Cancel
             </button>
           </div>
-          </div>
-        </div>
+        </AdminModal>
       )}
     </div>
   );

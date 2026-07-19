@@ -42,14 +42,14 @@ export function OrderChangePanel({
   }
 
   async function requestCancel() {
-    if (!confirm("Send a cancellation request to the bakery?")) return;
+    if (!confirm("Ask us to cancel this order?")) return;
     setBusy(true);
     setMessage(null);
     const result = await requestCancellationAction(token);
     setBusy(false);
     setMessage(
       result.ok
-        ? { kind: "ok", text: "We've passed your cancellation request to the bakery." }
+        ? { kind: "ok", text: "We've got your cancellation request. Michelle will be in touch to confirm." }
         : { kind: "error", text: result.error },
     );
   }
@@ -83,7 +83,11 @@ export function OrderChangePanel({
         </label>
       </div>
       {message && (
-        <p className={`mt-3 text-sm ${message.kind === "ok" ? "text-emerald-600" : "text-rose-deep"}`}>
+        <p
+          role="status"
+          aria-live="polite"
+          className={`mt-3 text-sm ${message.kind === "ok" ? "text-success" : "text-rose-deep"}`}
+        >
           {message.text}
         </p>
       )}

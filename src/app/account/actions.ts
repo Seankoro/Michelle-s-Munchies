@@ -4,8 +4,7 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchStoreSettings } from "@/lib/settings";
 import { getOrCreateShareToken } from "@/lib/wishlist-share";
-import { resolveCartLines } from "@/lib/cart-resolve";
-import type { CartItem, SelectedOption } from "@/lib/types";
+import { reorderFromOrderId, type ReorderResult } from "@/lib/cart-resolve";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 
@@ -168,22 +167,9 @@ export async function updateProfile(
 }
 
 // ---- Reorder ---------------------------------------------------------------
-export type ReorderResult =
-  | { ok: true; items: CartItem[]; skipped: string[] }
-  | { ok: false; error: string };
-
-type ReorderItemRow = {
-  product_id: string | null;
-  product_name: string;
-  quantity: number;
-  selected_options: SelectedOption[] | null;
-};
-
 /**
- * Rebuilds a cart from a past order owned by the signed-in user, re-resolving
- * each line against the current catalog for current price and availability.
- * Lines whose product is gone or sold out, or whose required options no longer
- * exist, are reported as `skipped` rather than silently dropped.
+ * Rebuilds a cart from a past order owned by the signed-in user. Ownership is
+ * checked here; the rebuild itself is the shared reorderFromOrderId.
  */
 export async function buildReorderCart(orderNumber: string): Promise<ReorderResult> {
   const supabase = await createServerSupabase();
@@ -192,7 +178,7 @@ export async function buildReorderCart(orderNumber: string): Promise<ReorderResu
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Please sign in to reorder." };
 
-  // Ownership check and item read via service role, since orders aren't user-readable.
+  // Ownership check via service role, since orders aren't user-readable.
   const admin = createAdminClient();
   const { data: orderRow } = await admin
     .from("orders")
@@ -204,26 +190,5 @@ export async function buildReorderCart(orderNumber: string): Promise<ReorderResu
     return { ok: false, error: "Order not found." };
   }
 
-  const { data: itemRows } = await admin
-    .from("order_items")
-    .select("product_id, product_name, quantity, selected_options")
-    .eq("order_id", order.id);
-  const rows = (itemRows as ReorderItemRow[] | null) ?? [];
-
-  const { items, skipped } = await resolveCartLines(
-    rows.map((row) => ({
-      productId: row.product_id,
-      productName: row.product_name,
-      quantity: row.quantity,
-      selections: (row.selected_options ?? []).map((o) => ({
-        optionName: o.optionName,
-        valueLabel: o.valueLabel,
-      })),
-    })),
-  );
-
-  if (items.length === 0) {
-    return { ok: false, error: "None of these items are available to reorder right now." };
-  }
-  return { ok: true, items, skipped };
+  return reorderFromOrderId(order.id);
 }

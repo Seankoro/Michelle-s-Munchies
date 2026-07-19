@@ -12,6 +12,7 @@ import { formatPrice } from "@/lib/catalog";
 import { formatLongDate } from "@/lib/order";
 import { cn } from "@/lib/cn";
 import { Toggle } from "@/components/ui/Toggle";
+import { singaporeDateString } from "@/lib/time";
 import { compactInputClass as inputClass } from "@/lib/ui";
 
 type DiscountType = "percent" | "amount" | "free_delivery";
@@ -196,7 +197,7 @@ export default function AdminPromosPage() {
             First order only (requires sign-in)
           </div>
         </div>
-        {formError && <p className="mt-3 text-sm font-semibold text-red-600">{formError}</p>}
+        {formError && <p className="mt-3 text-sm font-semibold text-danger">{formError}</p>}
         <button
           type="button"
           onClick={handleCreate}
@@ -211,7 +212,7 @@ export default function AdminPromosPage() {
       <section className="mt-6">
         <h2 className="font-display text-lg font-semibold">Your codes</h2>
         {loading ? (
-          null
+          <p className="mt-3 text-muted">Loading codes…</p>
         ) : promos.length === 0 ? (
           <p className="mt-3 text-muted">No codes yet. Create one above.</p>
         ) : (
@@ -219,7 +220,7 @@ export default function AdminPromosPage() {
             {promos.map((promo) => {
               const expired =
                 promo.expiresAt !== null &&
-                promo.expiresAt < new Date().toISOString().slice(0, 10);
+                promo.expiresAt < singaporeDateString();
               return (
                 <li
                   key={promo.id}
@@ -234,8 +235,8 @@ export default function AdminPromosPage() {
                         className={cn(
                           "rounded-full px-2 py-0.5 text-xs font-semibold",
                           promo.active && !expired
-                            ? "bg-emerald-100 text-emerald-700"
-                            : "bg-stone-100 text-stone-500",
+                            ? "bg-success-soft text-success-ink"
+                            : "bg-marble text-muted",
                         )}
                       >
                         {expired ? "Expired" : promo.active ? "Active" : "Paused"}
@@ -268,7 +269,7 @@ export default function AdminPromosPage() {
                       type="button"
                       onClick={() => remove(promo)}
                       disabled={busyId === promo.id}
-                      className="rounded-full border border-line px-4 py-2 text-sm font-semibold text-red-600 transition hover:border-red-300 active:scale-95 disabled:opacity-60"
+                      className="rounded-full border border-line px-4 py-2 text-sm font-semibold text-danger transition hover:border-danger/50 active:scale-95 disabled:opacity-60"
                     >
                       Delete
                     </button>

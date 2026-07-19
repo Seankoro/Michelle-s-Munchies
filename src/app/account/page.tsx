@@ -12,6 +12,7 @@ import { RibbonDivider } from "@/components/ui/RibbonDivider";
 import { SignOutButton } from "@/components/account/SignOutButton";
 import { ProfileForm } from "@/components/account/ProfileForm";
 import { SavedAddresses } from "@/components/account/SavedAddresses";
+import { SavedOccasions } from "@/components/account/SavedOccasions";
 import { ReorderButton } from "@/components/account/ReorderButton";
 import { ReferralCard } from "@/components/account/ReferralCard";
 import { ShareWishlistButton } from "@/components/account/ShareWishlistButton";
@@ -117,7 +118,7 @@ export default async function AccountPage() {
       {/* Rewards */}
       {features.rewards && (
       <div className="mt-6 rounded-2xl bg-blush-soft/60 p-5">
-        <p className="text-sm font-semibold text-rose-deep">🏆 Rewards</p>
+        <p className="text-sm font-semibold text-rose-deep">✨ Rewards</p>
         <p className="mt-1 font-display text-3xl font-semibold text-rose-deep">
           {pointsBalance} {pointsBalance === 1 ? "point" : "points"}
         </p>
@@ -175,7 +176,7 @@ export default async function AccountPage() {
         {orders.length === 0 ? (
           <p className="mt-3 text-muted">
             No orders yet.{" "}
-            <Link href="/menu" className="font-semibold text-rose hover:text-rose-deep">
+            <Link href="/menu" className="font-semibold text-rose-deep hover:text-rose">
               Browse the menu
             </Link>
             .
@@ -199,7 +200,7 @@ export default async function AccountPage() {
                   <span className="font-semibold">{formatPrice(order.total_cents)}</span>
                   <Link
                     href={`/track/${order.tracking_token}`}
-                    className="text-sm font-semibold text-rose hover:text-rose-deep"
+                    className="text-sm font-semibold text-rose-deep hover:text-rose"
                   >
                     Track →
                   </Link>
@@ -236,6 +237,21 @@ export default async function AccountPage() {
           <SavedAddresses />
         </div>
       </section>
+
+      {features.occasionReminders && (
+        <>
+          <RibbonDivider className="my-8" />
+          <section>
+            <h2 className="font-display text-2xl font-semibold">Occasion reminders</h2>
+            <p className="mt-1 text-sm text-muted">
+              Save the dates that matter and we&rsquo;ll email you in time to reorder.
+            </p>
+            <div className="mt-4">
+              <SavedOccasions />
+            </div>
+          </section>
+        </>
+      )}
     </main>
   );
 }

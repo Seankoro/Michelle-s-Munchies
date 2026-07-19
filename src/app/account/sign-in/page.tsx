@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { RibbonBow } from "@/components/ui/RibbonBow";
+import { AuthCard } from "@/components/account/AuthCard";
 import { Button } from "@/components/ui/Button";
 import { GoogleButton } from "@/components/account/GoogleButton";
 import { signInWithPassword, sendMagicLink } from "../actions";
@@ -44,14 +44,7 @@ export default function SignInPage() {
   }
 
   return (
-    <main className="mx-auto flex max-w-md flex-col px-6 py-16">
-      <div className="rounded-2xl border border-line bg-white p-8 shadow-soft">
-        <div className="flex flex-col items-center text-center">
-          <RibbonBow withTails={false} className="h-10 w-12" />
-          <h1 className="mt-3 font-display text-2xl font-semibold">Welcome back</h1>
-          <p className="mt-1 text-sm text-muted">Sign in to track orders & earn rewards.</p>
-        </div>
-
+    <AuthCard title="Welcome back" subtitle="Sign in to track orders & earn rewards.">
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -83,15 +76,23 @@ export default function SignInPage() {
             <div className="mt-1 text-right">
               <Link
                 href="/account/forgot"
-                className="text-sm font-semibold text-rose hover:text-rose-deep"
+                className="text-sm font-semibold text-rose-deep hover:text-rose"
               >
                 Forgot password?
               </Link>
             </div>
           </div>
 
-          {error && <p className="text-sm text-rose-deep">{error}</p>}
-          {pending && <p className="text-sm text-sky-deep">{pending}</p>}
+          {error && (
+            <p role="alert" className="text-sm text-rose-deep">
+              {error}
+            </p>
+          )}
+          {pending && (
+            <p role="status" aria-live="polite" className="text-sm text-rose-deep">
+              {pending}
+            </p>
+          )}
 
           <Button type="submit" size="lg" disabled={loading} className="w-full">
             {loading ? "Please wait…" : "Sign in"}
@@ -109,23 +110,24 @@ export default function SignInPage() {
             </p>
           )}
           <GoogleButton />
-          <button
+          <Button
             type="button"
+            variant="secondary"
+            size="md"
             onClick={handleMagicLink}
             disabled={loading}
-            className="w-full rounded-full border border-line bg-white px-6 py-2.5 text-sm font-semibold text-ink transition hover:border-rose disabled:opacity-60"
+            className="w-full text-sm"
           >
             Email me a magic link
-          </button>
+          </Button>
         </div>
 
         <p className="mt-6 text-center text-sm text-muted">
           New here?{" "}
-          <Link href="/account/sign-up" className="font-semibold text-rose hover:text-rose-deep">
+          <Link href="/account/sign-up" className="font-semibold text-rose-deep hover:text-rose">
             Create an account
           </Link>
         </p>
-      </div>
-    </main>
+    </AuthCard>
   );
 }

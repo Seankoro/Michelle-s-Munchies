@@ -1,5 +1,5 @@
 import "server-only";
-import { randomBytes } from "node:crypto";
+import { newToken } from "@/lib/tokens";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /** Add or re-activate a newsletter subscriber by email. Idempotent. */
@@ -24,7 +24,7 @@ export async function subscribeNewsletter(email: string): Promise<void> {
   }
   await supabase
     .from("newsletter_subscribers")
-    .insert({ email: normalized, unsubscribe_token: randomBytes(16).toString("hex") });
+    .insert({ email: normalized, unsubscribe_token: newToken() });
 }
 
 /** Mark a subscriber unsubscribed by their token. Returns whether it matched. */
@@ -40,6 +40,16 @@ export async function unsubscribeByToken(token: string): Promise<boolean> {
 }
 
 export type Subscriber = { email: string; unsubscribeToken: string };
+
+/** How many contacts an admin send would reach right now. */
+export async function countActiveSubscribers(): Promise<number> {
+  const supabase = createAdminClient();
+  const { count } = await supabase
+    .from("newsletter_subscribers")
+    .select("id", { count: "exact", head: true })
+    .is("unsubscribed_at", null);
+  return count ?? 0;
+}
 
 /** All still-subscribed contacts, for an admin send. */
 export async function listActiveSubscribers(): Promise<Subscriber[]> {

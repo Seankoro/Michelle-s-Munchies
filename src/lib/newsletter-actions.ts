@@ -1,6 +1,6 @@
 "use server";
 
-import { requireAdmin } from "@/lib/admin-auth";
+import { requireAdmin, currentAdminEmail } from "@/lib/admin-auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { fetchStoreSettings } from "@/lib/settings";
 import { sendNewsletterEmail } from "@/lib/email";
@@ -8,8 +8,14 @@ import {
   subscribeNewsletter,
   unsubscribeByToken,
   listActiveSubscribers,
+  countActiveSubscribers,
 } from "@/lib/newsletter";
 import { EMAIL_RE, escapeHtml } from "@/lib/text";
+
+/** Plain text to email HTML: blank lines split paragraphs, single newlines break lines. */
+function renderNewsletterHtml(body: string): string {
+  return `<p>${escapeHtml(body).replace(/\n{2,}/g, "</p><p>").replace(/\n/g, "<br/>")}</p>`;
+}
 
 export type SimpleResult = { ok: true } | { ok: false; error: string };
 
@@ -35,6 +41,12 @@ export async function unsubscribeNewsletterAction(token: string): Promise<Simple
   return ok ? { ok: true } : { ok: false, error: "This link is no longer valid." };
 }
 
+/** How many subscribers a send would reach, for the admin compose screen. */
+export async function newsletterAudienceAction(): Promise<{ count: number }> {
+  await requireAdmin();
+  return { count: await countActiveSubscribers() };
+}
+
 export type SendResult = { ok: true; sent: number } | { ok: false; error: string };
 
 /** Admin send, composes the body from plain text and emails every subscriber. */
@@ -44,10 +56,27 @@ export async function sendNewsletterAction(subject: string, body: string): Promi
   if (!(await rateLimit("newsletter-send", { limit: 5, windowMs: 60 * 60_000 }))) {
     return { ok: false, error: "You've sent a few already. Please wait a bit." };
   }
-  const bodyHtml = `<p>${escapeHtml(body).replace(/\n{2,}/g, "</p><p>").replace(/\n/g, "<br/>")}</p>`;
+  const bodyHtml = renderNewsletterHtml(body);
   const subscribers = await listActiveSubscribers();
   for (const sub of subscribers) {
     await sendNewsletterEmail(sub.email, subject.trim(), bodyHtml, sub.unsubscribeToken);
   }
   return { ok: true, sent: subscribers.length };
+}
+
+export type TestResult = { ok: true; email: string } | { ok: false; error: string };
+
+/** Send just to the signed-in admin, so a draft can be proofed in a real inbox first. */
+export async function sendNewsletterTestAction(subject: string, body: string): Promise<TestResult> {
+  await requireAdmin();
+  if (!subject.trim() || !body.trim()) return { ok: false, error: "Add a subject and a message." };
+  const email = await currentAdminEmail();
+  if (!email) return { ok: false, error: "Could not find your admin email to send to." };
+  if (!(await rateLimit("newsletter-test", { limit: 10, windowMs: 10 * 60_000 }))) {
+    return { ok: false, error: "Sent a few tests already. Please wait a bit." };
+  }
+  const bodyHtml = renderNewsletterHtml(body);
+  // A throwaway token, so the test's unsubscribe link simply reads as expired.
+  await sendNewsletterEmail(email, `[Test] ${subject.trim()}`, bodyHtml, "test-preview");
+  return { ok: true, email };
 }

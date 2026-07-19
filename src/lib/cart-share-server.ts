@@ -1,5 +1,5 @@
 import "server-only";
-import { resolveCartLines } from "@/lib/cart-resolve";
+import { resolveCartLines, type SkippedLine } from "@/lib/cart-resolve";
 import type { CartItem } from "@/lib/types";
 import type { SharedLine } from "@/lib/cart-share";
 
@@ -9,12 +9,13 @@ import type { SharedLine } from "@/lib/cart-share";
  */
 export async function resolveSharedCart(
   lines: SharedLine[],
-): Promise<{ items: CartItem[]; skipped: string[] }> {
+): Promise<{ items: CartItem[]; skipped: SkippedLine[] }> {
   return resolveCartLines(
     lines.map((line) => ({
       productId: line.productId,
+      productName: line.name ?? null,
       quantity: line.quantity,
-      selections: line.valueLabels.map((valueLabel) => ({ valueLabel })),
+      selections: line.selections,
     })),
   );
 }

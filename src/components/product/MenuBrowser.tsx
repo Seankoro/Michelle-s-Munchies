@@ -1,9 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import type { DietaryTag, Product } from "@/lib/types";
 import { dietaryMeta } from "@/lib/catalog";
 import { ProductCard } from "@/components/product/ProductCard";
+import { MascotSays } from "@/components/ui/MascotSays";
+import { ScrollRail } from "@/components/ui/ScrollRail";
 import { cn } from "@/lib/cn";
 
 /**
@@ -11,23 +14,29 @@ import { cn } from "@/lib/cn";
  * so the menu reads as short swipeable rows instead of one long vertical list, and
  * a plain grid on desktop. Pure CSS, no JS needed.
  */
-function ProductRail({ products }: { products: Product[] }) {
+function ProductRail({
+  label,
+  products,
+  ratings,
+}: {
+  label: string;
+  products: Product[];
+  ratings?: Record<string, { avg: number; count: number }>;
+}) {
   return (
-    <div
-      className={cn(
-        "-mx-6 flex gap-4 overflow-x-auto scroll-pl-6 px-6 pb-2 snap-x snap-mandatory no-scrollbar",
-        "xl:mx-0 xl:grid xl:grid-cols-4 xl:gap-6 xl:overflow-visible xl:px-0 xl:pb-0 xl:snap-none",
-      )}
+    <ScrollRail
+      label={label}
+      trackClassName="-mx-6 flex gap-4 overflow-x-auto px-6 pb-2 no-scrollbar xl:mx-0 xl:grid xl:grid-cols-4 xl:gap-6 xl:overflow-visible xl:px-0 xl:pb-0"
     >
       {products.map((product) => (
         <div
           key={product.id}
           className="shrink-0 basis-[72%] snap-start sm:basis-[40%] lg:basis-[31%] xl:basis-auto"
         >
-          <ProductCard product={product} />
+          <ProductCard product={product} rating={ratings?.[product.id]} />
         </div>
       ))}
-    </div>
+    </ScrollRail>
   );
 }
 
@@ -35,10 +44,13 @@ export function MenuBrowser({
   products,
   categories,
   initialDietary = [],
+  ratings,
 }: {
   products: Product[];
   categories: string[];
   initialDietary?: DietaryTag[];
+  /** Per-product review averages for card star lines, empty when reviews are off. */
+  ratings?: Record<string, { avg: number; count: number }>;
 }) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("All");
@@ -67,7 +79,13 @@ export function MenuBrowser({
         !q ||
         product.name.toLowerCase().includes(q) ||
         product.shortDescription.toLowerCase().includes(q) ||
-        product.category.toLowerCase().includes(q);
+        (product.longDescription ?? "").toLowerCase().includes(q) ||
+        product.category.toLowerCase().includes(q) ||
+        // Flavours are option values, so a search for "matcha" should surface a
+        // cake that offers it rather than dead-ending on the empty state.
+        product.options.some((option) =>
+          option.values.some((value) => value.label.toLowerCase().includes(q)),
+        );
       const matchesDietary = dietary.every((tag) => product.dietaryTags.includes(tag));
       return matchesQuery && matchesDietary;
     };
@@ -121,7 +139,7 @@ export function MenuBrowser({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search treats…"
-            className="w-full rounded-full border border-line bg-white px-4 py-2 text-sm outline-none transition focus:border-rose"
+            className="w-full rounded-full border border-line bg-white px-4 py-2 text-base transition focus:border-rose sm:text-sm"
           />
         </label>
       </div>
@@ -142,8 +160,8 @@ export function MenuBrowser({
               className={cn(
                 "shrink-0 rounded-full border px-3 py-1.5 text-sm font-semibold transition active:scale-95",
                 dietary.includes(tag)
-                  ? "border-sky-deep bg-sky/50 text-sky-deep"
-                  : "border-line bg-white text-ink hover:border-sky",
+                  ? "border-rose-deep bg-blush-soft text-ink"
+                  : "border-line bg-white text-ink hover:border-rose",
               )}
             >
               {dietaryMeta[tag].label}
@@ -162,9 +180,29 @@ export function MenuBrowser({
       </p>
 
       {sections.length === 0 ? (
-        <p className="mt-16 text-center text-muted">
-          No treats match that search. Try something else?
-        </p>
+        <div className="mt-16 flex flex-col items-center gap-4 text-center">
+          <MascotSays lines={["Hmm, nothing matches that. I might still bake it though!"]} />
+          <p className="text-muted">No treats match that search.</p>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setQuery("");
+                setCategory("All");
+                setDietary([]);
+              }}
+              className="rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:border-rose active:scale-95"
+            >
+              Clear search &amp; filters
+            </button>
+            <Link
+              href="/contact"
+              className="text-sm font-semibold text-rose-deep transition hover:text-rose"
+            >
+              Michelle takes requests →
+            </Link>
+          </div>
+        </div>
       ) : (
         <div
           key={`${category}|${dietary.join(",")}`}
@@ -172,14 +210,9 @@ export function MenuBrowser({
         >
           {sections.map((section) => (
             <section key={section.cat} aria-label={section.cat}>
-              <div className="flex items-baseline justify-between gap-3">
-                <h2 className="font-display text-2xl font-semibold">{section.cat}</h2>
-                {section.items.length > 1 && (
-                  <span className="text-sm text-rose xl:hidden">Swipe →</span>
-                )}
-              </div>
+              <h2 className="font-display text-2xl font-semibold">{section.cat}</h2>
               <div className="mt-4">
-                <ProductRail products={section.items} />
+                <ProductRail label={section.cat} products={section.items} ratings={ratings} />
               </div>
             </section>
           ))}

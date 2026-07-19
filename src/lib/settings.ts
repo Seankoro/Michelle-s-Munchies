@@ -1,11 +1,15 @@
 import "server-only";
 import { createPublicClient } from "@/lib/supabase/public";
 import { mockSettings } from "@/lib/catalog";
-import { ALL_FEATURES_ON, type FeatureFlags } from "@/lib/feature-flags";
+import {
+  ALL_FEATURES_ON,
+  FEATURE_COLUMNS_SELECT,
+  rowToFeatureFlags,
+  type FeatureFlags,
+} from "@/lib/feature-flags";
 
-// Re-exported so existing `import { FeatureFlags } from "@/lib/settings"` callers
-// keep working. The canonical definition lives in feature-flags.ts.
-export { ALL_FEATURES_ON };
+// Type re-exported so existing `import { FeatureFlags } from "@/lib/settings"`
+// callers keep working. The canonical definition lives in feature-flags.ts.
 export type { FeatureFlags };
 
 /** A single admin-defined structured order-note prompt shown at checkout. */
@@ -43,6 +47,12 @@ export type StoreSettings = {
   notePrompts: NotePrompt[];
   /** Email Michelle when a tracked product's stock falls to or below this. null = off. */
   lowStockThreshold: number | null;
+  /**
+   * Owner-written lines for the hero mascot's speech bubble, one per entry. These
+   * are ADDED to the built-in automatic lines, never a replacement, and the
+   * mascot cycles through all of them. Empty means only the automatic lines show.
+   */
+  mascotMessages: string[];
   features: FeatureFlags;
 };
 
@@ -63,10 +73,12 @@ type SettingsRow = {
   abandoned_after_hours: number | null;
   note_prompts: NotePrompt[] | null;
   low_stock_threshold: number | null;
+  mascot_message: string | null;
   feature_order_changes: boolean | null;
   feature_newsletter: boolean | null;
   feature_drops: boolean | null;
   feature_dietary_prefs: boolean | null;
+  feature_occasion_reminders: boolean | null;
   feature_rewards: boolean | null;
   feature_wishlist: boolean | null;
   feature_reviews: boolean | null;
@@ -86,8 +98,11 @@ type SettingsRow = {
   feature_structured_notes: boolean | null;
 };
 
+// Non-feature columns plus every feature_* column from the shared list, so a new
+// flag added in feature-flags.ts is fetched here automatically.
 export const SETTINGS_SELECT =
-  "delivery_fee_cents, free_delivery_min_cents, min_order_cents, lead_time_days, time_windows, blackout_dates, pickup_location_public, daily_order_cap, per_window_cap, daily_cutoff_time, free_gift_threshold_cents, free_gift_product_id, birthday_reward_points, abandoned_after_hours, note_prompts, low_stock_threshold, feature_rewards, feature_wishlist, feature_reviews, feature_promos, feature_gifting, feature_referrals, feature_build_a_box, feature_bundles, feature_spend_gift, feature_back_in_stock, feature_photo_reviews, feature_cart_sharing, feature_wishlist_sharing, feature_instagram_feed, feature_birthday_rewards, feature_abandoned_cart, feature_structured_notes, feature_order_changes, feature_newsletter, feature_drops, feature_dietary_prefs";
+  "delivery_fee_cents, free_delivery_min_cents, min_order_cents, lead_time_days, time_windows, blackout_dates, pickup_location_public, daily_order_cap, per_window_cap, daily_cutoff_time, free_gift_threshold_cents, free_gift_product_id, birthday_reward_points, abandoned_after_hours, note_prompts, low_stock_threshold, mascot_message, " +
+  FEATURE_COLUMNS_SELECT;
 
 const DEFAULTS: StoreSettings = {
   ...mockSettings,
@@ -100,11 +115,26 @@ const DEFAULTS: StoreSettings = {
   abandonedAfterHours: 4,
   notePrompts: [],
   lowStockThreshold: null,
+  mascotMessages: [],
   features: { ...ALL_FEATURES_ON },
 };
 
+/**
+ * Parse the mascot-message column into a list. Stored one message per line, so
+ * a single legacy message loads as a one-item list. Blank lines are dropped and
+ * the count is capped so the speech bubble can't be flooded.
+ */
+export function parseMascotMessages(raw: string | null): string[] {
+  if (!raw) return [];
+  return raw
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 10);
+}
+
 /** Map a raw settings row or null to StoreSettings, filling gaps with defaults. */
-export function rowToStoreSettings(row: SettingsRow | null): StoreSettings {
+function rowToStoreSettings(row: SettingsRow | null): StoreSettings {
   if (!row) return DEFAULTS;
   return {
     deliveryFeeCents: row.delivery_fee_cents ?? DEFAULTS.deliveryFeeCents,
@@ -124,29 +154,8 @@ export function rowToStoreSettings(row: SettingsRow | null): StoreSettings {
     abandonedAfterHours: row.abandoned_after_hours ?? 4,
     notePrompts: Array.isArray(row.note_prompts) ? row.note_prompts : [],
     lowStockThreshold: row.low_stock_threshold,
-    features: {
-      rewards: row.feature_rewards ?? true,
-      wishlist: row.feature_wishlist ?? true,
-      reviews: row.feature_reviews ?? true,
-      promos: row.feature_promos ?? true,
-      gifting: row.feature_gifting ?? true,
-      referrals: row.feature_referrals ?? true,
-      buildABox: row.feature_build_a_box ?? true,
-      bundles: row.feature_bundles ?? true,
-      spendGift: row.feature_spend_gift ?? true,
-      backInStock: row.feature_back_in_stock ?? true,
-      photoReviews: row.feature_photo_reviews ?? true,
-      cartSharing: row.feature_cart_sharing ?? true,
-      wishlistSharing: row.feature_wishlist_sharing ?? true,
-      instagram: row.feature_instagram_feed ?? true,
-      birthdayRewards: row.feature_birthday_rewards ?? true,
-      abandonedCart: row.feature_abandoned_cart ?? true,
-      structuredNotes: row.feature_structured_notes ?? true,
-      orderChanges: row.feature_order_changes ?? true,
-      newsletter: row.feature_newsletter ?? true,
-      drops: row.feature_drops ?? true,
-      dietaryPrefs: row.feature_dietary_prefs ?? true,
-    },
+    mascotMessages: parseMascotMessages(row.mascot_message),
+    features: rowToFeatureFlags(row as unknown as Record<string, boolean | null | undefined>),
   };
 }
 

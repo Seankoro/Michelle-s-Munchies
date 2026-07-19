@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import * as Sentry from "@sentry/nextjs";
 import Link from "next/link";
 import { getOrderByToken } from "@/lib/orders-db";
 import { fetchStoreSettings } from "@/lib/settings";
@@ -6,14 +7,22 @@ import { formatPrice } from "@/lib/catalog";
 import {
   earliestFulfillmentDate,
   formatLongDate,
+  isChangeable,
   orderStatusLabels,
-  paymentStatusLabels,
   type OrderStatus,
 } from "@/lib/order";
 import { buttonClasses } from "@/components/ui/Button";
 import { RibbonDivider } from "@/components/ui/RibbonDivider";
+import { MascotSays } from "@/components/ui/MascotSays";
 import { ClearCartOnMount } from "@/components/cart/ClearCartOnMount";
 import { OrderChangePanel } from "@/components/track/OrderChangePanel";
+import { AddToOrderPanel } from "@/components/track/AddToOrderPanel";
+import { GiftShareLink } from "@/components/track/GiftShareLink";
+import { TrackReorderButton } from "@/components/track/TrackReorderButton";
+import { fetchProducts, toCardProduct } from "@/lib/products";
+import { createServerSupabase } from "@/lib/supabase/server";
+import { getShopWhatsAppNumber, buildOrderWhatsAppUrl, buildFulfillmentLabel } from "@/lib/whatsapp";
+import { singaporeNow } from "@/lib/time";
 import { cn } from "@/lib/cn";
 
 export const metadata: Metadata = {
@@ -39,12 +48,20 @@ export default async function TrackOrderPage({
   const { token } = await params;
   const order = await getOrderByToken(token);
   const settings = await fetchStoreSettings();
+  // Guests reach this page by token with no login, so only nudge account
+  // creation when the visitor is not already signed in.
+  const {
+    data: { user },
+  } = await (await createServerSupabase()).auth.getUser();
+  const signedIn = Boolean(user);
 
   if (!order) {
     return (
       <main className="mx-auto max-w-2xl px-6 py-20 text-center">
-        <p className="text-5xl" aria-hidden="true">🎀</p>
-        <h1 className="mt-4 font-display text-3xl font-semibold">Order not found</h1>
+        <div className="flex justify-center">
+          <MascotSays lines={["Hmm, I can't find that order…"]} />
+        </div>
+        <h1 className="mt-6 font-display text-3xl font-semibold">Order not found</h1>
         <p className="mt-2 text-muted">
           This tracking link may be incorrect or expired.
         </p>
@@ -60,43 +77,70 @@ export default async function TrackOrderPage({
   const cancelled = order.status === "cancelled";
   const firstName = order.customer_name.split(" ")[0];
 
+  // Only unpaid orders still early in the flow can be topped up. Fetch the
+  // catalogue lazily and strip it to card shape so no admin-only field (cost,
+  // detail copy) crosses to the client picker.
+  const canAddItems =
+    settings.features.orderChanges &&
+    order.payment_status !== "paid" &&
+    isChangeable(order.status);
+  const addableProducts = canAddItems
+    ? (await fetchProducts()).map(toCardProduct)
+    : [];
+
   // WhatsApp handoff. While an order is unpaid, offer a pre-filled message to the
   // shop's WhatsApp so the customer can confirm and arrange PayNow. It disappears
   // once an order is paid, the online payment path for when Stripe is switched on
   // later.
-  const waNumber = (process.env.WHATSAPP_NUMBER ?? "").replace(/[^\d]/g, "");
+  const waNumber = getShopWhatsAppNumber();
   const needsPayment =
     !cancelled && order.payment_status !== "paid" && order.payment_status !== "refunded";
   const waHref =
     waNumber && needsPayment
-      ? `https://wa.me/${waNumber}?text=${encodeURIComponent(
-          [
-            `Hi Michelle's Munchies! I'd like to confirm my order ${order.order_number}.`,
-            "",
-            ...order.items.map(
-              (item) =>
-                `${item.quantity}x ${item.product_name}` +
-                (item.selected_options.length > 0
-                  ? ` (${item.selected_options.map((o) => o.valueLabel).join(", ")})`
-                  : ""),
-            ),
-            `Total: ${formatPrice(order.total_cents)}`,
-            "",
-            `Name: ${order.customer_name}`,
-            `${order.fulfillment_type === "pickup" ? "Pickup" : "Delivery"} on ${formatLongDate(order.scheduled_date)}${order.time_window ? ` ${order.time_window}` : ""}`,
-          ].join("\n"),
-        )}`
+      ? buildOrderWhatsAppUrl(waNumber, {
+          orderNumber: order.order_number,
+          items: order.items.map((item) => ({
+            quantity: item.quantity,
+            name: item.product_name,
+            options: item.selected_options.map((o) => o.valueLabel),
+          })),
+          totalLabel: formatPrice(order.total_cents),
+          customerName: order.customer_name,
+          fulfillmentLabel: buildFulfillmentLabel(
+            order.fulfillment_type,
+            formatLongDate(order.scheduled_date),
+            order.time_window,
+          ),
+        })
       : null;
+  if (needsPayment && !waNumber) {
+    // Never dead-end the payment step. Surface the misconfiguration to the
+    // server logs while the customer still sees an explanation below.
+    console.warn("[track] WHATSAPP_NUMBER is not set; showing fallback confirmation panel");
+    Sentry.captureMessage("WHATSAPP_NUMBER is not set; customers see the fallback panel", "warning");
+  }
 
   return (
     <main className="mx-auto max-w-2xl px-6 py-12">
       <ClearCartOnMount />
       <div className="text-center">
-        <p className="text-5xl" aria-hidden="true">🎀</p>
-        <h1 className="mt-4 font-display text-4xl font-semibold">Thank you, {firstName}!</h1>
+        <div className="flex justify-center">
+          <MascotSays
+            lines={[
+              needsPayment
+                ? "One more step and I get baking!"
+                : "I'm on it! Check back here any time.",
+            ]}
+          />
+        </div>
+        <h1 className="mt-6 font-display text-4xl font-semibold">Thank you, {firstName}!</h1>
         <p className="mt-2 text-muted">
-          Order <span className="font-semibold text-ink">{order.order_number}</span> ·{" "}
-          {paymentStatusLabels[order.payment_status]}
+          Order <span className="font-semibold text-ink">{order.order_number}</span>
+          {/* Don't headline "Payment pending" in a pay-later flow, it reads as a
+              problem. The "One more step" panel below explains the WhatsApp+PayNow
+              step; only a settled state gets a suffix here. */}
+          {order.payment_status === "paid" && " · Paid, thank you!"}
+          {order.payment_status === "refunded" && " · Refunded"}
         </p>
         <p className="mt-1 text-sm text-muted">
           Bookmark this page to check your order status any time.
@@ -107,7 +151,8 @@ export default async function TrackOrderPage({
         <div className="mt-6 rounded-2xl border border-rose/30 bg-blush-soft/60 p-5 text-center">
           <p className="font-display text-lg font-semibold text-rose-deep">One more step</p>
           <p className="mt-1 text-sm text-rose-deep">
-            Send your order to us on WhatsApp to confirm it. We reply with PayNow to settle payment.
+            Send your order to us on WhatsApp. We&rsquo;ll confirm it and reply with PayNow details
+            so you can pay by transfer, usually the same day.
           </p>
           <a
             href={waHref}
@@ -120,12 +165,30 @@ export default async function TrackOrderPage({
         </div>
       )}
 
+      {!waHref && needsPayment && (
+        <div className="mt-6 rounded-2xl border border-rose/30 bg-blush-soft/60 p-5 text-center">
+          <p className="font-display text-lg font-semibold text-rose-deep">One more step</p>
+          <p className="mt-1 text-sm text-rose-deep">
+            We&rsquo;ll message you on WhatsApp to confirm your order and share PayNow details.
+            Questions in the meantime?{" "}
+            <Link href="/contact" className="font-semibold underline">
+              Get in touch
+            </Link>
+            .
+          </p>
+        </div>
+      )}
+
       <RibbonDivider className="my-8" />
 
       {/* Status tracker */}
       {cancelled ? (
         <div className="rounded-2xl bg-marble/60 p-5 text-center font-semibold text-muted">
-          This order was cancelled. Please contact us if that&rsquo;s unexpected.
+          This order was cancelled. Please{" "}
+          <Link href="/contact" className="underline hover:text-ink">
+            contact us
+          </Link>{" "}
+          if that&rsquo;s unexpected.
         </div>
       ) : (
         <ol className="flex flex-wrap items-center justify-center gap-x-2 gap-y-3">
@@ -173,6 +236,12 @@ export default async function TrackOrderPage({
               {order.time_window ? ` · ${order.time_window}` : ""}
             </dd>
           </div>
+          {order.fulfillment_type === "pickup" && settings.pickupLocation && (
+            <div className="flex justify-between gap-3">
+              <dt className="text-muted">Where</dt>
+              <dd className="text-right font-semibold">{settings.pickupLocation}</dd>
+            </div>
+          )}
           {order.fulfillment_type === "delivery" && order.delivery_address && (
             <div className="flex justify-between gap-3">
               <dt className="text-muted">Address</dt>
@@ -204,6 +273,14 @@ export default async function TrackOrderPage({
                     ({item.selected_options.map((o) => o.valueLabel).join(", ")})
                   </span>
                 )}
+                {item.personalisation?.message && (
+                  <span className="block text-xs text-rose-deep">
+                    ✍️ &ldquo;{item.personalisation.message}&rdquo;
+                  </span>
+                )}
+                {item.personalisation?.photoUrl && (
+                  <span className="block text-xs text-muted">📎 Reference photo added</span>
+                )}
               </span>
               <span className="font-semibold">{formatPrice(item.line_total_cents)}</span>
             </li>
@@ -222,27 +299,58 @@ export default async function TrackOrderPage({
             </dt>
             <dd>{order.delivery_fee_cents === 0 ? "Free" : formatPrice(order.delivery_fee_cents)}</dd>
           </div>
+          {order.discount_cents > 0 && (
+            <div className="flex justify-between text-rose-deep">
+              <dt>Discount{order.promo_code ? ` (${order.promo_code})` : ""}</dt>
+              <dd>−{formatPrice(order.discount_cents)}</dd>
+            </div>
+          )}
           <div className="flex justify-between text-base font-semibold">
             <dt>Total</dt>
             <dd>{formatPrice(order.total_cents)}</dd>
           </div>
+          {order.deposit_cents != null &&
+            order.deposit_cents > 0 &&
+            order.payment_status !== "paid" && (
+              <>
+                <div className="flex justify-between text-rose-deep">
+                  <dt>Deposit paid</dt>
+                  <dd>−{formatPrice(order.deposit_cents)}</dd>
+                </div>
+                <div className="flex justify-between text-base font-semibold text-rose-deep">
+                  <dt>Balance due on collection</dt>
+                  <dd>{formatPrice(order.total_cents - order.deposit_cents)}</dd>
+                </div>
+              </>
+            )}
         </dl>
       </div>
 
-      {settings.features.orderChanges &&
-        (order.status === "received" || order.status === "confirmed") && (
+      {order.is_gift && order.recipient_token && order.status !== "cancelled" && (
+        order.recipient_scheduled_at ? (
+          <div className="mt-6 rounded-2xl border border-line bg-white p-5 text-sm text-muted">
+            🎁 The recipient has added their delivery details. You&rsquo;re all set!
+          </div>
+        ) : (
+          <GiftShareLink path={`/gift/${order.recipient_token}`} />
+        )
+      )}
+
+      {settings.features.orderChanges && isChangeable(order.status) && (
           <OrderChangePanel
             token={token}
             currentDate={order.scheduled_date}
             currentWindow={order.time_window}
             earliest={earliestFulfillmentDate(
               settings.leadTimeDays,
-              new Date(),
+              singaporeNow(),
               settings.dailyCutoffTime,
             )}
             timeWindows={settings.timeWindows}
           />
         )}
+
+      {canAddItems && <AddToOrderPanel token={token} products={addableProducts} />}
 
       {order.is_gift && (
         <div className="mt-6 rounded-2xl bg-blush-soft/60 p-5 text-sm text-rose-deep">
@@ -256,20 +364,34 @@ export default async function TrackOrderPage({
         </div>
       )}
 
-      <div className="mt-6 rounded-2xl bg-blush-soft/60 p-5 text-sm text-rose-deep">
-        <p>
-          🏆{" "}
-          <Link href="/account/sign-up" className="font-semibold underline">
-            Create an account
-          </Link>{" "}
-          to track all your orders{settings.features.rewards ? " and earn rewards on every order" : ""}.
-        </p>
-      </div>
+      {!signedIn && (
+        <div className="mt-6 rounded-2xl bg-blush-soft/60 p-5 text-sm text-rose-deep">
+          <p>
+            ✨{" "}
+            <Link href="/account/sign-up" className="font-semibold underline">
+              Create an account
+            </Link>{" "}
+            to track all your orders{settings.features.rewards ? " and earn rewards on every order" : ""}.
+          </p>
+        </div>
+      )}
 
-      <div className="mt-8 text-center">
-        <Link href="/menu" className={buttonClasses({ size: "lg" })}>
-          Back to the menu
-        </Link>
+      <div className="mt-8 flex flex-col items-center gap-4">
+        {order.status === "completed" ? (
+          <>
+            <TrackReorderButton token={token} />
+            <Link
+              href="/menu"
+              className="text-sm font-semibold text-rose-deep transition hover:text-rose"
+            >
+              Back to the menu
+            </Link>
+          </>
+        ) : (
+          <Link href="/menu" className={buttonClasses({ size: "lg" })}>
+            Back to the menu
+          </Link>
+        )}
       </div>
     </main>
   );

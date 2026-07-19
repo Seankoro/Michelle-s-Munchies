@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
+import { Button } from "@/components/ui/Button";
+import { compactInputClass } from "@/lib/ui";
 
 type Address = {
   id: string;
@@ -10,9 +12,6 @@ type Address = {
   unit: string | null;
   postal_code: string;
 };
-
-const inputClass =
-  "w-full rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none transition focus:border-rose";
 
 export function SavedAddresses() {
   const supabase = useMemo(() => createBrowserSupabase(), []);
@@ -98,37 +97,37 @@ export function SavedAddresses() {
 
       <div className="mt-4 grid gap-2 sm:grid-cols-2">
         <input
-          className={inputClass}
+          className={compactInputClass}
           placeholder="Label (e.g. Home)"
+          aria-label="Label"
           value={label}
           onChange={(e) => setLabel(e.target.value)}
         />
         <input
-          className={inputClass}
+          className={compactInputClass}
           placeholder="Postal code"
+          aria-label="Postal code"
           value={postal}
           onChange={(e) => setPostal(e.target.value)}
           inputMode="numeric"
         />
         <input
-          className={`${inputClass} sm:col-span-2`}
+          className={`${compactInputClass} sm:col-span-2`}
           placeholder="Block & street"
+          aria-label="Block and street"
           value={line1}
           onChange={(e) => setLine1(e.target.value)}
         />
         <input
-          className={inputClass}
+          className={compactInputClass}
           placeholder="Unit (optional)"
+          aria-label="Unit (optional)"
           value={unit}
           onChange={(e) => setUnit(e.target.value)}
         />
-        <button
-          type="button"
-          onClick={add}
-          className="rounded-full bg-rose-deep px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110"
-        >
+        <Button type="button" size="sm" onClick={add}>
           Add address
-        </button>
+        </Button>
       </div>
       {error && <p className="mt-2 text-sm text-rose-deep">{error}</p>}
     </div>
