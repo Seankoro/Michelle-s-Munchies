@@ -4,7 +4,6 @@ import { newToken } from "@/lib/tokens";
 import { createPublicClient } from "@/lib/supabase/public";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendOrderEmails } from "@/lib/email";
-import { notifyOwnerNewOrder } from "@/lib/sms";
 import { fetchStoreSettings } from "@/lib/settings";
 import {
   computeDeliveryFeeCents,
@@ -154,15 +153,6 @@ export async function createOrder(
     giftMessage: input.isGift ? input.giftMessage?.trim() || undefined : undefined,
     recipientName: input.isGift ? input.recipientName?.trim() || undefined : undefined,
     noteAnswers: input.noteAnswers ?? [],
-  });
-
-  // Text Michelle the moment it lands. No-op until Twilio is configured.
-  await notifyOwnerNewOrder({
-    orderNumber,
-    name: input.name,
-    totalCents,
-    fulfillmentType: input.fulfillmentType,
-    isGift: input.isGift ?? false,
   });
 
   return { orderNumber, trackingToken, deliveryFeeCents, discountCents, recipientToken };

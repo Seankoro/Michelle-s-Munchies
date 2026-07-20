@@ -2,7 +2,6 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendStatusEmail, sendLowStockEmail, sendReviewRequestEmail } from "@/lib/email";
-import { notifyCustomerStatus } from "@/lib/sms";
 import { notifySubscribers } from "@/lib/stock-notify";
 import { fetchStoreSettings, parseMascotMessages } from "@/lib/settings";
 import { rowToFeatureFlags } from "@/lib/feature-flags";
@@ -135,12 +134,6 @@ export async function updateOrderStatus(orderNumber: string, status: OrderStatus
       name: row.customer_name,
       email: row.email,
       status,
-    });
-    await notifyCustomerStatus({
-      phone: row.phone,
-      orderNumber,
-      status,
-      trackingToken: row.tracking_token,
     });
   }
 
