@@ -1,21 +1,29 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+type CacheRow = {
+  delivery_postal: string;
+  kitchen_postal: string;
+  distance_m: number;
+  delivery_lat: number | null;
+  delivery_lng: number | null;
+};
+
 // Mock the Supabase admin client with an in-memory cache table. The cache
 // read chains `.select().eq().eq().maybeSingle()`, while the road-factor
 // query chains `.select().eq()` and is awaited directly, so the object
 // returned from the first `eq()` needs to be both chainable (a second
 // `.eq().maybeSingle()`) and thenable (awaitable to `{ data: rows }`).
-const rows: any[] = [];
+const rows: CacheRow[] = [];
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
     from: () => ({
       select: () => ({
         eq: () => ({
           eq: () => ({ maybeSingle: async () => ({ data: rows[0] ?? null }) }),
-          then: (resolve: any) => resolve({ data: rows }),
+          then: (resolve: (result: { data: CacheRow[] }) => void) => resolve({ data: rows }),
         }),
       }),
-      upsert: async (r: any) => { rows.push(r); return { error: null }; },
+      upsert: async (r: CacheRow) => { rows.push(r); return { error: null }; },
     }),
   }),
 }));
@@ -32,22 +40,22 @@ beforeEach(() => { rows.length = 0; vi.clearAllMocks(); });
 
 describe("resolveDeliveryDistanceKm", () => {
   it("uses OneMap when available and writes the cache", async () => {
-    (geocodePostal as any).mockResolvedValue({ lat: 1.31, lng: 103.86 });
-    (driveDistanceMeters as any).mockResolvedValue(4200);
+    vi.mocked(geocodePostal).mockResolvedValue({ lat: 1.31, lng: 103.86 });
+    vi.mocked(driveDistanceMeters).mockResolvedValue(4200);
     const km = await resolveDeliveryDistanceKm("049213", kitchen);
     expect(km).toBeCloseTo(4.2, 1);
     expect(rows.length).toBe(1);
   });
   it("falls back to the sector centre when OneMap fails", async () => {
-    (geocodePostal as any).mockResolvedValue(null);
-    (driveDistanceMeters as any).mockResolvedValue(null);
+    vi.mocked(geocodePostal).mockResolvedValue(null);
+    vi.mocked(driveDistanceMeters).mockResolvedValue(null);
     const km = await resolveDeliveryDistanceKm("689123", kitchen); // known sector 68
     expect(km).not.toBeNull();
     expect(km!).toBeGreaterThan(0);
   });
   it("returns null when OneMap fails and the sector is unknown", async () => {
-    (geocodePostal as any).mockResolvedValue(null);
-    (driveDistanceMeters as any).mockResolvedValue(null);
+    vi.mocked(geocodePostal).mockResolvedValue(null);
+    vi.mocked(driveDistanceMeters).mockResolvedValue(null);
     expect(await resolveDeliveryDistanceKm("000000", kitchen)).toBeNull();
   });
 });
