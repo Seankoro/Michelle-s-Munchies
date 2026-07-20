@@ -28,8 +28,7 @@
 - Create `src/lib/delivery-fee.ts` — pure `feeForDistanceKm` + `computeZonedDeliveryFeeCents`.
 - Create `src/lib/onemap.ts` — server-only OneMap client.
 - Create `src/lib/delivery-distance.ts` — server-only resolver + cache + road-factor calibration.
-- Modify `src/lib/settings.ts` — new settings fields, SELECT, mapping, defaults.
-- Modify `src/lib/admin-db.ts` — persist the new settings fields.
+- Create `src/lib/delivery-config.ts` — server-only read/write of the `delivery_config` table (kitchen origin + tiers), kept off the public `settings` read.
 - Modify `src/app/checkout/actions.ts` — `estimateDeliveryFeeAction` + enforce in `placeOrder`.
 - Modify `src/app/checkout/page.tsx` — call the action on a valid postal code.
 - Modify `src/app/admin/(panel)/settings/page.tsx` — kitchen postal + tiers editor.
@@ -90,73 +89,143 @@ git commit -m "Add delivery-zone settings columns and distance cache table"
 
 ---
 
-## Task 2: Settings wiring
+## Task 2: Delivery-config module (server-only)
+
+**Security note:** the kitchen coordinates are effectively the home baker's address, and `settings` is publicly readable, so this config lives in the service-role-only `delivery_config` table (migration 0029), read and written only server-side. It never touches `settings` or the public storefront read.
 
 **Files:**
-- Modify: `src/lib/settings.ts`
-- Modify: `src/lib/admin-db.ts`
+- Create: `src/lib/delivery-config.ts`
+- Test: `src/lib/__tests__/delivery-config.test.ts`
 
 **Interfaces:**
-- Produces: `StoreSettings` gains `kitchenPostal: string | null`, `kitchenLat: number | null`, `kitchenLng: number | null`, `deliveryDistanceTiers: DistanceTier[]`. `DistanceTier = { upToKm: number; feeCents: number }` exported from `src/lib/delivery-fee.ts` (Task 4) — until Task 4 exists, define it inline in settings and re-export. To avoid a forward dependency, define `DistanceTier` in `src/lib/delivery-fee.ts` first if doing tasks out of order; here import it.
-- Consumes: nothing new.
+- Consumes: `DistanceTier` from `src/lib/delivery-fee.ts` (Task 4); `createAdminClient` from `@/lib/supabase/admin`.
+- Produces: `type DeliveryConfig = { kitchenPostal: string | null; kitchenLat: number | null; kitchenLng: number | null; tiers: DistanceTier[] }`; `fetchDeliveryConfig(): Promise<DeliveryConfig>`; `updateDeliveryConfig(patch: Partial<{ kitchenPostal: string | null; kitchenLat: number | null; kitchenLng: number | null; tiers: DistanceTier[] }>): Promise<void>`. Both server-only, operate on the single `delivery_config` row (id = 1).
 
-- [ ] **Step 1: Read the current shapes**
-
-Read `src/lib/settings.ts` for `StoreSettings`, `SETTINGS_SELECT`, `rowToStoreSettings`, `DEFAULTS`, and the `SettingsRow` type. Read `src/lib/admin-db.ts` for the settings update column mapping (search `delivery_fee_cents`).
-
-- [ ] **Step 2: Add the fields to the types and mapping**
-
-In `src/lib/settings.ts`: add to `StoreSettings`:
+- [ ] **Step 1: Write the failing test (mock the admin client)**
 
 ```ts
-kitchenPostal: string | null;
-kitchenLat: number | null;
-kitchenLng: number | null;
-deliveryDistanceTiers: import("@/lib/delivery-fee").DistanceTier[];
+// src/lib/__tests__/delivery-config.test.ts
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+let stored: Record<string, unknown>;
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: () => ({
+    from: () => ({
+      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: stored }) }) }),
+      update: (patch: Record<string, unknown>) => ({
+        eq: async () => {
+          Object.assign(stored, patch);
+          return { error: null };
+        },
+      }),
+    }),
+  }),
+}));
+
+import { fetchDeliveryConfig, updateDeliveryConfig } from "@/lib/delivery-config";
+
+beforeEach(() => {
+  stored = {
+    id: 1,
+    kitchen_postal: "500001",
+    kitchen_lat: 1.3,
+    kitchen_lng: 103.8,
+    distance_tiers: [{ upToKm: 5, feeCents: 600 }],
+  };
+});
+
+describe("delivery-config", () => {
+  it("reads the row into camelCase", async () => {
+    const c = await fetchDeliveryConfig();
+    expect(c.kitchenPostal).toBe("500001");
+    expect(c.kitchenLat).toBe(1.3);
+    expect(c.tiers).toEqual([{ upToKm: 5, feeCents: 600 }]);
+  });
+  it("drops malformed tier rows", async () => {
+    stored.distance_tiers = [{ upToKm: 5, feeCents: 600 }, { bad: true }];
+    expect((await fetchDeliveryConfig()).tiers).toEqual([{ upToKm: 5, feeCents: 600 }]);
+  });
+  it("writes a patch back as snake_case", async () => {
+    await updateDeliveryConfig({ kitchenPostal: "520520", tiers: [] });
+    expect(stored.kitchen_postal).toBe("520520");
+    expect(stored.distance_tiers).toEqual([]);
+  });
+});
 ```
 
-Add to the `SettingsRow` type: `kitchen_postal: string | null; kitchen_lat: number | null; kitchen_lng: number | null; delivery_distance_tiers: unknown;`
+- [ ] **Step 2: Run it, verify it fails**
 
-Append the columns to `SETTINGS_SELECT` (the string of column names): `, kitchen_postal, kitchen_lat, kitchen_lng, delivery_distance_tiers`.
+Run: `npm test -- delivery-config`
+Expected: FAIL, functions not defined.
 
-In `rowToStoreSettings`, add:
+- [ ] **Step 3: Implement delivery-config.ts**
 
 ```ts
-kitchenPostal: row.kitchen_postal ?? null,
-kitchenLat: row.kitchen_lat ?? null,
-kitchenLng: row.kitchen_lng ?? null,
-deliveryDistanceTiers: Array.isArray(row.delivery_distance_tiers)
-  ? (row.delivery_distance_tiers as DistanceTier[]).filter(
-      (t) => t && typeof t.upToKm === "number" && typeof t.feeCents === "number",
-    )
-  : [],
+// src/lib/delivery-config.ts
+import "server-only";
+import { createAdminClient } from "@/lib/supabase/admin";
+import type { DistanceTier } from "@/lib/delivery-fee";
+
+export type DeliveryConfig = {
+  kitchenPostal: string | null;
+  kitchenLat: number | null;
+  kitchenLng: number | null;
+  tiers: DistanceTier[];
+};
+
+export async function fetchDeliveryConfig(): Promise<DeliveryConfig> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("delivery_config")
+    .select("kitchen_postal, kitchen_lat, kitchen_lng, distance_tiers")
+    .eq("id", 1)
+    .maybeSingle();
+  const row = (data ?? {}) as {
+    kitchen_postal?: string | null;
+    kitchen_lat?: number | null;
+    kitchen_lng?: number | null;
+    distance_tiers?: unknown;
+  };
+  return {
+    kitchenPostal: row.kitchen_postal ?? null,
+    kitchenLat: row.kitchen_lat ?? null,
+    kitchenLng: row.kitchen_lng ?? null,
+    tiers: Array.isArray(row.distance_tiers)
+      ? (row.distance_tiers as DistanceTier[]).filter(
+          (t) => t && typeof t.upToKm === "number" && typeof t.feeCents === "number",
+        )
+      : [],
+  };
+}
+
+export async function updateDeliveryConfig(
+  patch: Partial<{
+    kitchenPostal: string | null;
+    kitchenLat: number | null;
+    kitchenLng: number | null;
+    tiers: DistanceTier[];
+  }>,
+): Promise<void> {
+  const admin = createAdminClient();
+  const columns: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (patch.kitchenPostal !== undefined) columns.kitchen_postal = patch.kitchenPostal;
+  if (patch.kitchenLat !== undefined) columns.kitchen_lat = patch.kitchenLat;
+  if (patch.kitchenLng !== undefined) columns.kitchen_lng = patch.kitchenLng;
+  if (patch.tiers !== undefined) columns.distance_tiers = patch.tiers;
+  await admin.from("delivery_config").update(columns).eq("id", 1);
+}
 ```
 
-Add to `DEFAULTS` / `mockSettings`: `kitchenPostal: null, kitchenLat: null, kitchenLng: null, deliveryDistanceTiers: []`. Add `import type { DistanceTier } from "@/lib/delivery-fee";`.
+- [ ] **Step 4: Run it, verify it passes**
 
-- [ ] **Step 3: Persist them from admin**
-
-In `src/lib/admin-db.ts`, in the settings update mapping (near `delivery_fee_cents`), add for the patch:
-
-```ts
-if (patch.kitchenPostal !== undefined) columns.kitchen_postal = patch.kitchenPostal;
-if (patch.kitchenLat !== undefined) columns.kitchen_lat = patch.kitchenLat;
-if (patch.kitchenLng !== undefined) columns.kitchen_lng = patch.kitchenLng;
-if (patch.deliveryDistanceTiers !== undefined)
-  columns.delivery_distance_tiers = patch.deliveryDistanceTiers;
-```
-Match the existing patch/column style in that function exactly (it may use a different variable name than `columns`).
-
-- [ ] **Step 4: Typecheck**
-
-Run: `npx tsc --noEmit`
-Expected: passes once Task 4 defines `DistanceTier`. If doing Task 2 before Task 4, create `src/lib/delivery-fee.ts` with just `export type DistanceTier = { upToKm: number; feeCents: number };` first.
+Run: `npm test -- delivery-config`
+Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/lib/settings.ts src/lib/admin-db.ts src/lib/delivery-fee.ts
-git commit -m "Load and persist the delivery-zone settings fields"
+git add src/lib/delivery-config.ts src/lib/__tests__/delivery-config.test.ts
+git commit -m "Add server-only delivery-config read and write"
 ```
 
 ---
@@ -551,7 +620,7 @@ git commit -m "Add server-only OneMap geocode and driving-distance client"
 
 **Interfaces:**
 - Consumes: `geocodePostal`, `driveDistanceMeters` (Task 5); `haversineKm` (Task 3); `sectorCentre` (Task 3); the admin Supabase client (`createAdminClient` from `@/lib/supabase/admin`).
-- Produces: `resolveDeliveryDistanceKm(deliveryPostal: string, kitchen: { postal: string; lat: number; lng: number }): Promise<number | null>` and `roadFactor(): Promise<number>`. Both server-only.
+- Produces: `resolveDeliveryDistanceKm(deliveryPostal: string, kitchen: { postal: string; lat: number; lng: number }): Promise<number | null>`, `roadFactor(kitchen: { lat: number; lng: number; postal: string }): Promise<number>`, and the pure `medianOf(nums: number[]): number | null`. All server-only except `medianOf`.
 
 - [ ] **Step 1: Write the failing test (mock onemap + the admin client)**
 
@@ -644,18 +713,38 @@ async function writeCache(row: CacheRow): Promise<void> {
   await admin.from("delivery_distance_cache").upsert(row);
 }
 
-/** Median driving/straight-line ratio across cached rows, or the default. */
-export async function roadFactor(): Promise<number> {
+/** Pure median of a number list, or null when empty. */
+export function medianOf(nums: number[]): number | null {
+  if (nums.length === 0) return null;
+  const s = [...nums].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+/** Self-calibrating road factor: median of driving/straight-line across cached
+ *  rows for this kitchen, or the 1.4 default until there are enough samples. */
+export async function roadFactor(kitchen: { lat: number; lng: number; postal: string }): Promise<number> {
   const admin = createAdminClient();
   const { data } = await admin
     .from("delivery_distance_cache")
-    .select("distance_m, delivery_lat, delivery_lng, kitchen_postal");
-  // The kitchen coords are needed; callers pass them, but for calibration we
-  // only have the delivery coords here, so ratios are computed in resolve and
-  // this helper stays a thin default unless enough rows carry both. Keep the
-  // default until a follow-up wires kitchen coords into the cache rows.
-  if (!data || data.length < 20) return DEFAULT_ROAD_FACTOR;
-  return DEFAULT_ROAD_FACTOR;
+    .select("distance_m, delivery_lat, delivery_lng")
+    .eq("kitchen_postal", kitchen.postal);
+  const rows = (data ?? []) as {
+    distance_m: number;
+    delivery_lat: number | null;
+    delivery_lng: number | null;
+  }[];
+  const ratios: number[] = [];
+  for (const r of rows) {
+    if (r.delivery_lat == null || r.delivery_lng == null) continue;
+    const straight = haversineKm(
+      { lat: kitchen.lat, lng: kitchen.lng },
+      { lat: r.delivery_lat, lng: r.delivery_lng },
+    );
+    if (straight > 0.05) ratios.push(r.distance_m / 1000 / straight);
+  }
+  const m = ratios.length >= 20 ? medianOf(ratios) : null;
+  return m ?? DEFAULT_ROAD_FACTOR;
 }
 
 /** Distance in km from the kitchen to a delivery postal code, or null. */
@@ -683,13 +772,13 @@ export async function resolveDeliveryDistanceKm(
 
   const centre: LatLng | null = sectorCentre(deliveryPostal);
   if (centre) {
-    const factor = await roadFactor();
+    const factor = await roadFactor(kitchen);
     return haversineKm({ lat: kitchen.lat, lng: kitchen.lng }, centre) * factor;
   }
   return null;
 }
 ```
-Note: the `roadFactor` self-calibration reduces to the default here; the design's median-from-real-data is a follow-up once cache rows have accumulated. The cache already stores `delivery_lat/lng`, so no schema change is needed to finish it later. Keep this documented in the code comment (above) so it is not mistaken for complete.
+Note: the road factor is the median of the driving/straight-line ratios across cached rows for this kitchen once there are 20 or more samples, and the 1.4 default before that. Add a focused unit test for the pure `medianOf` (empty -> null, odd count -> middle, even count -> mean of the two middles). The resolver tests below start with an empty cache, so they exercise the default-factor path.
 
 - [ ] **Step 4: Run it, verify it passes**
 
@@ -711,7 +800,7 @@ git commit -m "Add cached distance resolver with sector-centre fallback"
 - Modify: `src/app/checkout/actions.ts`
 
 **Interfaces:**
-- Consumes: `resolveDeliveryDistanceKm` (Task 6), `computeZonedDeliveryFeeCents` (Task 4), `fetchStoreSettings` (existing).
+- Consumes: `resolveDeliveryDistanceKm` (Task 6), `computeZonedDeliveryFeeCents` (Task 4), `fetchDeliveryConfig` (Task 2), `fetchStoreSettings` (existing).
 - Produces: `estimateDeliveryFeeAction(postalCode: string, subtotalCents: number): Promise<{ feeCents: number }>`.
 
 - [ ] **Step 1: Read the current placeOrder fee logic**
@@ -729,31 +818,36 @@ async function resolveDeliveryFeeCents(
   postalCode: string | undefined,
   settings: Awaited<ReturnType<typeof fetchStoreSettings>>,
 ): Promise<number> {
-  const zonesReady =
-    settings.deliveryDistanceTiers.length > 0 &&
-    settings.kitchenPostal != null &&
-    settings.kitchenLat != null &&
-    settings.kitchenLng != null;
-  if (fulfillment === "delivery" && zonesReady && postalCode && /^\d{6}$/.test(postalCode)) {
-    const km = await resolveDeliveryDistanceKm(postalCode, {
-      postal: settings.kitchenPostal!,
-      lat: settings.kitchenLat!,
-      lng: settings.kitchenLng!,
-    });
-    return computeZonedDeliveryFeeCents({
-      fulfillment,
-      subtotalCents,
-      distanceKm: km,
-      tiers: settings.deliveryDistanceTiers,
-      fallbackFeeCents: settings.deliveryFeeCents,
-      freeDeliveryMinCents: settings.freeDeliveryMinCents,
-    });
+  if (fulfillment === "delivery" && postalCode && /^\d{6}$/.test(postalCode)) {
+    // Kitchen origin + tiers are server-only (delivery_config), never on the
+    // public settings row, because the coordinates are the owner's address.
+    const config = await fetchDeliveryConfig();
+    const zonesReady =
+      config.tiers.length > 0 &&
+      config.kitchenPostal != null &&
+      config.kitchenLat != null &&
+      config.kitchenLng != null;
+    if (zonesReady) {
+      const km = await resolveDeliveryDistanceKm(postalCode, {
+        postal: config.kitchenPostal!,
+        lat: config.kitchenLat!,
+        lng: config.kitchenLng!,
+      });
+      return computeZonedDeliveryFeeCents({
+        fulfillment,
+        subtotalCents,
+        distanceKm: km,
+        tiers: config.tiers,
+        fallbackFeeCents: settings.deliveryFeeCents,
+        freeDeliveryMinCents: settings.freeDeliveryMinCents,
+      });
+    }
   }
   // Not configured, or pickup: keep the existing flat behaviour.
   return computeDeliveryFeeCents(subtotalCents, fulfillment, settings);
 }
 ```
-Add the imports for `resolveDeliveryDistanceKm` and `computeZonedDeliveryFeeCents`.
+Add the imports for `resolveDeliveryDistanceKm` (Task 6), `computeZonedDeliveryFeeCents` (Task 4), and `fetchDeliveryConfig` (Task 2). `fetchStoreSettings` is still used for `deliveryFeeCents` and `freeDeliveryMinCents`.
 
 - [ ] **Step 3: Add the public action**
 
