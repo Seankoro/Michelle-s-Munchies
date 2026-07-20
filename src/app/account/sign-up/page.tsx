@@ -6,7 +6,9 @@ import { AuthCard } from "@/components/account/AuthCard";
 import { Button } from "@/components/ui/Button";
 import { GoogleButton } from "@/components/account/GoogleButton";
 import { useFeatures } from "@/components/features/FeaturesProvider";
+import { Toggle } from "@/components/ui/Toggle";
 import { signUpWithPassword } from "../actions";
+import { subscribeNewsletterAction } from "@/lib/newsletter-actions";
 import { inputClass } from "@/lib/ui";
 
 export default function SignUpPage() {
@@ -14,6 +16,7 @@ export default function SignUpPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [referral, setReferral] = useState("");
+  const [joinNewsletter, setJoinNewsletter] = useState(true);
   const features = useFeatures();
   const [error, setError] = useState("");
   const [pending, setPending] = useState("");
@@ -38,6 +41,10 @@ export default function SignUpPage() {
     if (result.error) {
       setError(result.error);
       return;
+    }
+    // Newsletter opt-in, best-effort and never blocks navigation.
+    if (joinNewsletter && features.newsletter) {
+      void subscribeNewsletterAction(email.trim());
     }
     if (result.pending) {
       setPending(result.pending);
@@ -102,6 +109,18 @@ export default function SignUpPage() {
                 onChange={(e) => setReferral(e.target.value.toUpperCase())}
                 placeholder="From a friend?"
               />
+            </div>
+          )}
+
+          {features.newsletter && (
+            <div className="flex items-start gap-2 text-sm">
+              <Toggle
+                checked={joinNewsletter}
+                onChange={setJoinNewsletter}
+                label="Email me occasional updates"
+                className="mt-0.5"
+              />
+              <span>Email me occasional updates and new treats. Unsubscribe any time.</span>
             </div>
           )}
 
