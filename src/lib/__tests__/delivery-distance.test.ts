@@ -34,6 +34,8 @@ vi.mock("@/lib/onemap", () => ({
 
 import { resolveDeliveryDistanceKm, medianOf } from "@/lib/delivery-distance";
 import { geocodePostal, driveDistanceMeters } from "@/lib/onemap";
+import { haversineKm } from "@/lib/geo";
+import { sectorCentre } from "@/lib/sg-postal-sectors";
 
 const kitchen = { postal: "500001", lat: 1.30, lng: 103.85 };
 beforeEach(() => { rows.length = 0; vi.clearAllMocks(); });
@@ -46,12 +48,24 @@ describe("resolveDeliveryDistanceKm", () => {
     expect(km).toBeCloseTo(4.2, 1);
     expect(rows.length).toBe(1);
   });
+  it("returns the cached distance without calling OneMap", async () => {
+    rows.push({
+      delivery_postal: "049213",
+      kitchen_postal: "500001",
+      distance_m: 4200,
+      delivery_lat: 1.31,
+      delivery_lng: 103.86,
+    });
+    const km = await resolveDeliveryDistanceKm("049213", kitchen);
+    expect(km).toBeCloseTo(4.2, 1);
+    expect(vi.mocked(geocodePostal)).not.toHaveBeenCalled();
+    expect(vi.mocked(driveDistanceMeters)).not.toHaveBeenCalled();
+  });
   it("falls back to the sector centre when OneMap fails", async () => {
     vi.mocked(geocodePostal).mockResolvedValue(null);
     vi.mocked(driveDistanceMeters).mockResolvedValue(null);
     const km = await resolveDeliveryDistanceKm("689123", kitchen); // known sector 68
-    expect(km).not.toBeNull();
-    expect(km!).toBeGreaterThan(0);
+    expect(km!).toBeCloseTo(haversineKm(kitchen, sectorCentre("689123")!) * 1.4, 2);
   });
   it("returns null when OneMap fails and the sector is unknown", async () => {
     vi.mocked(geocodePostal).mockResolvedValue(null);

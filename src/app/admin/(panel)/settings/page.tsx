@@ -697,6 +697,7 @@ function DeliveryZones() {
     );
     setLocated(res.config.kitchenLat != null && res.config.kitchenLng != null);
     setSaved(true);
+    window.setTimeout(() => setSaved(false), 2000);
   }
 
   if (loading) {
