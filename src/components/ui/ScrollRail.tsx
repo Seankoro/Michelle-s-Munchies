@@ -155,19 +155,26 @@ export function ScrollRail({
           >
             ›
           </button>
-          <input
-            type="range"
-            min={0}
-            max={Math.round(max)}
-            value={Math.round(Math.min(pos, max))}
-            onChange={(event) => {
-              const track = trackRef.current;
-              if (track) track.scrollLeft = Number(event.target.value);
-            }}
-            aria-label={`Scroll position for ${label}`}
+          <div
             style={{ "--rail-progress": `${max > 0 ? (Math.min(pos, max) / max) * 100 : 0}%` } as CSSProperties}
-            className="rail-slider mx-auto mt-4 block w-48 max-w-[70%] cursor-pointer xl:hidden"
-          />
+            className="relative mx-auto mt-4 h-5 w-48 max-w-[70%] xl:hidden"
+          >
+            <input
+              type="range"
+              min={0}
+              max={Math.round(max)}
+              value={Math.round(Math.min(pos, max))}
+              onChange={(event) => {
+                const track = trackRef.current;
+                if (track) track.scrollLeft = Number(event.target.value);
+              }}
+              aria-label={`Scroll position for ${label}`}
+              className="rail-slider absolute inset-x-0 top-1/2 w-full -translate-y-1/2 cursor-pointer"
+            />
+            {/* Visible bow, positioned by --rail-progress so its centre reaches
+                both ends. The input above is the invisible drag handle. */}
+            <span aria-hidden="true" className="rail-bow-thumb" />
+          </div>
         </>
       )}
     </div>

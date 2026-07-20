@@ -126,36 +126,48 @@
       var(--color-line) var(--rail-progress, 0%)
     );
     outline-offset: 4px;
-    --rail-bow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='2 10 68 30'%3E%3Cpath d='M34 23L9 14C3 12 3 38 9 36L34 32Z' fill='%23fd9bad' stroke='%23d2648a' stroke-width='1.5' stroke-linejoin='round'/%3E%3Cpath d='M38 23L63 14C69 12 69 38 63 36L38 32Z' fill='%23fd9bad' stroke='%23d2648a' stroke-width='1.5' stroke-linejoin='round'/%3E%3Crect x='31' y='20' width='10' height='15' rx='4.5' fill='%23bc4a6a'/%3E%3C/svg%3E");
   }
+  /* The native thumb stays as the drag handle but is made invisible. The bow
+     is drawn separately as .rail-bow-thumb so its centre can travel the full
+     width of the track, and so it carries no CSS drop-shadow, which Safari
+     renders as a rectangle around a background-image thumb. */
   .rail-slider::-webkit-slider-thumb {
     appearance: none;
     -webkit-appearance: none;
     height: 1.15rem;
     width: 1.7rem;
     border: 0;
-    background: var(--rail-bow) center / contain no-repeat;
-    filter: drop-shadow(0 1px 2px rgb(61 40 35 / 0.35));
-    transition: transform 0.15s ease;
-  }
-  .rail-slider::-webkit-slider-thumb:hover,
-  .rail-slider:active::-webkit-slider-thumb {
-    transform: scale(1.18);
+    background: transparent;
+    cursor: grab;
   }
   .rail-slider::-moz-range-thumb {
     height: 1.15rem;
     width: 1.7rem;
     border: 0;
-    background: var(--rail-bow) center / contain no-repeat;
-    filter: drop-shadow(0 1px 2px rgb(61 40 35 / 0.35));
-    transition: transform 0.15s ease;
-  }
-  .rail-slider::-moz-range-thumb:hover,
-  .rail-slider:active::-moz-range-thumb {
-    transform: scale(1.18);
+    background: transparent;
+    cursor: grab;
   }
   .rail-slider::-moz-range-track {
     background: transparent;
+  }
+  /* Tail-less, solid-colour RibbonBow, inlined so it needs no asset. Its centre
+     sits on --rail-progress, so at either end the bow overhangs the track and
+     no line peeks past it. */
+  .rail-bow-thumb {
+    position: absolute;
+    top: 50%;
+    left: var(--rail-progress, 0%);
+    height: 1.15rem;
+    width: 1.7rem;
+    transform: translate(-50%, -50%);
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='2 10 68 30'%3E%3Cpath d='M34 23L9 14C3 12 3 38 9 36L34 32Z' fill='%23fd9bad' stroke='%23d2648a' stroke-width='1.5' stroke-linejoin='round'/%3E%3Cpath d='M38 23L63 14C69 12 69 38 63 36L38 32Z' fill='%23fd9bad' stroke='%23d2648a' stroke-width='1.5' stroke-linejoin='round'/%3E%3Crect x='31' y='20' width='10' height='15' rx='4.5' fill='%23bc4a6a'/%3E%3C/svg%3E")
+      center / contain no-repeat;
+    pointer-events: none;
+    transition: transform 0.15s ease;
+  }
+  .rail-slider:hover ~ .rail-bow-thumb,
+  .rail-slider:active ~ .rail-bow-thumb {
+    transform: translate(-50%, -50%) scale(1.15);
   }
 
   /* A faint veined-marble wash used behind hero / feature sections. */
