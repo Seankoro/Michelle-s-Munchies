@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { DietaryTag, Product } from "@/lib/types";
 import { dietaryMeta } from "@/lib/catalog";
@@ -8,6 +8,13 @@ import { ProductCard } from "@/components/product/ProductCard";
 import { MascotSays } from "@/components/ui/MascotSays";
 import { ScrollRail } from "@/components/ui/ScrollRail";
 import { cn } from "@/lib/cn";
+
+/** Per-tab memory of the menu's filters and scroll, so returning from a product
+ *  feels like you never left. Cleared when the browser tab closes. */
+const VIEW_KEY = "mm-menu-view";
+/** One-shot flag the product page's "back to menu" link sets to request a
+ *  restore. A plain nav to the menu leaves it unset, so the menu starts fresh. */
+const RESTORE_FLAG = "mm-menu-restore";
 
 /**
  * One category's products as a horizontal scroll-snap rail on phones and tablets,
@@ -55,6 +62,66 @@ export function MenuBrowser({
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("All");
   const [dietary, setDietary] = useState<DietaryTag[]>(initialDietary);
+  const [restored, setRestored] = useState(false);
+
+  // Restore the last-used filters and scroll position when returning to the menu,
+  // so tapping into a product and back feels like you never left. Done in an
+  // effect (not initial state) to keep the server and client render in sync.
+  useEffect(() => {
+    try {
+      // Only restore when arriving via the product page's "back to menu" link,
+      // which sets this one-shot flag. A plain nav to the menu starts fresh.
+      if (sessionStorage.getItem(RESTORE_FLAG) === "1") {
+        sessionStorage.removeItem(RESTORE_FLAG);
+        const raw = sessionStorage.getItem(VIEW_KEY);
+        if (raw) {
+          const v = JSON.parse(raw) as {
+            query?: string;
+            category?: string;
+            dietary?: DietaryTag[];
+            scrollY?: number;
+          };
+          if (typeof v.query === "string") setQuery(v.query);
+          if (typeof v.category === "string") setCategory(v.category);
+          if (Array.isArray(v.dietary)) setDietary(v.dietary);
+          if (typeof v.scrollY === "number" && v.scrollY > 0) {
+            const y = v.scrollY;
+            // Wait for the restored sections to lay out before scrolling to them.
+            requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, y)));
+          }
+        }
+      }
+    } catch {
+      // Storage unavailable or malformed, the menu still works without a restore.
+    }
+    setRestored(true);
+  }, []);
+
+  // Once restored, keep that saved view in sync with the current filters and scroll.
+  useEffect(() => {
+    if (!restored) return;
+    const save = () => {
+      try {
+        sessionStorage.setItem(
+          VIEW_KEY,
+          JSON.stringify({ query, category, dietary, scrollY: window.scrollY }),
+        );
+      } catch {
+        // Losing the saved view is harmless.
+      }
+    };
+    save();
+    let frame = 0;
+    const onScroll = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(save);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", onScroll);
+    };
+  }, [restored, query, category, dietary]);
 
   // Only offer dietary filters that some product actually carries.
   const dietaryTags = useMemo(

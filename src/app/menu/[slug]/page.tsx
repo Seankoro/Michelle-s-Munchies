@@ -9,6 +9,7 @@ import { ImagePlaceholder } from "@/components/ui/ImagePlaceholder";
 import { Badge } from "@/components/ui/Badge";
 import { OptionPicker } from "@/components/product/OptionPicker";
 import { FlavourBoxPicker } from "@/components/product/FlavourBoxPicker";
+import { BackToMenuLink } from "@/components/product/BackToMenuLink";
 import { AllergenChips } from "@/components/product/AllergenChips";
 import { DietaryTags } from "@/components/product/DietaryTags";
 import { SubstitutionNote } from "@/components/product/SubstitutionNote";
@@ -87,9 +88,7 @@ export default async function ProductDetailPage({ params }: Params) {
   return (
     <main className="mx-auto max-w-none px-6 py-10 lg:px-10">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(productJsonLd) }} />
-      <Link href="/menu" className="text-sm font-semibold text-rose-deep transition hover:text-rose">
-        ← Back to menu
-      </Link>
+      <BackToMenuLink />
 
       <div className="mt-6 grid gap-10 lg:grid-cols-2">
         {/* Gallery */}
