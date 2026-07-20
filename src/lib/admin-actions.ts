@@ -7,6 +7,9 @@ import { validateImageUpload } from "@/lib/image-upload";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { isAdminEmail, requireAdmin } from "@/lib/admin-auth";
+import { fetchDeliveryConfig, updateDeliveryConfig, type DeliveryConfig } from "@/lib/delivery-config";
+import { geocodePostal } from "@/lib/onemap";
+import type { DistanceTier } from "@/lib/delivery-fee";
 import {
   cancelAndRefundOrder,
   createProduct,
@@ -159,6 +162,66 @@ export async function createManualOrderAction(input: ManualOrderInput): Promise<
 export async function updateSettingsAction(patch: Partial<AdminSettings>): Promise<void> {
   await requireAdmin();
   await updateSettings(patch);
+}
+
+// ---- Delivery zones ---------------------------------------------------------
+// Kitchen coordinates and distance tiers live in the service-role-only
+// delivery_config table, never on the public settings row, because the
+// coordinates are effectively the owner's home address. Only these
+// admin-gated actions may read or write it.
+export async function loadDeliveryConfigAction(): Promise<DeliveryConfig> {
+  await requireAdmin();
+  return fetchDeliveryConfig();
+}
+
+export type SaveDeliveryConfigResult =
+  | { ok: true; config: DeliveryConfig }
+  | { ok: false; error: string };
+
+export async function saveDeliveryConfigAction(input: {
+  kitchenPostal: string;
+  tiers: DistanceTier[];
+}): Promise<SaveDeliveryConfigResult> {
+  await requireAdmin();
+  const kitchenPostal = input.kitchenPostal.trim();
+  if (kitchenPostal && !/^\d{6}$/.test(kitchenPostal)) {
+    return { ok: false, error: "Kitchen postal code must be 6 digits." };
+  }
+  for (const tier of input.tiers) {
+    if (!Number.isFinite(tier.upToKm) || tier.upToKm <= 0) {
+      return { ok: false, error: "Each tier's distance must be a number greater than zero." };
+    }
+    if (!Number.isInteger(tier.feeCents) || tier.feeCents < 0) {
+      return { ok: false, error: "Each tier's fee must be a whole number of cents, zero or more." };
+    }
+  }
+  const tiers = [...input.tiers].sort((a, b) => a.upToKm - b.upToKm);
+
+  try {
+    const current = await fetchDeliveryConfig();
+    let kitchenLat: number | null = current.kitchenLat;
+    let kitchenLng: number | null = current.kitchenLng;
+    if (!kitchenPostal) {
+      kitchenLat = null;
+      kitchenLng = null;
+    } else if (kitchenPostal !== current.kitchenPostal || kitchenLat == null || kitchenLng == null) {
+      const coords = await geocodePostal(kitchenPostal);
+      kitchenLat = coords?.lat ?? null;
+      kitchenLng = coords?.lng ?? null;
+    }
+    await updateDeliveryConfig({
+      kitchenPostal: kitchenPostal || null,
+      kitchenLat,
+      kitchenLng,
+      tiers,
+    });
+    return { ok: true, config: await fetchDeliveryConfig() };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Could not save delivery zones.",
+    };
+  }
 }
 
 // ---- Promo codes -----------------------------------------------------------

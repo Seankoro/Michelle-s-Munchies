@@ -9,6 +9,8 @@ import { cn } from "@/lib/cn";
 import { Toggle } from "@/components/ui/Toggle";
 import { PanelLoading } from "@/components/admin/PanelLoading";
 import { compactInputClass as inputClass } from "@/lib/ui";
+import { loadDeliveryConfigAction, saveDeliveryConfigAction } from "@/lib/admin-actions";
+import type { DistanceTier } from "@/lib/delivery-fee";
 
 export default function AdminSettingsPage() {
   const { settings, updateSettings, hydrated, products } = useAdmin();
@@ -295,6 +297,8 @@ function SettingsForm({
               <span className="font-normal text-muted">After this time, the earliest order date moves a day later. Blank for none.</span>
             </label>
           </div>
+
+          <DeliveryZones />
         </section>
 
         <section id="settings-pickup" className="scroll-mt-24 rounded-2xl border border-line bg-white p-5">
@@ -630,6 +634,171 @@ function SettingsForm({
             </button>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+type TierDraft = { upToKmText: string; feeText: string };
+
+/**
+ * Kitchen postal + distance tiers, self-contained with its own load/save.
+ * These never flow through AdminStore/updateSettings: the kitchen coordinates
+ * are effectively the owner's home address, so they live only in the
+ * service-role-only delivery_config table, behind the admin-gated actions.
+ */
+function DeliveryZones() {
+  const [loading, setLoading] = useState(true);
+  const [kitchenPostal, setKitchenPostal] = useState("");
+  const [tiers, setTiers] = useState<TierDraft[]>([]);
+  const [located, setLocated] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    void (async () => {
+      const config = await loadDeliveryConfigAction();
+      setKitchenPostal(config.kitchenPostal ?? "");
+      setTiers(
+        config.tiers.map((t) => ({
+          upToKmText: String(t.upToKm),
+          feeText: (t.feeCents / 100).toFixed(2),
+        })),
+      );
+      setLocated(config.kitchenLat != null && config.kitchenLng != null);
+      setLoading(false);
+    })();
+  }, []);
+
+  async function handleSave() {
+    setSaving(true);
+    setError("");
+    setSaved(false);
+    const parsedTiers: DistanceTier[] = tiers.map((t) => ({
+      upToKm: parseFloat(t.upToKmText || "0"),
+      feeCents: Math.max(0, Math.round(parseFloat(t.feeText || "0") * 100)),
+    }));
+    const res = await saveDeliveryConfigAction({
+      kitchenPostal: kitchenPostal.trim(),
+      tiers: parsedTiers,
+    });
+    setSaving(false);
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    setKitchenPostal(res.config.kitchenPostal ?? "");
+    setTiers(
+      res.config.tiers.map((t) => ({
+        upToKmText: String(t.upToKm),
+        feeText: (t.feeCents / 100).toFixed(2),
+      })),
+    );
+    setLocated(res.config.kitchenLat != null && res.config.kitchenLng != null);
+    setSaved(true);
+  }
+
+  if (loading) {
+    return <p className="mt-6 text-sm text-muted">Loading delivery zones…</p>;
+  }
+
+  return (
+    <div className="mt-6 border-t border-line pt-5">
+      <h3 className="text-sm font-semibold text-ink">Distance-based delivery zones</h3>
+      <p className="mt-1 text-sm text-muted">
+        Price delivery by driving distance from your kitchen. The flat delivery fee above stays
+        the fallback: it&rsquo;s used until zones are set up here, or whenever an address
+        can&rsquo;t be located.
+      </p>
+
+      <label className="mt-4 flex max-w-52 flex-col gap-1 text-sm font-semibold">
+        Kitchen postal code
+        <input
+          className={inputClass}
+          value={kitchenPostal}
+          onChange={(e) => setKitchenPostal(e.target.value)}
+          inputMode="numeric"
+          maxLength={6}
+          placeholder="e.g. 018956"
+        />
+      </label>
+
+      <div className="mt-4 flex flex-col gap-2">
+        {tiers.length === 0 && <p className="text-sm text-muted">No tiers yet.</p>}
+        {tiers.map((tier, index) => (
+          <div key={index} className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2 text-sm font-normal">
+              Up to
+              <input
+                className={cn(inputClass, "max-w-20")}
+                value={tier.upToKmText}
+                inputMode="decimal"
+                aria-label="Up to (km)"
+                onChange={(e) =>
+                  setTiers((prev) =>
+                    prev.map((t, i) => (i === index ? { ...t, upToKmText: e.target.value } : t)),
+                  )
+                }
+              />
+              km
+            </label>
+            <label className="flex items-center gap-2 text-sm font-normal">
+              Fee S$
+              <input
+                className={cn(inputClass, "max-w-24")}
+                value={tier.feeText}
+                inputMode="decimal"
+                aria-label="Fee (S$)"
+                onChange={(e) =>
+                  setTiers((prev) =>
+                    prev.map((t, i) => (i === index ? { ...t, feeText: e.target.value } : t)),
+                  )
+                }
+              />
+            </label>
+            <button
+              type="button"
+              aria-label="Remove tier"
+              onClick={() => setTiers((prev) => prev.filter((_, i) => i !== index))}
+              className="rounded-full border border-line px-3 py-1.5 text-sm text-rose-deep transition hover:border-rose active:scale-90"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={() => setTiers((prev) => [...prev, { upToKmText: "", feeText: "0.00" }])}
+          className="self-start rounded-full border border-line px-4 py-1.5 text-sm font-semibold transition hover:border-rose active:scale-95"
+        >
+          + Add tier
+        </button>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-4">
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving}
+          className="rounded-full bg-rose-deep px-5 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:brightness-110 active:scale-95 disabled:pointer-events-none disabled:opacity-50"
+        >
+          Save delivery zones
+        </button>
+        <span role="status" aria-live="polite" className="text-sm">
+          {error ? (
+            <span className="font-semibold text-rose-deep">{error}</span>
+          ) : saved ? (
+            located ? (
+              <span className="font-semibold text-success">Saved · Located ✓</span>
+            ) : (
+              <span className="text-muted">
+                Saved. Not located yet — add your OneMap credentials in the environment, then
+                save again.
+              </span>
+            )
+          ) : null}
+        </span>
       </div>
     </div>
   );
