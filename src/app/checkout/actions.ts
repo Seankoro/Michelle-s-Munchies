@@ -459,6 +459,7 @@ export async function placeOrder(
         recipientPhone: normalizedRecipientPhone ?? undefined,
         noteAnswers,
         isGift: settings.features.gifting ? input.isGift ?? false : false,
+        deliveryFeeCents,
       },
       user?.id ?? null,
       { pointsRedeemed, discountCents: promoDiscount + pointsDiscount },
