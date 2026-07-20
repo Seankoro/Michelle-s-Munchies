@@ -8,6 +8,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { computeDeliveryFeeCents, earliestFulfillmentDate } from "@/lib/order";
 import { singaporeNow } from "@/lib/time";
 import { fetchStoreSettings, type FeatureFlags } from "@/lib/settings";
+import { resolveDeliveryDistanceKm } from "@/lib/delivery-distance";
+import { computeZonedDeliveryFeeCents } from "@/lib/delivery-fee";
+import { fetchDeliveryConfig } from "@/lib/delivery-config";
 import { formatPrice } from "@/lib/catalog";
 import { rateLimit } from "@/lib/rate-limit";
 import { validatePromo, type PromoValidation } from "@/lib/promos";
@@ -59,6 +62,62 @@ export async function getDayCapacityAction(date: string): Promise<DayCapacity> {
 
 function subtotalOf(items: CreateOrderInput["items"]): number {
   return items.reduce((sum, item) => sum + item.unitPriceCents * item.quantity, 0);
+}
+
+/**
+ * Delivery fee, authoritative and shared by placeOrder and the estimate action.
+ * Distance-zoned pricing when the kitchen origin and tiers are configured,
+ * otherwise the existing flat fee from settings. The client-sent fee is
+ * never trusted; this always recomputes from the server-only delivery config.
+ */
+async function resolveDeliveryFeeCents(
+  fulfillment: "pickup" | "delivery",
+  subtotalCents: number,
+  postalCode: string | undefined,
+  settings: Awaited<ReturnType<typeof fetchStoreSettings>>,
+): Promise<number> {
+  if (fulfillment === "delivery" && postalCode && /^\d{6}$/.test(postalCode)) {
+    // Kitchen origin + tiers are server-only (delivery_config), never on the
+    // public settings row, because the coordinates are the owner's address.
+    const config = await fetchDeliveryConfig();
+    const zonesReady =
+      config.tiers.length > 0 &&
+      config.kitchenPostal != null &&
+      config.kitchenLat != null &&
+      config.kitchenLng != null;
+    if (zonesReady) {
+      const km = await resolveDeliveryDistanceKm(postalCode, {
+        postal: config.kitchenPostal!,
+        lat: config.kitchenLat!,
+        lng: config.kitchenLng!,
+      });
+      return computeZonedDeliveryFeeCents({
+        fulfillment,
+        subtotalCents,
+        distanceKm: km,
+        tiers: config.tiers,
+        fallbackFeeCents: settings.deliveryFeeCents,
+        freeDeliveryMinCents: settings.freeDeliveryMinCents,
+      });
+    }
+  }
+  // Not configured, or pickup: keep the existing flat behaviour.
+  return computeDeliveryFeeCents(subtotalCents, fulfillment, settings);
+}
+
+/** Checkout "delivery fee" preview, called as the customer fills in their postal
+ *  code and cart, so the UI can show the real distance-zoned fee before placing
+ *  the order. Rate-limited since it triggers a geocode/distance lookup. */
+export async function estimateDeliveryFeeAction(
+  postalCode: string,
+  subtotalCents: number,
+): Promise<{ feeCents: number }> {
+  if (!(await rateLimit("delivery-estimate", { limit: 30, windowMs: 5 * 60_000 }))) {
+    return { feeCents: 0 };
+  }
+  const settings = await fetchStoreSettings();
+  const feeCents = await resolveDeliveryFeeCents("delivery", subtotalCents, postalCode, settings);
+  return { feeCents };
 }
 
 /**
@@ -279,9 +338,10 @@ export async function placeOrder(
       }
     }
 
-    const deliveryFeeCents = computeDeliveryFeeCents(
-      subtotalCents,
+    const deliveryFeeCents = await resolveDeliveryFeeCents(
       input.fulfillmentType,
+      subtotalCents,
+      input.address?.postalCode,
       settings,
     );
 
