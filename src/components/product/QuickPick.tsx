@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import type { Product } from "@/lib/types";
 import { OptionPicker } from "./OptionPicker";
+import { FlavourBoxPicker } from "./FlavourBoxPicker";
 import { Button, buttonClasses } from "@/components/ui/Button";
 import { formatPrice } from "@/lib/catalog";
 import { useDialog } from "@/lib/useDialog";
@@ -95,6 +96,8 @@ export function QuickPick({
                 </Link>
               </div>
             </div>
+          ) : product.flavourBox ? (
+            <FlavourBoxPicker product={product} bare onAdded={() => setAdded(true)} />
           ) : (
             <OptionPicker product={product} onAdded={() => setAdded(true)} />
           )}

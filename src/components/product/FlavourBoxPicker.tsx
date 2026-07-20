@@ -14,7 +14,17 @@ import { cn } from "@/lib/cn";
  * re-validate the count, the availability, and the price. This is the per-item
  * counterpart to the assortment Build a Box, which mixes different products.
  */
-export function FlavourBoxPicker({ product }: { product: Product }) {
+export function FlavourBoxPicker({
+  product,
+  bare = false,
+  onAdded,
+}: {
+  product: Product;
+  /** Drop the outer card + heading when embedded, e.g. inside QuickPick. */
+  bare?: boolean;
+  /** Called after adding, so a host popover can show its own confirmation. */
+  onAdded?: () => void;
+}) {
   const { addItem } = useCart();
   const config = product.flavourBox;
   const [sizeIndex, setSizeIndex] = useState(0);
@@ -67,14 +77,18 @@ export function FlavourBoxPicker({ product }: { product: Product }) {
       selectedOptions: optionRows,
     });
     setCounts({});
-    setAdded(true);
-    window.setTimeout(() => setAdded(false), 1500);
+    if (onAdded) {
+      onAdded();
+    } else {
+      setAdded(true);
+      window.setTimeout(() => setAdded(false), 1500);
+    }
   }
 
   return (
-    <div className="rounded-2xl border border-line bg-white p-5">
-      <h2 className="font-display text-lg font-semibold">Build your own box</h2>
-      <p className="mt-1 text-sm text-muted">Pick a size, then choose your flavours.</p>
+    <div className={bare ? "" : "rounded-2xl border border-line bg-white p-5"}>
+      {!bare && <h2 className="font-display text-lg font-semibold">Build your own box</h2>}
+      <p className={cn("text-sm text-muted", !bare && "mt-1")}>Pick a size, then choose your flavours.</p>
 
       {config.sizes.length > 1 && (
         <div className="mt-3 flex flex-wrap gap-2">
