@@ -2,6 +2,7 @@ import "server-only";
 import type { LatLng } from "@/lib/geo";
 
 const BASE = "https://www.onemap.gov.sg";
+const ONEMAP_TIMEOUT_MS = 4000;
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
 async function getToken(): Promise<string | null> {
@@ -14,6 +15,7 @@ async function getToken(): Promise<string | null> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
+      signal: AbortSignal.timeout(ONEMAP_TIMEOUT_MS),
     });
     if (!res.ok) return null;
     const data = (await res.json()) as { access_token?: string; expiry_timestamp?: string };
@@ -33,7 +35,10 @@ export async function geocodePostal(postal: string): Promise<LatLng | null> {
   if (!token) return null;
   try {
     const url = `${BASE}/api/common/elastic/search?searchVal=${encodeURIComponent(postal)}&returnGeom=Y&getAddrDetails=Y&pageNum=1`;
-    const res = await fetch(url, { headers: { Authorization: token } });
+    const res = await fetch(url, {
+      headers: { Authorization: token },
+      signal: AbortSignal.timeout(ONEMAP_TIMEOUT_MS),
+    });
     if (!res.ok) return null;
     const data = (await res.json()) as { results?: Array<{ LATITUDE?: string; LONGITUDE?: string }> };
     const first = data.results?.[0];
@@ -52,7 +57,10 @@ export async function driveDistanceMeters(from: LatLng, to: LatLng): Promise<num
   if (!token) return null;
   try {
     const url = `${BASE}/api/public/routingsvc/route?start=${from.lat},${from.lng}&end=${to.lat},${to.lng}&routeType=drive`;
-    const res = await fetch(url, { headers: { Authorization: token } });
+    const res = await fetch(url, {
+      headers: { Authorization: token },
+      signal: AbortSignal.timeout(ONEMAP_TIMEOUT_MS),
+    });
     if (!res.ok) return null;
     const data = (await res.json()) as { route_summary?: { total_distance?: number } };
     const m = data.route_summary?.total_distance;
