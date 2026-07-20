@@ -361,6 +361,8 @@ export default function CheckoutPage() {
       try {
         const { feeCents } = await estimateDeliveryFeeAction(postalCode, subtotalCents);
         if (!cancelled) setZonedFeeCents(feeCents);
+      } catch {
+        if (!cancelled) setZonedFeeCents(null);
       } finally {
         if (!cancelled) setDeliveryFeePending(false);
       }

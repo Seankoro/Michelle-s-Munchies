@@ -113,11 +113,21 @@ export async function estimateDeliveryFeeAction(
   subtotalCents: number,
 ): Promise<{ feeCents: number }> {
   if (!(await rateLimit("delivery-estimate", { limit: 30, windowMs: 5 * 60_000 }))) {
-    return { feeCents: 0 };
+    const settings = await fetchStoreSettings();
+    return { feeCents: computeDeliveryFeeCents(subtotalCents, "delivery", settings) };
   }
-  const settings = await fetchStoreSettings();
-  const feeCents = await resolveDeliveryFeeCents("delivery", subtotalCents, postalCode, settings);
-  return { feeCents };
+  try {
+    const settings = await fetchStoreSettings();
+    const feeCents = await resolveDeliveryFeeCents("delivery", subtotalCents, postalCode, settings);
+    return { feeCents };
+  } catch {
+    try {
+      const settings = await fetchStoreSettings();
+      return { feeCents: computeDeliveryFeeCents(subtotalCents, "delivery", settings) };
+    } catch {
+      return { feeCents: 0 };
+    }
+  }
 }
 
 /**
