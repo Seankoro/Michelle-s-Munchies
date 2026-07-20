@@ -21,6 +21,7 @@ import {
 } from "@/lib/order";
 import {
   applyPromo,
+  estimateDeliveryFeeAction,
   getDayCapacityAction,
   placeOrder,
   recordCheckoutIntentAction,
@@ -133,7 +134,14 @@ export default function CheckoutPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
 
-  const deliveryFeeCents = computeDeliveryFeeCents(subtotalCents, fulfillment, settings);
+  const flatDeliveryFeeCents = computeDeliveryFeeCents(subtotalCents, fulfillment, settings);
+  // Distance-zoned estimate, filled in once a valid delivery postal code is
+  // entered. Falls back to the flat fee until then, and reverts to it if the
+  // shopper switches back to pickup or clears the postal code.
+  const [zonedFeeCents, setZonedFeeCents] = useState<number | null>(null);
+  const [deliveryFeePending, setDeliveryFeePending] = useState(false);
+  const deliveryFeeCents =
+    fulfillment === "delivery" && zonedFeeCents !== null ? zonedFeeCents : flatDeliveryFeeCents;
 
   // Rewards, load the signed-in customer's points balance if any.
   const [pointsBalance, setPointsBalance] = useState(0);
@@ -335,6 +343,33 @@ export default function CheckoutPage() {
       active = false;
     };
   }, [appliedCode, subtotalCents, deliveryFeeCents]);
+
+  // Live distance-zoned delivery fee, fetched once the shopper has picked
+  // delivery and entered a valid 6-digit postal code. Debounced so we don't
+  // fire a geocode lookup on every keystroke. The server remains the source
+  // of truth: placeOrder recomputes the fee itself, so this is purely a
+  // preview for the summary.
+  useEffect(() => {
+    if (fulfillment !== "delivery" || !/^\d{6}$/.test(postalCode)) {
+      setZonedFeeCents(null);
+      setDeliveryFeePending(false);
+      return;
+    }
+    let cancelled = false;
+    const id = window.setTimeout(async () => {
+      setDeliveryFeePending(true);
+      try {
+        const { feeCents } = await estimateDeliveryFeeAction(postalCode, subtotalCents);
+        if (!cancelled) setZonedFeeCents(feeCents);
+      } finally {
+        if (!cancelled) setDeliveryFeePending(false);
+      }
+    }, 500);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(id);
+    };
+  }, [postalCode, fulfillment, subtotalCents]);
 
   if (!hydrated) {
     return (
@@ -933,7 +968,14 @@ export default function CheckoutPage() {
               </div>
               <div className="flex justify-between">
                 <dt className="text-muted">{fulfillment === "pickup" ? "Pickup" : "Delivery"}</dt>
-                <dd>{deliveryFeeCents === 0 ? "Free" : formatPrice(deliveryFeeCents)}</dd>
+                <dd className="text-right">
+                  {deliveryFeeCents === 0 ? "Free" : formatPrice(deliveryFeeCents)}
+                  {deliveryFeePending && (
+                    <span className="block text-xs font-normal text-muted">
+                      Calculating delivery…
+                    </span>
+                  )}
+                </dd>
               </div>
               {promoDiscountCents > 0 && (
                 <div className="flex justify-between text-rose-deep">
