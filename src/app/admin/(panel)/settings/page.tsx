@@ -655,21 +655,28 @@ function DeliveryZones() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  // What was last loaded from, or saved to, the server. Compared against the
+  // live draft below so an "unsaved changes" hint never drifts from reality,
+  // the same approach the parent settings form uses for its own dirty flag.
+  const [zonesBaseline, setZonesBaseline] = useState("");
 
   useEffect(() => {
     void (async () => {
       const config = await loadDeliveryConfigAction();
-      setKitchenPostal(config.kitchenPostal ?? "");
-      setTiers(
-        config.tiers.map((t) => ({
-          upToKmText: String(t.upToKm),
-          feeText: (t.feeCents / 100).toFixed(2),
-        })),
-      );
+      const postal = config.kitchenPostal ?? "";
+      const tierDrafts = config.tiers.map((t) => ({
+        upToKmText: String(t.upToKm),
+        feeText: (t.feeCents / 100).toFixed(2),
+      }));
+      setKitchenPostal(postal);
+      setTiers(tierDrafts);
       setLocated(config.kitchenLat != null && config.kitchenLng != null);
+      setZonesBaseline(JSON.stringify({ kitchenPostal: postal, tiers: tierDrafts }));
       setLoading(false);
     })();
   }, []);
+
+  const zonesDirty = !loading && JSON.stringify({ kitchenPostal, tiers }) !== zonesBaseline;
 
   async function handleSave() {
     setSaving(true);
@@ -688,14 +695,15 @@ function DeliveryZones() {
       setError(res.error);
       return;
     }
-    setKitchenPostal(res.config.kitchenPostal ?? "");
-    setTiers(
-      res.config.tiers.map((t) => ({
-        upToKmText: String(t.upToKm),
-        feeText: (t.feeCents / 100).toFixed(2),
-      })),
-    );
+    const postal = res.config.kitchenPostal ?? "";
+    const tierDrafts = res.config.tiers.map((t) => ({
+      upToKmText: String(t.upToKm),
+      feeText: (t.feeCents / 100).toFixed(2),
+    }));
+    setKitchenPostal(postal);
+    setTiers(tierDrafts);
     setLocated(res.config.kitchenLat != null && res.config.kitchenLng != null);
+    setZonesBaseline(JSON.stringify({ kitchenPostal: postal, tiers: tierDrafts }));
     setSaved(true);
     window.setTimeout(() => setSaved(false), 2000);
   }
@@ -710,7 +718,8 @@ function DeliveryZones() {
       <p className="mt-1 text-sm text-muted">
         Price delivery by driving distance from your kitchen. The flat delivery fee above stays
         the fallback: it&rsquo;s used until zones are set up here, or whenever an address
-        can&rsquo;t be located.
+        can&rsquo;t be located. The farthest tier is unbounded, so its fee also covers any
+        address beyond that distance, not just up to it.
       </p>
 
       <label className="mt-4 flex max-w-52 flex-col gap-1 text-sm font-semibold">
@@ -781,26 +790,36 @@ function DeliveryZones() {
         <button
           type="button"
           onClick={handleSave}
-          disabled={saving}
+          disabled={saving || !zonesDirty}
           className="rounded-full bg-rose-deep px-5 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:brightness-110 active:scale-95 disabled:pointer-events-none disabled:opacity-50"
         >
           Save delivery zones
         </button>
+        {zonesDirty && !saving && (
+          <span className="text-sm font-semibold text-warning-ink">Unsaved changes</span>
+        )}
         <span role="status" aria-live="polite" className="text-sm">
           {error ? (
             <span className="font-semibold text-rose-deep">{error}</span>
           ) : saved ? (
-            located ? (
-              <span className="font-semibold text-success">Saved · Located ✓</span>
-            ) : (
-              <span className="text-muted">
-                Saved. Not located yet — add your OneMap credentials in the environment, then
-                save again.
-              </span>
-            )
+            <span className="font-semibold text-success">Saved ✓</span>
           ) : null}
         </span>
       </div>
+      {/* Persistent, unlike the transient "Saved" confirmation above: reflects
+          what's actually on the server, so it survives a page reload instead
+          of disappearing until the next save. */}
+      {kitchenPostal.trim() && (
+        <p className="mt-2 text-sm">
+          {located ? (
+            <span className="font-semibold text-success">Located ✓</span>
+          ) : (
+            <span className="text-muted">
+              Not located yet — add your OneMap credentials, then save again.
+            </span>
+          )}
+        </p>
+      )}
     </div>
   );
 }

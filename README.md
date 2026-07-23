@@ -52,5 +52,6 @@ Two extra steps the dashboard won't remind you about:
 
 - Set up an external scheduler (for example cron-job.org) to GET `/api/cron` hourly with the header `Authorization: Bearer $CRON_SECRET`. It runs abandoned-cart reminders, birthday rewards, and seasonal drop notifications.
 - Content lives in the admin panel: upload product photos, set store settings, and write the mascot's speech bubble line under Settings, "Michelle says". The brand images in `public/` (`logo.png`, `icon.png`, `apple-icon.png`, `og.png`) ship with the repo.
+- Distance-based delivery is configured in Admin → Settings → Delivery zones (kitchen postal code + distance tiers). It requires `ONEMAP_EMAIL` and `ONEMAP_PASSWORD`; without them, delivery falls back to the flat fee.
 
 If you point the app at a different Supabase project, `next.config.mjs` derives the image host from `NEXT_PUBLIC_SUPABASE_URL` automatically.

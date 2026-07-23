@@ -573,7 +573,7 @@ export default function CheckoutPage() {
                       ? "Free · pick up from us"
                       : subtotalCents >= settings.freeDeliveryMinCents
                         ? "Free delivery!"
-                        : `${formatPrice(settings.deliveryFeeCents)} islandwide`}
+                        : `from ${formatPrice(settings.deliveryFeeCents)} · by distance`}
                   </span>
                 </button>
               ))}
@@ -622,8 +622,9 @@ export default function CheckoutPage() {
                     id="postalCode"
                     className={inputClass}
                     value={postalCode}
-                    onChange={(e) => setPostalCode(e.target.value)}
+                    onChange={(e) => setPostalCode(e.target.value.replace(/\D/g, ""))}
                     inputMode="numeric"
+                    maxLength={6}
                     placeholder="460123"
                   />
                 </Field>
@@ -963,7 +964,7 @@ export default function CheckoutPage() {
             )}
 
             <hr className="my-4 border-line" />
-            <dl className="flex flex-col gap-2 text-sm">
+            <dl className="flex flex-col gap-2 text-sm" aria-live="polite">
               <div className="flex justify-between">
                 <dt className="text-muted">Subtotal</dt>
                 <dd>{formatPrice(subtotalCents)}</dd>
