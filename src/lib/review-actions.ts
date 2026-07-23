@@ -7,6 +7,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchStoreSettings } from "@/lib/settings";
 import { upsertReview } from "@/lib/reviews";
 import { validateImageUpload } from "@/lib/image-upload";
+import { rateLimit } from "@/lib/rate-limit";
 
 export type ReviewResult = { ok: true } | { error: string };
 
@@ -26,6 +27,9 @@ export async function submitReview(
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { error: "Please sign in to leave a review." };
+  if (!(await rateLimit("submit-review", { limit: 8, windowMs: 10 * 60_000 }))) {
+    return { error: "You’re submitting too quickly. Please wait a few minutes and try again." };
+  }
 
   // Photos only when the photo-reviews feature is on.
   const photos = settings.features.photoReviews ? imageUrls : [];
@@ -50,6 +54,9 @@ export async function uploadReviewImageAction(formData: FormData): Promise<Uploa
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Please sign in first." };
+  if (!(await rateLimit("review-image-upload", { limit: 12, windowMs: 10 * 60_000 }))) {
+    return { ok: false, error: "You’re uploading too quickly. Please wait a few minutes and try again." };
+  }
 
   const file = formData.get("file");
   if (!(file instanceof File)) return { ok: false, error: "No file provided." };
