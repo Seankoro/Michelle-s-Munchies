@@ -14,6 +14,7 @@ import {
   type PaymentStatus,
 } from "@/lib/order";
 import type { CartItem, NoteAnswer, SelectedOption } from "@/lib/types";
+import { resolveDeliveryFeeCents } from "@/lib/delivery-pricing";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -195,7 +196,14 @@ export async function createManualOrder(input: ManualOrderInput): Promise<{ orde
     0,
   );
   const settings = await fetchStoreSettings();
-  const deliveryFeeCents = computeDeliveryFeeCents(subtotalCents, input.fulfillmentType, settings);
+  // Price delivery the same way online checkout does, distance-zoned when the
+  // address has a postal code and zones are configured, else the flat fee.
+  const deliveryFeeCents = await resolveDeliveryFeeCents(
+    input.fulfillmentType,
+    subtotalCents,
+    input.address?.postalCode,
+    settings,
+  );
   const totalCents = subtotalCents + deliveryFeeCents;
 
   const orderId = randomUUID();
