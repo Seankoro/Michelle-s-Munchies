@@ -1,7 +1,7 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
-import { fetchProducts } from "@/lib/products";
+import { fetchAdminProducts } from "@/lib/products";
 import { createManualOrder, type ManualOrderInput } from "@/lib/orders-db";
 import { validateImageUpload } from "@/lib/image-upload";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -78,7 +78,7 @@ export async function loadAdminData(): Promise<{
 }> {
   await requireAdmin();
   const [products, orders, settings] = await Promise.all([
-    fetchProducts(),
+    fetchAdminProducts(),
     fetchAdminOrders(),
     fetchAdminSettings(),
   ]);
@@ -187,12 +187,13 @@ export async function saveDeliveryConfigAction(input: {
   if (kitchenPostal && !/^\d{6}$/.test(kitchenPostal)) {
     return { ok: false, error: "Kitchen postal code must be 6 digits." };
   }
-  for (const tier of input.tiers) {
+  for (let i = 0; i < input.tiers.length; i++) {
+    const tier = input.tiers[i];
     if (!Number.isFinite(tier.upToKm) || tier.upToKm <= 0) {
-      return { ok: false, error: "Each tier's distance must be a number greater than zero." };
+      return { ok: false, error: `Tier ${i + 1}: distance must be a number greater than zero.` };
     }
     if (!Number.isInteger(tier.feeCents) || tier.feeCents < 0) {
-      return { ok: false, error: "Each tier's fee must be a whole number of cents, zero or more." };
+      return { ok: false, error: `Tier ${i + 1}: fee must be a whole number of cents that is zero or more.` };
     }
   }
   const tiers = [...input.tiers].sort((a, b) => a.upToKm - b.upToKm);

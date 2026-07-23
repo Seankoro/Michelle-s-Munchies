@@ -1,6 +1,7 @@
 import "server-only";
 import type { Allergen, DietaryTag, FlavourBoxConfig, IngredientLine, Product } from "@/lib/types";
 import { createPublicClient } from "@/lib/supabase/public";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
  * Read the ingredients jsonb. Handles both the new { name, amount, unit } objects
@@ -48,7 +49,8 @@ type ProductRow = {
   short_description: string | null;
   long_description: string | null;
   base_price_cents: number;
-  cost_cents: number | null;
+  // Admin-only margin data. Absent from the public read, present in the admin read.
+  cost_cents?: number | null;
   category: string;
   image_paths: string[] | null;
   is_available: boolean;
@@ -67,7 +69,18 @@ type ProductRow = {
   personalisation_allow_photo: boolean | null;
 };
 
-const PRODUCT_SELECT = "*, product_options(*, product_option_values(*))";
+// Storefront read: every product column EXCEPT cost_cents. The bakery's cost is
+// admin-only, so it must never leave the server through the public (anon) client,
+// and once the anon grant is narrowed a "*" select would fail on that column.
+const PRODUCT_FIELDS_PUBLIC =
+  "id, slug, name, short_description, long_description, base_price_cents, category, " +
+  "image_paths, is_available, is_best_seller, is_recommended, allergens, dietary_tags, " +
+  "ingredients, storage_info, serving_info, stock_count, available_from, flavour_box, " +
+  "personalisation_label, personalisation_allow_photo";
+const PRODUCT_SELECT = `${PRODUCT_FIELDS_PUBLIC}, product_options(*, product_option_values(*))`;
+// Admin read via the service-role client, which bypasses column grants and can
+// see cost_cents for the product editor and margin views.
+const PRODUCT_SELECT_ADMIN = "*, product_options(*, product_option_values(*))";
 
 function bySortOrder<T extends { sort_order: number }>(a: T, b: T) {
   return a.sort_order - b.sort_order;
@@ -93,7 +106,7 @@ function rowToProduct(row: ProductRow): Product {
     shortDescription: row.short_description ?? "",
     longDescription: row.long_description ?? "",
     basePriceCents: row.base_price_cents,
-    costCents: row.cost_cents,
+    costCents: row.cost_cents ?? null,
     category: row.category,
     isAvailable: row.is_available,
     isBestSeller: row.is_best_seller,
@@ -180,6 +193,21 @@ export async function fetchProductById(id: string): Promise<Product | null> {
     .maybeSingle();
   if (error) throw new Error(`Failed to load product by id: ${error.message}`);
   return data ? rowToProduct(data as ProductRow) : null;
+}
+
+/**
+ * Admin catalog read via the service role, including the admin-only cost_cents
+ * that the public reads omit. Admin surfaces (product editor, margins) use this
+ * so the storefront never has to expose cost through the anon client.
+ */
+export async function fetchAdminProducts(): Promise<Product[]> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("products")
+    .select(PRODUCT_SELECT_ADMIN)
+    .order("sort_order", { ascending: true });
+  if (error) throw new Error(`Failed to load products: ${error.message}`);
+  return ((data as ProductRow[] | null) ?? []).map(rowToProduct);
 }
 
 /** Best-sellers first, then recommended via the admin toggle, for the home strip. */
