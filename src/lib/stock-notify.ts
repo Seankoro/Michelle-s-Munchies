@@ -1,30 +1,89 @@
 import "server-only";
+import { newToken } from "@/lib/tokens";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { sendBackInStockEmail } from "@/lib/email";
+import { sendBackInStockEmail, sendSubscriptionConfirmEmail } from "@/lib/email";
 
 /**
- * Records a back-in-stock subscription. The partial unique index on product_id
- * and lower(email) where notified_at is null dedupes, so a repeat subscribe is
- * a harmless no-op.
+ * Records a back-in-stock subscription and sends the double-opt-in
+ * confirmation. The alert only ever fires for confirmed addresses, so nobody
+ * can sign somebody else's inbox up for our mail. The partial unique index on
+ * product_id and lower(email) where notified_at is null dedupes; a repeat
+ * subscribe just re-sends the confirmation while unconfirmed.
  */
 export async function subscribeBackInStock(
   productId: string,
   email: string,
   userId: string | null = null,
+  preConfirmed = false,
 ): Promise<void> {
   const supabase = createAdminClient();
-  const { error } = await supabase
-    .from("stock_notifications")
-    .insert({ product_id: productId, email: email.trim().toLowerCase(), user_id: userId });
-  // 23505 means already subscribed via the unique index. Fine to ignore.
-  if (error && error.code !== "23505") {
-    console.error("[stock-notify] subscribe failed:", error.message);
+  const normalized = email.trim().toLowerCase();
+  let confirmToken: string | null = newToken();
+  const { error } = await supabase.from("stock_notifications").insert({
+    product_id: productId,
+    email: normalized,
+    user_id: userId,
+    confirm_token: confirmToken,
+    // A signed-in customer's account address is already theirs. Only guests
+    // need the confirmation round trip.
+    confirmed_at: preConfirmed ? new Date().toISOString() : null,
+  });
+  if (preConfirmed && !error) return;
+  if (preConfirmed && error) {
+    if (error.code !== "23505") console.error("[stock-notify] subscribe failed:", error.message);
+    // Already subscribed as a guest earlier: promote that row to confirmed.
+    if (error.code === "23505") {
+      await supabase
+        .from("stock_notifications")
+        .update({ confirmed_at: new Date().toISOString() })
+        .eq("product_id", productId)
+        .eq("email", normalized)
+        .is("notified_at", null)
+        .is("confirmed_at", null);
+    }
+    return;
   }
+  if (error) {
+    // 23505 means already subscribed via the unique index. Re-send the
+    // confirmation if that subscription is still unconfirmed, else stay quiet.
+    if (error.code !== "23505") {
+      console.error("[stock-notify] subscribe failed:", error.message);
+      return;
+    }
+    const { data } = await supabase
+      .from("stock_notifications")
+      .select("confirm_token, confirmed_at")
+      .eq("product_id", productId)
+      .eq("email", normalized)
+      .is("notified_at", null)
+      .maybeSingle();
+    const existing = data as { confirm_token: string | null; confirmed_at: string | null } | null;
+    if (!existing || existing.confirmed_at) return;
+    confirmToken = existing.confirm_token;
+    if (!confirmToken) {
+      confirmToken = newToken();
+      await supabase
+        .from("stock_notifications")
+        .update({ confirm_token: confirmToken })
+        .eq("product_id", productId)
+        .eq("email", normalized)
+        .is("notified_at", null);
+    }
+  }
+
+  const { data: product } = await supabase
+    .from("products")
+    .select("name")
+    .eq("id", productId)
+    .maybeSingle();
+  const productName = (product as { name: string } | null)?.name ?? "this treat";
+  await sendSubscriptionConfirmEmail(normalized, { list: "stock", productName }, confirmToken);
 }
 
 /**
  * Emails everyone waiting on a product on a best-effort basis and stamps them
- * notified so they aren't emailed again. Called when a product becomes available.
+ * notified so they aren't emailed again. Called when a product becomes
+ * available. Only confirmed subscribers are ever emailed.
  */
 export async function notifySubscribers(productId: string): Promise<void> {
   const supabase = createAdminClient();
@@ -32,7 +91,8 @@ export async function notifySubscribers(productId: string): Promise<void> {
     .from("stock_notifications")
     .select("id, email")
     .eq("product_id", productId)
-    .is("notified_at", null);
+    .is("notified_at", null)
+    .not("confirmed_at", "is", null);
   const rows = (subs as { id: string; email: string }[] | null) ?? [];
   if (rows.length === 0) return;
 
@@ -70,4 +130,26 @@ export async function notifyLaunchedDrops(): Promise<number> {
   const ids = (data as { id: string }[] | null) ?? [];
   for (const p of ids) await notifySubscribers(p.id);
   return ids.length;
+}
+
+/**
+ * Confirm a back-in-stock subscription by its token. Returns the product name
+ * when the token matched, null otherwise. Idempotent: confirming twice is fine.
+ */
+export async function confirmStockSubscription(token: string): Promise<string | null> {
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from("stock_notifications")
+    .update({ confirmed_at: new Date().toISOString() })
+    .eq("confirm_token", token)
+    .select("product_id")
+    .maybeSingle();
+  const row = data as { product_id: string } | null;
+  if (!row) return null;
+  const { data: product } = await supabase
+    .from("products")
+    .select("name")
+    .eq("id", row.product_id)
+    .maybeSingle();
+  return (product as { name: string } | null)?.name ?? "this treat";
 }

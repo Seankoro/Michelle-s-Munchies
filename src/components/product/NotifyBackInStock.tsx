@@ -45,7 +45,11 @@ export function NotifyBackInStock({
     const result = await subscribeBackInStockAction(productId, email);
     if (result.ok) {
       setStatus("done");
-      setMessage("We'll email you the moment it's back. 🎀");
+      setMessage(
+        result.confirmed
+          ? "We'll email you the moment it's back. 🎀"
+          : "Almost there! Check your inbox and tap the confirmation link. 🎀",
+      );
     } else {
       setStatus("error");
       setMessage(result.error);

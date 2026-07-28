@@ -21,14 +21,20 @@ export type SimpleResult = { ok: true } | { ok: false; error: string };
 
 /** Public opt-in from checkout or sign-up. Rate-limited and feature-gated. */
 export async function subscribeNewsletterAction(email: string): Promise<SimpleResult> {
-  if (!EMAIL_RE.test(email.trim())) return { ok: false, error: "Please enter a valid email." };
+  const normalized = email.trim().toLowerCase();
+  if (!EMAIL_RE.test(normalized)) return { ok: false, error: "Please enter a valid email." };
   if (!(await rateLimit("newsletter-subscribe", { limit: 15, windowMs: 5 * 60_000 }))) {
     return { ok: false, error: "Too many requests. Please wait a few minutes." };
+  }
+  // Per-address throttle so repeat subscribes can't bombard one inbox with
+  // confirmation emails.
+  if (!(await rateLimit(`newsletter-subscribe:${normalized}`, { limit: 3, windowMs: 60 * 60_000 }))) {
+    return { ok: true };
   }
   if (!(await fetchStoreSettings()).features.newsletter) {
     return { ok: false, error: "The newsletter isn’t available right now." };
   }
-  await subscribeNewsletter(email);
+  await subscribeNewsletter(normalized);
   return { ok: true };
 }
 

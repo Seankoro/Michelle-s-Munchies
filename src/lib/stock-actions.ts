@@ -6,12 +6,14 @@ import { rateLimit } from "@/lib/rate-limit";
 import { subscribeBackInStock } from "@/lib/stock-notify";
 import { EMAIL_RE } from "@/lib/text";
 
-export type NotifyResult = { ok: true } | { ok: false; error: string };
+export type NotifyResult = { ok: true; confirmed: boolean } | { ok: false; error: string };
 
 /**
  * Subscribe to a product's back-in-stock alert. Guests pass their email in, and
  * signed-in users have it resolved from the session, ignoring any client value.
- * Rate-limited and gated by the back-in-stock feature.
+ * Rate-limited and gated by the back-in-stock feature. Guests go through the
+ * double-opt-in confirmation email; a signed-in user's account address is
+ * already theirs, so it confirms on the spot.
  */
 export async function subscribeBackInStockAction(
   productId: string,
@@ -34,6 +36,12 @@ export async function subscribeBackInStockAction(
   if (!EMAIL_RE.test(resolved)) {
     return { ok: false, error: "Please enter a valid email." };
   }
-  await subscribeBackInStock(productId, resolved, user?.id ?? null);
-  return { ok: true };
+  const preConfirmed = Boolean(user?.email);
+  // Per-address throttle so repeat subscribes can't bombard a guest-entered
+  // inbox with confirmation emails.
+  if (!preConfirmed && !(await rateLimit(`back-in-stock:${resolved}`, { limit: 3, windowMs: 60 * 60_000 }))) {
+    return { ok: true, confirmed: false };
+  }
+  await subscribeBackInStock(productId, resolved, user?.id ?? null, preConfirmed);
+  return { ok: true, confirmed: preConfirmed };
 }
