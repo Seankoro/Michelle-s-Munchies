@@ -157,7 +157,9 @@ export async function upsertReview(
   body: string,
   imageUrls: string[] = [],
 ): Promise<{ ok: true } | { error: string }> {
-  if (rating < 1 || rating > 5) return { error: "Please choose a rating from 1 to 5." };
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+    return { error: "Please choose a rating from 1 to 5." };
+  }
 
   if (!(await hasPaidPurchase(userId, productId))) {
     return { error: "Only verified buyers can review this item." };

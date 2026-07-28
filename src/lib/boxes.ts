@@ -43,6 +43,13 @@ function rowToBox(row: BoxRow, allProducts: Product[]): BoxTemplate {
   };
 }
 
+/** A box a customer cannot actually finish, because fewer eligible products
+ *  remain (sold out or deleted) than the box asks them to pick. Hidden rather
+ *  than shown as a dead end. */
+function isFillable(box: BoxTemplate): boolean {
+  return box.eligibleProducts.length >= box.itemCount;
+}
+
 export async function fetchActiveBoxTemplates(): Promise<BoxTemplate[]> {
   const supabase = createPublicClient();
   const { data, error } = await supabase
@@ -54,7 +61,7 @@ export async function fetchActiveBoxTemplates(): Promise<BoxTemplate[]> {
   const rows = (data as unknown as BoxRow[] | null) ?? [];
   if (rows.length === 0) return [];
   const products = await fetchProducts();
-  return rows.map((row) => rowToBox(row, products));
+  return rows.map((row) => rowToBox(row, products)).filter(isFillable);
 }
 
 export const fetchBoxBySlug = cache(async (slug: string): Promise<BoxTemplate | null> => {
@@ -68,7 +75,8 @@ export const fetchBoxBySlug = cache(async (slug: string): Promise<BoxTemplate | 
   if (error) throw new Error(`Failed to load box: ${error.message}`);
   if (!data) return null;
   const products = await fetchProducts();
-  return rowToBox(data as unknown as BoxRow, products);
+  const box = rowToBox(data as unknown as BoxRow, products);
+  return isFillable(box) ? box : null;
 });
 
 /**

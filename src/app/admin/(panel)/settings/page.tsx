@@ -685,6 +685,15 @@ function DeliveryZones() {
 
   const zonesDirty = !loading && JSON.stringify({ kitchenPostal, tiers }) !== zonesBaseline;
 
+  // Same tab-close warning the main settings form has, so unsaved kitchen and
+  // distance-tier edits are protected like every other settings field.
+  useEffect(() => {
+    if (!zonesDirty) return;
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [zonesDirty]);
+
   async function handleSave() {
     setSaving(true);
     setError("");

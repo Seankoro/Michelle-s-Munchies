@@ -82,6 +82,13 @@ const PRODUCT_SELECT = `${PRODUCT_FIELDS_PUBLIC}, product_options(*, product_opt
 // Admin read via the service-role client, which bypasses column grants and can
 // see cost_cents for the product editor and margin views.
 const PRODUCT_SELECT_ADMIN = "*, product_options(*, product_option_values(*))";
+// Card-scoped read for lists: everything a ProductCard or quick-pick needs and
+// nothing the detail page owns (long description, recipe, storage, serving).
+// Options stay nested because quick-pick offers them straight from the card.
+const PRODUCT_SELECT_CARD =
+  "id, slug, name, short_description, base_price_cents, category, image_paths, " +
+  "is_available, is_best_seller, is_recommended, allergens, dietary_tags, stock_count, " +
+  "available_from, flavour_box, product_options(*, product_option_values(*))";
 
 function bySortOrder<T extends { sort_order: number }>(a: T, b: T) {
   return a.sort_order - b.sort_order;
@@ -211,18 +218,30 @@ export async function fetchAdminProducts(): Promise<Product[]> {
   return ((data as ProductRow[] | null) ?? []).map(rowToProduct);
 }
 
+/**
+ * Available products with card-level fields only, memoised per request. The
+ * home strip and "you might also like" both feed off this one slim query
+ * instead of re-reading the full catalog with its detail columns.
+ */
+const fetchCardCatalog = cache(async (): Promise<Product[]> => {
+  const supabase = createPublicClient();
+  const { data, error } = await supabase
+    .from("products")
+    .select(PRODUCT_SELECT_CARD)
+    .eq("is_available", true)
+    .order("sort_order", { ascending: true });
+  if (error) throw new Error(`Failed to load product cards: ${error.message}`);
+  // The slim rows omit the detail-only columns; rowToProduct defaults them and
+  // toCardProduct strips what cards never read.
+  return ((data as unknown as ProductRow[] | null) ?? []).map((row) =>
+    toCardProduct(rowToProduct(row)),
+  );
+});
+
 /** Best-sellers first, then recommended via the admin toggle, for the home strip. */
 export async function fetchFeatured(limit = 6): Promise<Product[]> {
-  const products = await fetchProducts();
-  const seen = new Set<string>();
-  const featured: Product[] = [];
-  for (const product of products) {
-    if (!product.isAvailable) continue;
-    if ((product.isBestSeller || product.isRecommended) && !seen.has(product.id)) {
-      seen.add(product.id);
-      featured.push(product);
-    }
-  }
+  const products = await fetchCardCatalog();
+  const featured = products.filter((p) => p.isBestSeller || p.isRecommended);
   // Best-sellers ahead of recommended-only items.
   featured.sort((a, b) => Number(b.isBestSeller) - Number(a.isBestSeller));
   return featured.slice(0, limit);
@@ -230,13 +249,10 @@ export async function fetchFeatured(limit = 6): Promise<Product[]> {
 
 /** "You might also like", same category first, then other available products. */
 export async function fetchRelatedProducts(product: Product, limit = 3): Promise<Product[]> {
-  const products = await fetchProducts();
+  const products = await fetchCardCatalog();
   const sameCategory = products.filter(
-    (p) => p.id !== product.id && p.isAvailable && p.category === product.category,
+    (p) => p.id !== product.id && p.category === product.category,
   );
-  const others = products.filter(
-    (p) => p.id !== product.id && p.isAvailable && p.category !== product.category,
-  );
-  // These render as client ProductCards, so strip detail + cost fields.
-  return [...sameCategory, ...others].slice(0, limit).map(toCardProduct);
+  const others = products.filter((p) => p.id !== product.id && p.category !== product.category);
+  return [...sameCategory, ...others].slice(0, limit);
 }

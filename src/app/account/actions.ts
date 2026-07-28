@@ -7,6 +7,7 @@ import { fetchStoreSettings } from "@/lib/settings";
 import { getOrCreateShareToken } from "@/lib/wishlist-share";
 import { reorderFromOrderId, type ReorderResult } from "@/lib/cart-resolve";
 import { rateLimit } from "@/lib/rate-limit";
+import { normalizeSgPhone } from "@/lib/phone";
 import type { AuthError } from "@supabase/supabase-js";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
@@ -217,7 +218,7 @@ export async function sendPasswordReset(email: string, next?: string): Promise<A
  * this action and change the password with no re-authentication (LOW-19).
  */
 export async function updatePassword(newPassword: string): Promise<AuthResult> {
-  if (newPassword.length < 6) return { error: "Password must be at least 6 characters." };
+  if (newPassword.length < 8) return { error: "Password must be at least 8 characters." };
   const supabase = await createServerSupabase();
   const {
     data: { user },
@@ -270,11 +271,18 @@ export async function updateProfile(
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { error: "Not signed in." };
+  // The profile phone feeds WhatsApp order coordination, so a bad number means
+  // Michelle cannot reach the customer. Validate and normalise like checkout.
+  const trimmedPhone = phone.trim();
+  const normalizedPhone = trimmedPhone ? normalizeSgPhone(trimmedPhone) : "";
+  if (normalizedPhone === null) {
+    return { error: "Please enter a valid Singapore mobile number." };
+  }
   const { error } = await supabase
     .from("profiles")
     .update({
       full_name: fullName,
-      phone,
+      phone: normalizedPhone,
       birthday: birthday || null,
       dietary_prefs: dietaryPrefs,
       updated_at: new Date().toISOString(),

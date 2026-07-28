@@ -2,12 +2,22 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import type { DietaryTag, Product } from "@/lib/types";
+import type { Allergen, DietaryTag, Product } from "@/lib/types";
 import { dietaryMeta } from "@/lib/catalog";
 import { ProductCard } from "@/components/product/ProductCard";
 import { MascotSays } from "@/components/ui/MascotSays";
 import { ScrollRail } from "@/components/ui/ScrollRail";
 import { cn } from "@/lib/cn";
+
+/** Allergens that contradict each dietary filter, used to cross-check the
+ *  admin-entered tags so a mistagged product never passes a safety filter. */
+const DIETARY_ALLERGEN_CONFLICTS: Partial<Record<DietaryTag, Allergen[]>> = {
+  nut_free: ["peanuts", "tree_nuts"],
+  gluten_free: ["gluten"],
+  dairy_free: ["dairy"],
+  eggless: ["eggs"],
+  vegan: ["dairy", "eggs"],
+};
 
 /** Per-tab memory of the menu's filters and scroll, so returning from a product
  *  feels like you never left. Cleared when the browser tab closes. */
@@ -153,7 +163,16 @@ export function MenuBrowser({
         product.options.some((option) =>
           option.values.some((value) => value.label.toLowerCase().includes(q)),
         );
-      const matchesDietary = dietary.every((tag) => product.dietaryTags.includes(tag));
+      const matchesDietary = dietary.every(
+        (tag) =>
+          product.dietaryTags.includes(tag) &&
+          // A dietary tag never overrides the allergen list. If the admin data
+          // disagrees (say, "nut-free" tagged on a product listing peanuts),
+          // the safe answer for an allergic shopper is to hide it.
+          !(DIETARY_ALLERGEN_CONFLICTS[tag] ?? []).some((allergen) =>
+            product.allergens.includes(allergen),
+          ),
+      );
       return matchesQuery && matchesDietary;
     };
     const rank = (p: Product) => (p.isBestSeller ? 0 : p.isRecommended ? 1 : 2);
