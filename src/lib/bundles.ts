@@ -1,11 +1,12 @@
 import "server-only";
+import { cache } from "react";
 import { createPublicClient } from "@/lib/supabase/public";
 import type { Bundle } from "@/lib/types";
 
 type BundleItemRow = {
   quantity: number;
   product_id: string | null;
-  products: { name: string } | null;
+  products: { name: string; is_available: boolean } | null;
 };
 
 type BundleRow = {
@@ -20,9 +21,10 @@ type BundleRow = {
 };
 
 const BUNDLE_SELECT =
-  "id, name, slug, description, price_cents, image_path, sort_order, bundle_items(quantity, product_id, products(name))";
+  "id, name, slug, description, price_cents, image_path, sort_order, bundle_items(quantity, product_id, products(name, is_available))";
 
 function rowToBundle(row: BundleRow): Bundle {
+  const items = row.bundle_items ?? [];
   return {
     id: row.id,
     name: row.name,
@@ -30,16 +32,17 @@ function rowToBundle(row: BundleRow): Bundle {
     description: row.description,
     priceCents: row.price_cents,
     imageUrl: row.image_path,
-    items: (row.bundle_items ?? []).map((item) => ({
+    items: items.map((item) => ({
       productId: item.product_id,
       productName: item.products?.name ?? "Treat",
       quantity: item.quantity,
     })),
+    soldOut: items.some((item) => item.products?.is_available === false),
   };
 }
 
-/** Active bundles for the storefront, in display order. */
-export async function fetchActiveBundles(): Promise<Bundle[]> {
+/** Active bundles for the storefront, in display order. Memoised per request. */
+export const fetchActiveBundles = cache(async (): Promise<Bundle[]> => {
   const supabase = createPublicClient();
   const { data, error } = await supabase
     .from("bundles")
@@ -48,9 +51,9 @@ export async function fetchActiveBundles(): Promise<Bundle[]> {
     .order("sort_order", { ascending: true });
   if (error) throw new Error(`Failed to load bundles: ${error.message}`);
   return ((data as unknown as BundleRow[] | null) ?? []).map(rowToBundle);
-}
+});
 
-export async function fetchBundleBySlug(slug: string): Promise<Bundle | null> {
+export const fetchBundleBySlug = cache(async (slug: string): Promise<Bundle | null> => {
   const supabase = createPublicClient();
   const { data, error } = await supabase
     .from("bundles")
@@ -60,7 +63,7 @@ export async function fetchBundleBySlug(slug: string): Promise<Bundle | null> {
     .maybeSingle();
   if (error) throw new Error(`Failed to load bundle: ${error.message}`);
   return data ? rowToBundle(data as unknown as BundleRow) : null;
-}
+});
 
 /**
  * Server-side validation helper for checkout. Confirms a bundle is still active

@@ -11,13 +11,18 @@ export function BundleCard({ bundle }: { bundle: Bundle }) {
       className="group flex flex-col overflow-hidden rounded-2xl border border-line bg-white transition hover:border-rose"
     >
       <div className="relative aspect-square w-full overflow-hidden">
+        {bundle.soldOut && (
+          <span className="absolute left-2 top-2 z-10 rounded-full bg-ink/80 px-2.5 py-1 text-xs font-semibold text-white">
+            Sold out
+          </span>
+        )}
         {bundle.imageUrl ? (
           <Image
             src={bundle.imageUrl}
             alt={bundle.name}
             fill
             sizes="(max-width: 640px) 100vw, 25vw"
-            className="object-cover transition group-hover:scale-105"
+            className={`object-cover transition group-hover:scale-105 ${bundle.soldOut ? "opacity-60" : ""}`}
           />
         ) : (
           <ImagePlaceholder aspect="square" label="Bundle photo" icon="🎀" />

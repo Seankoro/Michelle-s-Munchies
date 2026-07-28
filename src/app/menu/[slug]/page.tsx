@@ -314,7 +314,7 @@ export default async function ProductDetailPage({ params }: Params) {
                     </div>
                     <Stars value={review.rating} className="mt-1 text-sm" />
                     {review.body && <p className="mt-1 text-sm text-muted">{review.body}</p>}
-                    {review.imageUrls.length > 0 && (
+                    {settings.features.photoReviews && review.imageUrls.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-2">
                         {review.imageUrls.map((url, i) => (
                           <div key={i} className="relative h-16 w-16 overflow-hidden rounded-lg">

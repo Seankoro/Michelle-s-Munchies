@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { createPublicClient } from "@/lib/supabase/public";
 import { fetchProducts, fetchProductById } from "@/lib/products";
 import type { BoxTemplate, Product } from "@/lib/types";
@@ -56,7 +57,7 @@ export async function fetchActiveBoxTemplates(): Promise<BoxTemplate[]> {
   return rows.map((row) => rowToBox(row, products));
 }
 
-export async function fetchBoxBySlug(slug: string): Promise<BoxTemplate | null> {
+export const fetchBoxBySlug = cache(async (slug: string): Promise<BoxTemplate | null> => {
   const supabase = createPublicClient();
   const { data, error } = await supabase
     .from("box_templates")
@@ -68,7 +69,7 @@ export async function fetchBoxBySlug(slug: string): Promise<BoxTemplate | null> 
   if (!data) return null;
   const products = await fetchProducts();
   return rowToBox(data as unknown as BoxRow, products);
-}
+});
 
 /**
  * Server-side checkout validation for a build-a-box line. `chosenPicks` is the

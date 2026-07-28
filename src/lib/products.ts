@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import type { Allergen, DietaryTag, FlavourBoxConfig, IngredientLine, Product } from "@/lib/types";
 import { createPublicClient } from "@/lib/supabase/public";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -151,8 +152,8 @@ export function isUpcoming(product: Product): boolean {
   return Boolean(product.availableFrom) && new Date(product.availableFrom as string) > new Date();
 }
 
-/** All products, ordered as Michelle arranged them. */
-export async function fetchProducts(): Promise<Product[]> {
+/** All products, ordered as Michelle arranged them. Memoised per request. */
+export const fetchProducts = cache(async (): Promise<Product[]> => {
   const supabase = createPublicClient();
   const { data, error } = await supabase
     .from("products")
@@ -161,9 +162,9 @@ export async function fetchProducts(): Promise<Product[]> {
 
   if (error) throw new Error(`Failed to load products: ${error.message}`);
   return ((data as ProductRow[] | null) ?? []).map(rowToProduct);
-}
+});
 
-export async function fetchProductBySlug(slug: string): Promise<Product | null> {
+export const fetchProductBySlug = cache(async (slug: string): Promise<Product | null> => {
   const supabase = createPublicClient();
   const { data, error } = await supabase
     .from("products")
@@ -182,7 +183,7 @@ export async function fetchProductBySlug(slug: string): Promise<Product | null> 
     costCents: null,
     ingredients: (product.ingredients ?? []).map((i) => ({ name: i.name })),
   };
-}
+});
 
 export async function fetchProductById(id: string): Promise<Product | null> {
   const supabase = createPublicClient();

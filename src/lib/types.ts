@@ -106,6 +106,8 @@ export type Bundle = {
   priceCents: number;
   imageUrl: string | null;
   items: BundleItem[];
+  /** True when any contained product is currently sold out. */
+  soldOut: boolean;
 };
 
 /** A build-your-own box template. Pick exactly `itemCount` from `eligibleProducts`. */

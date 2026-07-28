@@ -650,9 +650,11 @@ export async function updateProduct(id: string, patch: Partial<Product>) {
   if (patch.options !== undefined) {
     await replaceProductOptions(supabase, id, patch.options);
   }
-  // When a product is switched back to available, email anyone waiting for it.
+  // When a product is switched back to available, email anyone waiting for it,
+  // but only while the back-in-stock feature is switched on.
   if (patch.isAvailable === true) {
-    await notifySubscribers(id);
+    const { features } = await fetchStoreSettings();
+    if (features.backInStock) await notifySubscribers(id);
   }
 }
 

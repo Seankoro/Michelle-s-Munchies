@@ -17,6 +17,18 @@ export function AddBundleButton({ bundle }: { bundle: Bundle }) {
   const [added, setAdded] = useState(false);
   if (!features.bundles) return null;
 
+  if (bundle.soldOut) {
+    return (
+      <button
+        type="button"
+        disabled
+        className="cursor-not-allowed rounded-full bg-line px-6 py-2.5 text-sm font-semibold text-muted"
+      >
+        Sold out
+      </button>
+    );
+  }
+
   function add() {
     addItem({
       key: `bundle::${bundle.slug}`,
