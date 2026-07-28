@@ -460,7 +460,9 @@ export default function CheckoutPage() {
         items,
         fulfillmentType: fulfillment,
         scheduledDate: date,
-        timeWindow,
+        // A recipient-self-schedule gift has no window yet, so send none instead
+        // of a placeholder that would book and count against a real slot.
+        timeWindow: giftSelfSchedule ? "" : timeWindow,
         address:
           fulfillment === "delivery" && !giftSelfSchedule
             ? { line1: line1.trim(), unit: unit.trim() || undefined, postalCode }

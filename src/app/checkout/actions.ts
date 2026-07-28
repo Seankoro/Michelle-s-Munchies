@@ -44,6 +44,9 @@ export async function getDayCapacityAction(date: string): Promise<DayCapacity> {
     perWindowCap: settings.perWindowCap,
   };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return empty;
+  // Public and unauthenticated, so rate-limit it to stop it being walked to probe
+  // order volume by date through the service-role count.
+  if (!(await rateLimit("day-capacity", { limit: 60, windowMs: 5 * 60_000 }))) return empty;
   const supabase = createAdminClient();
   const { data } = await supabase
     .from("orders")
