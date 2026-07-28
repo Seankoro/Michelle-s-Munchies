@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Product } from "@/lib/types";
 import { ImagePlaceholder } from "@/components/ui/ImagePlaceholder";
 import { Badge } from "@/components/ui/Badge";
@@ -30,8 +30,15 @@ export function ProductCard({
 
   const hasOptions = product.options.length > 0;
   const soldOut = !product.isAvailable;
-  const upcoming =
-    drops && Boolean(product.availableFrom) && new Date(product.availableFrom as string) > new Date();
+  // Deterministic on first render (server and client both start `false`) so
+  // hydration never disagrees; the real value is computed client-side after
+  // mount, once `new Date()` can no longer diverge from the server's render.
+  const [upcoming, setUpcoming] = useState(false);
+  useEffect(() => {
+    setUpcoming(
+      drops && Boolean(product.availableFrom) && new Date(product.availableFrom as string) > new Date(),
+    );
+  }, [drops, product.availableFrom]);
   const detailHref = `/menu/${product.slug}`;
 
   function handleAdd() {
@@ -158,6 +165,9 @@ export function ProductCard({
                       : "Add"}
             </button>
           </div>
+          <span className="sr-only" role="status" aria-live="polite">
+            {added ? `Added ${product.name} to your cart.` : ""}
+          </span>
         </div>
       </article>
 

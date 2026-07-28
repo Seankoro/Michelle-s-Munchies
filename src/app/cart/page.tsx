@@ -134,7 +134,7 @@ export default function CartPage() {
                 <div className="inline-flex items-center rounded-full border border-line">
                   <button
                     type="button"
-                    aria-label="Decrease quantity"
+                    aria-label={`Decrease quantity of ${item.name}`}
                     onClick={() => updateQuantity(item.key, item.quantity - 1)}
                     className="flex h-8 w-8 items-center justify-center rounded-full text-lg text-ink hover:bg-blush-soft"
                   >
@@ -149,7 +149,7 @@ export default function CartPage() {
                   </span>
                   <button
                     type="button"
-                    aria-label="Increase quantity"
+                    aria-label={`Increase quantity of ${item.name}`}
                     onClick={() => updateQuantity(item.key, item.quantity + 1)}
                     className="flex h-8 w-8 items-center justify-center rounded-full text-lg text-ink hover:bg-blush-soft"
                   >
@@ -158,6 +158,7 @@ export default function CartPage() {
                 </div>
                 <button
                   type="button"
+                  aria-label={`Remove ${item.name}`}
                   onClick={() => removeItem(item.key)}
                   className="text-sm font-semibold text-muted transition hover:text-rose-deep"
                 >
@@ -170,7 +171,11 @@ export default function CartPage() {
       </ul>
 
       {/* Free-delivery nudge */}
-      <div className="mt-6 rounded-2xl bg-blush-soft/60 px-4 py-3 text-sm text-rose-deep">
+      <div
+        role="status"
+        aria-live="polite"
+        className="mt-6 rounded-2xl bg-blush-soft/60 px-4 py-3 text-sm text-rose-deep"
+      >
         {qualifiesForFreeDelivery
           ? "🎉 Your order qualifies for free delivery!"
           : `🚚 You're ${formatPrice(remaining)} away from free delivery.`}
@@ -187,7 +192,7 @@ export default function CartPage() {
 
       {/* Summary */}
       <div className="mt-6 rounded-2xl border border-line bg-white p-5">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between" role="status" aria-live="polite">
           <span className="text-muted">Subtotal</span>
           <span className="font-semibold">{formatPrice(subtotalCents)}</span>
         </div>

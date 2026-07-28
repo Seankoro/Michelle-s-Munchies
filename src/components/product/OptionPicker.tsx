@@ -154,7 +154,7 @@ export function OptionPicker({
                   className={cn(
                     "rounded-full border px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50",
                     isSelected
-                      ? "border-rose-deep bg-blush-soft text-rose-deep"
+                      ? "border-rose-deep bg-blush-soft text-ink"
                       : "border-line bg-white text-ink hover:border-rose",
                   )}
                 >

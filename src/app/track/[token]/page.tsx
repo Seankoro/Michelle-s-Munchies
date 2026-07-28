@@ -46,13 +46,16 @@ export default async function TrackOrderPage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
-  const order = await getOrderByToken(token);
-  const settings = await fetchStoreSettings();
   // Guests reach this page by token with no login, so only nudge account
-  // creation when the visitor is not already signed in.
-  const {
+  // creation when the visitor is not already signed in. These three reads are
+  // independent, so run them together instead of a serial waterfall.
+  const [order, settings, {
     data: { user },
-  } = await (await createServerSupabase()).auth.getUser();
+  }] = await Promise.all([
+    getOrderByToken(token),
+    fetchStoreSettings(),
+    (await createServerSupabase()).auth.getUser(),
+  ]);
   const signedIn = Boolean(user);
 
   if (!order) {
@@ -195,8 +198,13 @@ export default async function TrackOrderPage({
           {flow.map((status, index) => {
             const done = index <= currentIndex;
             const isCurrent = index === currentIndex;
+            const stepState = isCurrent ? "Current step" : done ? "Completed" : "Upcoming";
             return (
-              <li key={status} className="flex items-center gap-2">
+              <li
+                key={status}
+                aria-current={isCurrent ? "step" : undefined}
+                className="flex items-center gap-2"
+              >
                 <span
                   className={cn(
                     "flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold",
@@ -212,6 +220,7 @@ export default async function TrackOrderPage({
                     done ? "text-ink" : "text-muted",
                   )}
                 >
+                  <span className="sr-only">{stepState}: </span>
                   {orderStatusLabels[status]}
                 </span>
                 {index < flow.length - 1 && (

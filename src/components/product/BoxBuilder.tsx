@@ -99,7 +99,11 @@ export function BoxBuilder({ box }: { box: BoxTemplate }) {
 
   return (
     <div>
-      <div className="flex items-center justify-between rounded-xl bg-blush-soft/60 px-4 py-3 text-sm font-semibold text-rose-deep">
+      <div
+        role="status"
+        aria-live="polite"
+        className="flex items-center justify-between rounded-xl bg-blush-soft/60 px-4 py-3 text-sm font-semibold text-rose-deep"
+      >
         <span>
           {chosen} of {box.itemCount} chosen
         </span>
