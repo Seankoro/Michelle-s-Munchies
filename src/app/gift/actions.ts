@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { rateLimit } from "@/lib/rate-limit";
 import { fetchStoreSettings } from "@/lib/settings";
 import { sendGiftScheduledEmail } from "@/lib/email";
+import { resolveDeliveryFeeCents } from "@/lib/delivery-pricing";
 import { isChangeable, type DeliveryAddress } from "@/lib/order";
 
 export type GiftScheduleResult = { ok: true } | { ok: false; error: string };
@@ -39,12 +40,17 @@ export async function scheduleGiftAction(
   const admin = createAdminClient();
   const { data } = await admin
     .from("orders")
-    .select("id, status, scheduled_date, order_number, recipient_name")
+    .select(
+      "id, status, payment_status, subtotal_cents, discount_cents, scheduled_date, order_number, recipient_name",
+    )
     .eq("recipient_token", token)
     .maybeSingle();
   const order = data as {
     id: string;
     status: string;
+    payment_status: string;
+    subtotal_cents: number;
+    discount_cents: number;
     scheduled_date: string;
     order_number: string;
     recipient_name: string | null;
@@ -73,15 +79,22 @@ export async function scheduleGiftAction(
     unit: address.unit.trim() || undefined,
     postalCode: postal,
   };
-  const { error } = await admin
-    .from("orders")
-    .update({
-      delivery_address: deliveryAddress,
-      time_window: timeWindow,
-      recipient_scheduled_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", order.id);
+  // Now that the recipient's address is known, price delivery by distance like a
+  // normal delivery order, unless the buyer already paid (a Stripe-prepaid gift,
+  // where the charged total is fixed). The usual PayNow flow is still unpaid here,
+  // so the owner collects the correct amount.
+  const updates: Record<string, unknown> = {
+    delivery_address: deliveryAddress,
+    time_window: timeWindow,
+    recipient_scheduled_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  if (order.payment_status !== "paid") {
+    const feeCents = await resolveDeliveryFeeCents("delivery", order.subtotal_cents, postal, settings);
+    updates.delivery_fee_cents = feeCents;
+    updates.total_cents = Math.max(0, order.subtotal_cents + feeCents - order.discount_cents);
+  }
+  const { error } = await admin.from("orders").update(updates).eq("id", order.id);
   if (error) return { ok: false, error: "Couldn’t save your details. Please try again." };
 
   await sendGiftScheduledEmail(order.order_number, order.recipient_name, deliveryAddress, timeWindow);
