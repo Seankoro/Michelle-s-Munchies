@@ -41,14 +41,27 @@ export default async function ProductDetailPage({ params }: Params) {
   const product = await fetchProductBySlug(slug);
   if (!product) notFound();
 
-  const related = await fetchRelatedProducts(product);
-  const settings = await fetchStoreSettings();
+  // Related products and settings both depend only on the product, so fetch them
+  // together instead of in series.
+  const [related, settings] = await Promise.all([
+    fetchRelatedProducts(product),
+    fetchStoreSettings(),
+  ]);
   // Only touch reviews when the feature is on, so a disabled store never renders
-  // (or emits star JSON-LD for) content the page keeps hidden.
-  const reviews = settings.features.reviews ? await fetchReviews(product.id) : [];
-  const reviewCtx = settings.features.reviews
-    ? await getReviewContext(product.id)
-    : { signedIn: false, canReview: false, existing: null };
+  // (or emits star JSON-LD for) content the page keeps hidden. Both review reads
+  // share that gate, so run them together too.
+  let reviews: Awaited<ReturnType<typeof fetchReviews>> = [];
+  let reviewCtx = {
+    signedIn: false,
+    canReview: false,
+    existing: null,
+  } as Awaited<ReturnType<typeof getReviewContext>>;
+  if (settings.features.reviews) {
+    [reviews, reviewCtx] = await Promise.all([
+      fetchReviews(product.id),
+      getReviewContext(product.id),
+    ]);
+  }
   const avgRating = reviews.length
     ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length
     : 0;

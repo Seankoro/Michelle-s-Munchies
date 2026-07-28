@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { createPublicClient } from "@/lib/supabase/public";
 import { mockSettings } from "@/lib/catalog";
 import {
@@ -159,8 +160,10 @@ function rowToStoreSettings(row: SettingsRow | null): StoreSettings {
   };
 }
 
-/** Live settings for server-side use, like order creation, validation, and SSR display. */
-export async function fetchStoreSettings(): Promise<StoreSettings> {
+/** Live settings for server-side use, like order creation, validation, and SSR
+ *  display. Wrapped in React cache so the many callers in a single request share
+ *  one read instead of hitting the settings row repeatedly. */
+export const fetchStoreSettings = cache(async (): Promise<StoreSettings> => {
   const supabase = createPublicClient();
   const { data } = await supabase
     .from("settings")
@@ -168,7 +171,7 @@ export async function fetchStoreSettings(): Promise<StoreSettings> {
     .eq("id", 1)
     .maybeSingle();
   return rowToStoreSettings(data as SettingsRow | null);
-}
+});
 
 /** Just the feature flags, for the layout and provider. */
 export async function fetchFeatureFlags(): Promise<FeatureFlags> {
