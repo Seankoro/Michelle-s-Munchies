@@ -63,8 +63,15 @@ function SettingsForm({
   const [saved, setSaved] = useState(false);
 
   function toCents(text: string) {
-    return Math.max(0, Math.round(parseFloat(text || "0") * 100));
+    const n = parseFloat(text);
+    if (!Number.isFinite(n)) return 0;
+    return Math.max(0, Math.round(n * 100));
   }
+
+  const intOr = (text: string, fallback: number) => {
+    const n = parseInt(text, 10);
+    return Number.isFinite(n) ? n : fallback;
+  };
 
   const optInt = (text: string) => {
     const n = parseInt(text, 10);
@@ -78,14 +85,14 @@ function SettingsForm({
     deliveryFeeCents: toCents(deliveryFee),
     freeDeliveryMinCents: toCents(freeMin),
     minOrderCents: toCents(minOrder),
-    leadTimeDays: Math.max(0, parseInt(leadTime || "0", 10)),
+    leadTimeDays: Math.max(0, intOr(leadTime, 0)),
     dailyOrderCap: optInt(dailyCap),
     perWindowCap: optInt(perWindowCap),
     dailyCutoffTime: cutoffTime || null,
     freeGiftThresholdCents: giftThreshold.trim() ? toCents(giftThreshold) : null,
     freeGiftProductId: giftProductId || null,
-    birthdayRewardPoints: Math.max(0, parseInt(birthdayPoints || "0", 10)),
-    abandonedAfterHours: Math.max(1, parseInt(abandonedHours || "4", 10)),
+    birthdayRewardPoints: Math.max(0, intOr(birthdayPoints, 0)),
+    abandonedAfterHours: Math.max(1, intOr(abandonedHours, 4)),
     lowStockThreshold: optInt(lowStock),
     notePrompts,
     mascotMessages: mascotMsgs.map((m) => m.trim()).filter(Boolean),
@@ -95,10 +102,10 @@ function SettingsForm({
       .map((w) => w.trim())
       .filter(Boolean),
     blackoutDates: blackout,
-    pointsPerDollar: Math.max(0, parseInt(pointsPerDollar || "0", 10)),
+    pointsPerDollar: Math.max(0, intOr(pointsPerDollar, 0)),
     pointValueCents: toCents(pointValue),
-    referralReferrerPoints: Math.max(0, parseInt(referrerPts || "0", 10)),
-    referralRefereePoints: Math.max(0, parseInt(refereePts || "0", 10)),
+    referralReferrerPoints: Math.max(0, intOr(referrerPts, 0)),
+    referralRefereePoints: Math.max(0, intOr(refereePts, 0)),
     features,
   });
 
