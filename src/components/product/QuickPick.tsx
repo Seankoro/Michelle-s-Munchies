@@ -26,6 +26,7 @@ export function QuickPick({
 }) {
   const [added, setAdded] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
+  const confirmRef = useRef<HTMLDivElement>(null);
 
   useDialog(open, onClose, panelRef);
 
@@ -33,6 +34,13 @@ export function QuickPick({
   useEffect(() => {
     if (!open) setAdded(false);
   }, [open]);
+
+  // OptionPicker/FlavourBoxPicker unmount once added, taking focus with them.
+  // Move focus into the confirmation so it both announces (via the live
+  // region below) and keeps keyboard focus inside the dialog.
+  useEffect(() => {
+    if (added) confirmRef.current?.focus();
+  }, [added]);
 
   if (!open) return null;
 
@@ -82,7 +90,13 @@ export function QuickPick({
 
         <div className="overflow-y-auto px-5 py-5">
           {added ? (
-            <div className="text-center">
+            <div
+              ref={confirmRef}
+              role="status"
+              aria-live="polite"
+              tabIndex={-1}
+              className="text-center"
+            >
               <p className="text-4xl" aria-hidden="true">
                 🎀
               </p>

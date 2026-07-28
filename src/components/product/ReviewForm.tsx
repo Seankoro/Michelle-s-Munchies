@@ -93,6 +93,7 @@ export function ReviewForm({
         value={body}
         onChange={(e) => setBody(e.target.value)}
         placeholder="How was it? (optional)"
+        aria-label="Your review"
         className="mt-3 min-h-20 w-full resize-y rounded-xl border border-line bg-white px-3 py-2 text-sm transition focus:border-rose"
       />
       {features.photoReviews && (
@@ -128,12 +129,18 @@ export function ReviewForm({
           <p className="mt-1 text-xs text-muted">Add a photo (optional)</p>
         </div>
       )}
-      {error && <p className="mt-2 text-sm text-rose-deep">{error}</p>}
+      {error && (
+        <p role="alert" className="mt-2 text-sm text-rose-deep">
+          {error}
+        </p>
+      )}
       <div className="mt-3 flex items-center gap-3">
         <Button type="submit" size="sm" disabled={submitting || uploading}>
           {submitting ? "Saving…" : initialRating > 0 ? "Update review" : "Post review"}
         </Button>
-        {saved && <span className="text-sm font-semibold text-success">Thanks! ✓</span>}
+        <span role="status" aria-live="polite">
+          {saved && <span className="text-sm font-semibold text-success">Thanks! ✓</span>}
+        </span>
       </div>
     </form>
   );
