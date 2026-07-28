@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
@@ -38,6 +39,9 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 
 export default async function ProductDetailPage({ params }: Params) {
   const { slug } = await params;
+  // The middleware's per-request CSP nonce, so the JSON-LD script below stays
+  // allowed now that inline scripts without a nonce are refused.
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
   const product = await fetchProductBySlug(slug);
   if (!product) notFound();
 
@@ -100,7 +104,11 @@ export default async function ProductDetailPage({ params }: Params) {
 
   return (
     <main className="mx-auto max-w-none px-6 py-10 lg:px-10">
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(productJsonLd) }} />
+      <script
+        type="application/ld+json"
+        nonce={nonce}
+        dangerouslySetInnerHTML={{ __html: jsonLd(productJsonLd) }}
+      />
       <BackToMenuLink />
 
       <div className="mt-6 grid gap-10 lg:grid-cols-2">

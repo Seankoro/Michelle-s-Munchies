@@ -2,6 +2,13 @@ import type { Metadata, Viewport } from "next";
 import { Fraunces, Nunito } from "next/font/google";
 import localFont from "next/font/local";
 import "./globals.css";
+
+// Every page renders per request. The CSP set in middleware carries a fresh
+// script nonce on each response, and Next can only stamp that nonce onto its
+// inline scripts when it renders the HTML for that request. A prerendered
+// static shell would ship nonce-less inline scripts that the browser refuses,
+// leaving the page unhydrated, so static prerendering must stay off site-wide.
+export const dynamic = "force-dynamic";
 import { SiteChrome } from "@/components/layout/SiteChrome";
 import type { FooterChannel } from "@/components/layout/SiteFooter";
 import { CartProvider } from "@/components/cart/CartContext";

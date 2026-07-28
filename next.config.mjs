@@ -13,29 +13,14 @@ const nextConfig = {
     // Product images will be served from Supabase Storage.
     remotePatterns: [{ protocol: "https", hostname: supabaseHost }],
   },
-  // Security headers applied to every route. The CSP is a touch looser in dev
-  // (Next's HMR needs eval + websockets); production tightens those.
+  // Security headers applied to every route. The CSP itself moved to
+  // src/middleware.ts, which issues a per-request script nonce instead of the
+  // old blanket 'unsafe-inline'.
   async headers() {
-    const isDev = process.env.NODE_ENV !== "production";
-    const supabase = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-    const csp = [
-      "default-src 'self'",
-      "base-uri 'self'",
-      `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
-      "style-src 'self' 'unsafe-inline'",
-      `img-src 'self' data: blob: ${supabase}`.trim(),
-      "font-src 'self' data:",
-      `connect-src 'self' ${supabase} https://api.stripe.com https://*.ingest.de.sentry.io${isDev ? " ws: wss:" : ""}`.trim(),
-      "frame-src https://js.stripe.com https://checkout.stripe.com https://accounts.google.com",
-      "frame-ancestors 'none'",
-      "form-action 'self'",
-      "object-src 'none'",
-    ].join("; ");
     return [
       {
         source: "/:path*",
         headers: [
-          { key: "Content-Security-Policy", value: csp },
           { key: "X-Frame-Options", value: "DENY" },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },

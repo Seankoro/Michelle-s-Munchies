@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { headers } from "next/headers";
 import Link from "next/link";
 import { buttonClasses } from "@/components/ui/Button";
 import { RibbonBow } from "@/components/ui/RibbonBow";
@@ -38,6 +39,9 @@ const steps = [
 ];
 
 export default async function HomePage() {
+  // The middleware's per-request CSP nonce, so the JSON-LD script below stays
+  // allowed now that inline scripts without a nonce are refused.
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
   // Best sellers first, then Michelle's picks, set in admin.
   const featured = await fetchFeatured(8);
   const settings = await fetchStoreSettings();
@@ -77,7 +81,11 @@ export default async function HomePage() {
 
   return (
     <main>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(businessJsonLd) }} />
+      <script
+        type="application/ld+json"
+        nonce={nonce}
+        dangerouslySetInnerHTML={{ __html: jsonLd(businessJsonLd) }}
+      />
       {/* Hero */}
       <section className="marble-surface marble-animated">
         <div className="mx-auto flex max-w-none flex-col items-center px-6 py-20 text-center sm:py-28 lg:px-10">

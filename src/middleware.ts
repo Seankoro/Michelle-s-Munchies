@@ -2,11 +2,46 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 /**
+ * Per-request CSP with a script nonce, replacing the static 'unsafe-inline'
+ * policy that used to live in next.config.mjs. Next reads the nonce off the
+ * request's Content-Security-Policy header and stamps it onto its own inline
+ * bootstrap scripts; our JSON-LD tags read it from x-nonce via headers().
+ * 'strict-dynamic' lets those trusted scripts load the chunk files they need,
+ * while any script an attacker injects has no nonce and is refused.
+ */
+function buildCsp(nonce: string): string {
+  const isDev = process.env.NODE_ENV !== "production";
+  const supabase = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+  return [
+    "default-src 'self'",
+    "base-uri 'self'",
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDev ? " 'unsafe-eval'" : ""}`,
+    "style-src 'self' 'unsafe-inline'",
+    `img-src 'self' data: blob: ${supabase}`.trim(),
+    "font-src 'self' data:",
+    `connect-src 'self' ${supabase} https://api.stripe.com https://*.ingest.de.sentry.io${isDev ? " ws: wss:" : ""}`.trim(),
+    "frame-src https://js.stripe.com https://checkout.stripe.com https://accounts.google.com",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+    "object-src 'none'",
+  ].join("; ");
+}
+
+/**
  * Refreshes the Supabase session on every request so server components see a
  * fresh user, and guards the /account area, sending signed-out visitors to
  * sign in. The auth pages themselves are excluded to avoid a redirect loop.
  */
 export async function middleware(request: NextRequest) {
+  const nonceBytes = new Uint8Array(16);
+  crypto.getRandomValues(nonceBytes);
+  const nonce = btoa(String.fromCharCode(...nonceBytes));
+  const csp = buildCsp(nonce);
+  // On the request so Next applies the nonce to its inline scripts and our
+  // pages can read it; echoed on the response so the browser enforces it.
+  request.headers.set("x-nonce", nonce);
+  request.headers.set("content-security-policy", csp);
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -91,6 +126,7 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  response.headers.set("Content-Security-Policy", csp);
   return response;
 }
 
