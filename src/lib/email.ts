@@ -242,6 +242,29 @@ export async function sendStatusEmail(params: {
   await send(params.email, `Order ${params.orderNumber}: ${label}`, shell("Order update", body, params.trackingToken));
 }
 
+/** Customer notification when an order is cancelled, with the refund status. */
+export async function sendOrderCancelledEmail(params: {
+  orderNumber: string;
+  trackingToken: string;
+  name: string;
+  email: string;
+  refunded: boolean;
+}): Promise<void> {
+  const refundLine = params.refunded
+    ? `<p style="margin:8px 0">Your payment has been refunded. It should appear back on your card within a few business days.</p>`
+    : `<p style="margin:8px 0">If you had already paid, we&rsquo;ll be in touch about the refund. Reply here or message us on WhatsApp any time.</p>`;
+  const body = `
+    <p>Hi ${escapeHtml(params.name.split(" ")[0])}, your order has been cancelled.</p>
+    <p style="margin:8px 0"><strong>Order ${params.orderNumber}</strong> is now
+      <strong style="color:#bc4a6a">cancelled</strong>.</p>
+    ${refundLine}`;
+  await send(
+    params.email,
+    `Order ${params.orderNumber}: cancelled`,
+    shell("Order cancelled", body, params.trackingToken),
+  );
+}
+
 /** Customer notification when Michelle moves an order's bake date or window. */
 export async function sendRescheduleEmail(params: {
   orderNumber: string;
@@ -437,4 +460,28 @@ export async function sendBackInStockEmail(
       <a href="${url}" style="display:inline-block;background:#bc4a6a;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:999px">Order now</a>
     </p>`;
   await send(to, `${productName} is back! 🎀`, shell("Back in stock", body));
+}
+
+/**
+ * Double-opt-in confirmation. Sent when someone subscribes to the newsletter
+ * or a back-in-stock alert; nothing else is ever sent to the address until the
+ * link is clicked, so nobody can sign up somebody else's inbox.
+ */
+export async function sendSubscriptionConfirmEmail(
+  to: string,
+  kind: { list: "newsletter" } | { list: "stock"; productName: string },
+  confirmToken: string,
+): Promise<void> {
+  const url = `${SITE_URL}/confirm/${confirmToken}`;
+  const what =
+    kind.list === "newsletter"
+      ? "our newsletter"
+      : `the back-in-stock alert for <strong>${escapeHtml(kind.productName)}</strong>`;
+  const body = `
+    <p>Someone (hopefully you!) asked to join ${what}.</p>
+    <p style="margin:8px 0">Tap the button below to confirm. If this wasn&rsquo;t you, just ignore this email and we won&rsquo;t send another thing.</p>
+    <p style="margin:24px 0 0;text-align:center">
+      <a href="${url}" style="display:inline-block;background:#bc4a6a;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:999px">Confirm my email</a>
+    </p>`;
+  await send(to, "Please confirm your email 🎀", shell("One quick tap", body));
 }

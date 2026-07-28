@@ -168,16 +168,37 @@ async function sanitizeSpecialLines(
 /**
  * Capture a checkout intent, the cart and email, for the abandoned-cart reminder.
  * Rate-limited and feature-gated. Failures are swallowed and never block checkout.
+ *
+ * The item names are client-supplied and later rendered in the reminder email,
+ * so they are scrubbed of anything link- or markup-shaped and capped, and each
+ * recipient address is throttled on its own so the flow cannot be used to spam
+ * someone else's inbox through our sending domain.
  */
 export async function recordCheckoutIntentAction(
   email: string,
   items: { name: string; quantity: number }[],
   subtotalCents: number,
 ): Promise<void> {
-  if (!EMAIL_RE.test(email.trim())) return;
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!EMAIL_RE.test(normalizedEmail)) return;
   if (!(await rateLimit("checkout-intent", { limit: 20, windowMs: 5 * 60_000 }))) return;
+  if (!(await rateLimit(`checkout-intent:${normalizedEmail}`, { limit: 3, windowMs: 60 * 60_000 }))) {
+    return;
+  }
   if (!(await fetchStoreSettings()).features.abandonedCart) return;
-  await recordIntent(email, items, subtotalCents);
+  const safeItems = (items ?? [])
+    .slice(0, 15)
+    .map((item) => ({
+      name: String(item.name ?? "")
+        .replace(/https?:\/\/\S+|www\.\S+/gi, "")
+        .replace(/[<>]/g, "")
+        .trim()
+        .slice(0, 80),
+      quantity: Math.max(1, Math.min(99, Math.trunc(Number(item.quantity) || 1))),
+    }))
+    .filter((item) => item.name);
+  if (safeItems.length === 0) return;
+  await recordIntent(normalizedEmail, safeItems, Math.max(0, Math.trunc(subtotalCents) || 0));
 }
 
 /** Look up the spend-gift product, returned only if it still exists and is available. */
@@ -461,20 +482,42 @@ export async function placeOrder(
       }
     }
 
-    const created = await createOrder(
-      {
-        ...input,
-        items,
-        phone: normalizedPhone,
-        recipientPhone: normalizedRecipientPhone ?? undefined,
-        noteAnswers,
-        isGift: settings.features.gifting ? input.isGift ?? false : false,
-        deliveryFeeCents,
-      },
-      user?.id ?? null,
-      { pointsRedeemed, discountCents: promoDiscount + pointsDiscount },
-      appliedPromo,
-    );
+    // The counts above give fast, friendly refusals, but they can race with a
+    // concurrent checkout. The insert RPC re-checks both caps under a lock and
+    // raises a marker we translate back into the same copy here.
+    let created;
+    try {
+      created = await createOrder(
+        {
+          ...input,
+          items,
+          phone: normalizedPhone,
+          recipientPhone: normalizedRecipientPhone ?? undefined,
+          noteAnswers,
+          isGift: settings.features.gifting ? input.isGift ?? false : false,
+          deliveryFeeCents,
+        },
+        user?.id ?? null,
+        { pointsRedeemed, discountCents: promoDiscount + pointsDiscount },
+        appliedPromo,
+        {
+          dailyCap: settings.dailyOrderCap && settings.dailyOrderCap > 0 ? settings.dailyOrderCap : null,
+          windowCap:
+            settings.perWindowCap && settings.perWindowCap > 0 && !giftSelfSchedule
+              ? settings.perWindowCap
+              : null,
+        },
+      );
+    } catch (orderError) {
+      const message = orderError instanceof Error ? orderError.message : "";
+      if (message === "capacity_day_full") {
+        return { ok: false, error: "That date is fully booked. Please pick another." };
+      }
+      if (message === "capacity_window_full") {
+        return { ok: false, error: "That time slot is fully booked. Please pick another window." };
+      }
+      throw orderError;
+    }
 
     // The order and its confirmation emails already exist, so a failure creating
     // the Stripe session must not bubble to the generic catch that prompts a

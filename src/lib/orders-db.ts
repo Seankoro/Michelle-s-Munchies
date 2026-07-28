@@ -51,17 +51,27 @@ export type CreatedOrder = {
 
 export type OrderRedemption = { pointsRedeemed: number; discountCents: number };
 
+/** Daily and per-window order caps, enforced atomically inside the insert RPC. */
+export type OrderCapacity = { dailyCap: number | null; windowCap: number | null };
+
 /**
  * Creates an order and its items. Amounts are recomputed here, never trusted
  * from the client. `userId` is resolved server-side from the session, null for
  * guests. `redemption`, the points-to-discount conversion, is computed
  * server-side in the action.
+ *
+ * The order row and its items are written by one Postgres function, so they
+ * commit or roll back together and a fault can never leave an orphaned,
+ * itemless order. The same function re-checks the capacity caps under a lock;
+ * it raises `capacity_day_full` / `capacity_window_full`, which the checkout
+ * action translates into the friendly copy the pre-checks already use.
  */
 export async function createOrder(
   input: CreateOrderInput,
   userId: string | null = null,
   redemption: OrderRedemption = { pointsRedeemed: 0, discountCents: 0 },
   promoCode: string | null = null,
+  capacity: OrderCapacity = { dailyCap: null, windowCap: null },
 ): Promise<CreatedOrder> {
   if (input.items.length === 0) throw new Error("Your cart is empty.");
 
@@ -89,41 +99,11 @@ export async function createOrder(
 
   const orderId = randomUUID();
   const trackingToken = newToken();
-  const orderNumber = generateOrderNumber();
+  let orderNumber = generateOrderNumber();
   // Only a gift the buyer wants the recipient to schedule gets a recipient token.
   const recipientToken = input.isGift && input.recipientScheduling ? newToken() : null;
 
-  const { error: orderError } = await supabase.from("orders").insert({
-    id: orderId,
-    order_number: orderNumber,
-    tracking_token: trackingToken,
-    recipient_token: recipientToken,
-    user_id: userId,
-    fulfillment_type: input.fulfillmentType,
-    scheduled_date: input.scheduledDate,
-    time_window: input.timeWindow,
-    delivery_address: input.address ?? null,
-    customer_name: input.name,
-    email: input.email,
-    phone: input.phone,
-    notes: input.notes ?? null,
-    is_gift: input.isGift ?? false,
-    gift_message: input.isGift ? (input.giftMessage?.trim() || null) : null,
-    recipient_name: input.isGift ? (input.recipientName?.trim() || null) : null,
-    recipient_phone: input.isGift ? (input.recipientPhone?.trim() || null) : null,
-    subtotal_cents: subtotalCents,
-    delivery_fee_cents: deliveryFeeCents,
-    discount_cents: discountCents,
-    points_redeemed: discountCents > 0 ? redemption.pointsRedeemed : 0,
-    promo_code: promoCode,
-    note_answers: input.noteAnswers ?? [],
-    total_cents: totalCents,
-    currency: "SGD",
-  });
-  if (orderError) throw new Error(`Could not create order: ${orderError.message}`);
-
   const itemRows = input.items.map((item) => ({
-    order_id: orderId,
     // Real products carry a uuid. Box and bundle lines use a prefixed id with
     // no uuid, so they store null and lean on the product_name snapshot to keep
     // the order readable.
@@ -135,8 +115,54 @@ export async function createOrder(
     personalisation: item.personalisation ?? null,
     line_total_cents: item.unitPriceCents * item.quantity,
   }));
-  const { error: itemsError } = await supabase.from("order_items").insert(itemRows);
-  if (itemsError) throw new Error(`Could not save order items: ${itemsError.message}`);
+
+  // Retry a couple of times on an order-number collision, regenerating the
+  // random suffix, so two orders drawing the same number on the same day never
+  // surface as a hard failure to the customer.
+  const MAX_INSERT_ATTEMPTS = 3;
+  for (let attempt = 1; ; attempt++) {
+    const { error } = await supabase.rpc("create_order_with_items", {
+      p_order: {
+        id: orderId,
+        order_number: orderNumber,
+        tracking_token: trackingToken,
+        recipient_token: recipientToken,
+        user_id: userId,
+        fulfillment_type: input.fulfillmentType,
+        scheduled_date: input.scheduledDate,
+        time_window: input.timeWindow,
+        delivery_address: input.address ?? null,
+        customer_name: input.name,
+        email: input.email,
+        phone: input.phone,
+        notes: input.notes ?? null,
+        is_gift: input.isGift ?? false,
+        gift_message: input.isGift ? (input.giftMessage?.trim() || null) : null,
+        recipient_name: input.isGift ? (input.recipientName?.trim() || null) : null,
+        recipient_phone: input.isGift ? (input.recipientPhone?.trim() || null) : null,
+        subtotal_cents: subtotalCents,
+        delivery_fee_cents: deliveryFeeCents,
+        discount_cents: discountCents,
+        points_redeemed: discountCents > 0 ? redemption.pointsRedeemed : 0,
+        promo_code: promoCode,
+        note_answers: input.noteAnswers ?? [],
+        total_cents: totalCents,
+        currency: "SGD",
+      },
+      p_items: itemRows,
+      p_daily_cap: capacity.dailyCap,
+      p_window_cap: capacity.windowCap,
+    });
+    if (!error) break;
+    // Capacity refusals carry a marker message for the action to translate.
+    if (error.message.includes("capacity_day_full")) throw new Error("capacity_day_full");
+    if (error.message.includes("capacity_window_full")) throw new Error("capacity_window_full");
+    if (error.code === "23505" && attempt < MAX_INSERT_ATTEMPTS) {
+      orderNumber = generateOrderNumber();
+      continue;
+    }
+    throw new Error(`Could not create order: ${error.message}`);
+  }
 
   // Confirmation to the customer and alert to Michelle. Never throws.
   await sendOrderEmails({
@@ -208,35 +234,9 @@ export async function createManualOrder(input: ManualOrderInput): Promise<{ orde
 
   const orderId = randomUUID();
   const trackingToken = newToken();
-  const orderNumber = generateOrderNumber();
-
-  const { error: orderError } = await supabase.from("orders").insert({
-    id: orderId,
-    order_number: orderNumber,
-    tracking_token: trackingToken,
-    user_id: null,
-    fulfillment_type: input.fulfillmentType,
-    scheduled_date: input.scheduledDate,
-    time_window: input.timeWindow,
-    delivery_address: input.fulfillmentType === "delivery" ? input.address ?? null : null,
-    customer_name: input.name,
-    email: input.email.trim(),
-    phone: input.phone.trim(),
-    notes: input.notes?.trim() || null,
-    is_gift: false,
-    subtotal_cents: subtotalCents,
-    delivery_fee_cents: deliveryFeeCents,
-    discount_cents: 0,
-    points_redeemed: 0,
-    promo_code: null,
-    note_answers: [],
-    total_cents: totalCents,
-    currency: "SGD",
-  });
-  if (orderError) throw new Error(`Could not create order: ${orderError.message}`);
+  let orderNumber = generateOrderNumber();
 
   const itemRows = input.items.map((item) => ({
-    order_id: orderId,
     product_id: UUID_RE.test(item.productId) ? item.productId : null,
     product_name: item.name,
     unit_price_cents: item.unitPriceCents,
@@ -244,8 +244,50 @@ export async function createManualOrder(input: ManualOrderInput): Promise<{ orde
     selected_options: item.selectedOptions,
     line_total_cents: item.unitPriceCents * item.quantity,
   }));
-  const { error: itemsError } = await supabase.from("order_items").insert(itemRows);
-  if (itemsError) throw new Error(`Could not save order items: ${itemsError.message}`);
+
+  // Same atomic insert as online checkout, minus the capacity caps: Michelle
+  // is logging an order she already accepted, so she decides, not the caps.
+  const MAX_INSERT_ATTEMPTS = 3;
+  for (let attempt = 1; ; attempt++) {
+    const { error } = await supabase.rpc("create_order_with_items", {
+      p_order: {
+        id: orderId,
+        order_number: orderNumber,
+        tracking_token: trackingToken,
+        recipient_token: null,
+        user_id: null,
+        fulfillment_type: input.fulfillmentType,
+        scheduled_date: input.scheduledDate,
+        time_window: input.timeWindow,
+        delivery_address: input.fulfillmentType === "delivery" ? input.address ?? null : null,
+        customer_name: input.name,
+        email: input.email.trim(),
+        phone: input.phone.trim(),
+        notes: input.notes?.trim() || null,
+        is_gift: false,
+        gift_message: null,
+        recipient_name: null,
+        recipient_phone: null,
+        subtotal_cents: subtotalCents,
+        delivery_fee_cents: deliveryFeeCents,
+        discount_cents: 0,
+        points_redeemed: 0,
+        promo_code: null,
+        note_answers: [],
+        total_cents: totalCents,
+        currency: "SGD",
+      },
+      p_items: itemRows,
+      p_daily_cap: null,
+      p_window_cap: null,
+    });
+    if (!error) break;
+    if (error.code === "23505" && attempt < MAX_INSERT_ATTEMPTS) {
+      orderNumber = generateOrderNumber();
+      continue;
+    }
+    throw new Error(`Could not create order: ${error.message}`);
+  }
 
   return { orderNumber };
 }

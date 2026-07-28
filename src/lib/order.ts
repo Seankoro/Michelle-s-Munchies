@@ -52,23 +52,33 @@ export function computeDeliveryFeeCents(
   return settings.deliveryFeeCents;
 }
 
+const BASE36_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
 /**
- * A random base-36 string at least `length` chars long. Chains extra
- * Math.random() draws in the rare case one draw's fractional digits fall
- * short, so the result is never silently thinner than requested.
+ * A cryptographically random base-36 string. The order number acts as a light
+ * second factor next to the customer's email in guest order lookup, so the
+ * suffix must not be guessable the way Math.random output is. Uses Web Crypto,
+ * which exists in both Node and the browser, since this module is shared.
+ * Rejection-samples each byte so no character is favoured by modulo bias.
  */
 function randomBase36(length: number): string {
   let out = "";
+  const limit = 252; // largest multiple of 36 below 256
   while (out.length < length) {
-    out += Math.random().toString(36).slice(2);
+    const bytes = new Uint8Array(length * 2);
+    globalThis.crypto.getRandomValues(bytes);
+    for (const byte of bytes) {
+      if (byte < limit) out += BASE36_ALPHABET[byte % 36];
+      if (out.length === length) break;
+    }
   }
-  return out.slice(0, length).toUpperCase();
+  return out;
 }
 
 /**
  * Human-friendly order number, e.g. "MM-260602-7K3QP9WL". The 8-char suffix
  * (36^8, ~2.8 trillion combinations) makes a same-day collision with another
- * order astronomically unlikely, so the insert doesn't need a retry loop.
+ * order astronomically unlikely; createOrder still retries a collision anyway.
  */
 export function generateOrderNumber(date = new Date()): string {
   const yy = String(date.getFullYear()).slice(-2);

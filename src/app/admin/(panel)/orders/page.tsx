@@ -663,7 +663,12 @@ function OrderDetailModal({
                 <button
                   type="button"
                   onClick={() =>
-                    onRecordDeposit(Math.max(0, Math.round(parseFloat(depositInput || "0") * 100)))
+                    onRecordDeposit(
+                      Math.min(
+                        order.totalCents,
+                        Math.max(0, Math.round(parseFloat(depositInput || "0") * 100)),
+                      ),
+                    )
                   }
                   className="rounded-full border border-warning-ink/40 bg-white px-3 py-1 text-xs font-semibold text-warning-ink transition hover:border-warning-ink active:scale-95"
                 >

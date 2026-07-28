@@ -169,7 +169,6 @@ export async function addItemsToOrderAction(
 
   const products = await fetchProducts();
   const rows: {
-    order_id: string;
     product_id: string;
     product_name: string;
     unit_price_cents: number;
@@ -182,12 +181,15 @@ export async function addItemsToOrderAction(
   for (const line of clean) {
     const product = products.find((p) => p.id === line.productId && p.isAvailable);
     if (!product) continue;
-    const qty = Math.max(1, Math.min(20, Math.round(line.quantity)));
+    // A tracked product can only be topped up to what is actually left, so the
+    // add-on flow can't commit Michelle to more than she can bake.
+    const stockLeft = product.stockCount == null ? 20 : Math.min(20, product.stockCount);
+    if (stockLeft <= 0) continue;
+    const qty = Math.max(1, Math.min(stockLeft, Math.round(line.quantity)));
     const lineTotal = product.basePriceCents * qty;
     addedCents += lineTotal;
     addedNames.push(`${qty}x ${product.name}`);
     rows.push({
-      order_id: order.id,
       product_id: product.id,
       product_name: product.name,
       unit_price_cents: product.basePriceCents,
@@ -198,18 +200,15 @@ export async function addItemsToOrderAction(
   }
   if (rows.length === 0) return { ok: false, error: "Those treats aren’t available right now." };
 
-  const { error: insErr } = await admin.from("order_items").insert(rows);
-  if (insErr) return { ok: false, error: "Couldn’t add the items. Please try again." };
   // Delivery fee and any discount stay the same, that's the point of adding on.
-  const { error: updErr } = await admin
-    .from("orders")
-    .update({
-      subtotal_cents: order.subtotal_cents + addedCents,
-      total_cents: order.total_cents + addedCents,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", order.id);
-  if (updErr) return { ok: false, error: "Couldn’t update the order total. Please try again." };
+  // Items and the new total are written by one Postgres function, so a fault
+  // can never add the items without also charging for them.
+  const { error: rpcErr } = await admin.rpc("add_items_to_order", {
+    p_order_id: order.id,
+    p_items: rows,
+    p_added_cents: addedCents,
+  });
+  if (rpcErr) return { ok: false, error: "Couldn’t add the items. Please try again." };
 
   await sendItemsAddedEmail(order.order_number, order.customer_name, addedNames);
   return { ok: true, addedCents };

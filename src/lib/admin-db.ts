@@ -6,6 +6,7 @@ import {
   sendLowStockEmail,
   sendReviewRequestEmail,
   sendRescheduleEmail,
+  sendOrderCancelledEmail,
 } from "@/lib/email";
 import { notifySubscribers } from "@/lib/stock-notify";
 import { fetchStoreSettings, parseMascotMessages } from "@/lib/settings";
@@ -270,10 +271,23 @@ export async function rescheduleOrder(orderNumber: string, date: string, timeWin
   }
 }
 
-/** Record a deposit already collected on an order. 0 clears it back to null. */
+/**
+ * Record a deposit already collected on an order. 0 clears it back to null.
+ * Capped at the order total, since a deposit above it would show a nonsense
+ * negative balance due in the panel.
+ */
 export async function recordDeposit(orderNumber: string, cents: number) {
   const supabase = createAdminClient();
-  const value = cents > 0 ? Math.round(cents) : null;
+  let value = cents > 0 ? Math.round(cents) : null;
+  if (value != null) {
+    const { data } = await supabase
+      .from("orders")
+      .select("total_cents")
+      .eq("order_number", orderNumber)
+      .maybeSingle();
+    const total = (data as { total_cents: number } | null)?.total_cents;
+    if (total != null) value = Math.min(value, total);
+  }
   const { error } = await supabase
     .from("orders")
     .update({ deposit_cents: value, updated_at: new Date().toISOString() })
@@ -328,7 +342,7 @@ export async function cancelAndRefundOrder(orderNumber: string): Promise<CancelR
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("orders")
-    .select("id, status, payment_status, stripe_payment_intent_id")
+    .select("id, status, payment_status, stripe_payment_intent_id, email, customer_name, tracking_token")
     .eq("order_number", orderNumber)
     .maybeSingle();
   if (error || !data) return { ok: false, error: "Order not found." };
@@ -337,6 +351,9 @@ export async function cancelAndRefundOrder(orderNumber: string): Promise<CancelR
     status: string;
     payment_status: string;
     stripe_payment_intent_id: string | null;
+    email: string;
+    customer_name: string;
+    tracking_token: string;
   };
   if (order.status === "cancelled") return { ok: true, refunded: order.payment_status === "refunded" };
 
@@ -366,6 +383,20 @@ export async function cancelAndRefundOrder(orderNumber: string): Promise<CancelR
     })
     .eq("id", order.id);
   if (updErr) return { ok: false, error: updErr.message };
+
+  // Tell the customer, like every other status change does. Best-effort, so a
+  // mail hiccup never makes a completed cancel look failed.
+  try {
+    await sendOrderCancelledEmail({
+      orderNumber,
+      trackingToken: order.tracking_token,
+      name: order.customer_name,
+      email: order.email,
+      refunded,
+    });
+  } catch (emailError) {
+    console.error("[cancel] notification email failed:", emailError);
+  }
   return { ok: true, refunded };
 }
 
@@ -433,7 +464,20 @@ export async function markOrderPaid(orderNumber: string, paymentIntentId: string
     .select("id, user_id, subtotal_cents, points_redeemed")
     .maybeSingle();
   if (error) throw new Error(`Failed to mark order paid: ${error.message}`);
-  if (!data) return; // already paid from a duplicate webhook, or not found
+  if (!data) {
+    // Already paid, usually a duplicate webhook. If the admin marked a PayNow
+    // order paid by hand while Stripe was still processing, the PaymentIntent
+    // was never stored, which would leave a later refund with nothing to act
+    // on, so backfill the id without re-running any paid side effects.
+    if (paymentIntentId) {
+      await supabase
+        .from("orders")
+        .update({ stripe_payment_intent_id: paymentIntentId })
+        .eq("order_number", orderNumber)
+        .is("stripe_payment_intent_id", null);
+    }
+    return;
+  }
 
   // Decrement stock for tracked products and auto-sold-out at zero, guests too.
   await decrementStockForOrder((data as { id: string }).id);
@@ -625,9 +669,18 @@ async function replaceProductOptions(
 /** Insert a new product with its option groups. The DB generates the product id. */
 export async function createProduct(product: Product): Promise<Product> {
   const supabase = createAdminClient();
+  // Append new products at the end of the menu. Without this every new item
+  // lands at sort_order 0 and jumps ahead of the established ones.
+  const { data: maxRow } = await supabase
+    .from("products")
+    .select("sort_order")
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const nextSortOrder = ((maxRow as { sort_order: number } | null)?.sort_order ?? -1) + 1;
   const { data, error } = await supabase
     .from("products")
-    .insert(toProductColumns(product))
+    .insert({ ...toProductColumns(product), sort_order: nextSortOrder })
     .select("id, slug")
     .single();
   if (error) throw new Error(`Failed to create product: ${error.message}`);
@@ -638,7 +691,10 @@ export async function createProduct(product: Product): Promise<Product> {
 
 export async function updateProduct(id: string, patch: Partial<Product>) {
   const supabase = createAdminClient();
-  const columns = toProductColumns(patch);
+  const columns: Record<string, unknown> = toProductColumns(patch);
+  // An explicit availability choice from Michelle overrides any earlier
+  // auto-sell-out, so a later restock won't second-guess her.
+  if (patch.isAvailable !== undefined) columns.auto_disabled = false;
   if (Object.keys(columns).length > 0) {
     const { error } = await supabase
       .from("products")
