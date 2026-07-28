@@ -31,6 +31,15 @@ describe("computeDeliveryFeeCents", () => {
       }),
     ).toBe(800);
   });
+
+  it("a zero threshold is disabled, not free for everyone", () => {
+    expect(
+      computeDeliveryFeeCents(999_999, "delivery", {
+        deliveryFeeCents: 800,
+        freeDeliveryMinCents: 0,
+      }),
+    ).toBe(800);
+  });
 });
 
 describe("earliestFulfillmentDate", () => {

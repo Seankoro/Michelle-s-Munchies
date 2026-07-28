@@ -315,6 +315,15 @@ export async function cancelAndRefundOrder(orderNumber: string): Promise<CancelR
   let refunded = false;
   if (order.payment_status === "paid" && order.stripe_payment_intent_id) {
     refunded = await refundOrder(order.stripe_payment_intent_id);
+    if (!refunded) {
+      // The card refund did not go through. Leave the order untouched rather than
+      // cancelling it into a paid-but-unrefunded state, so the customer's money is
+      // not stranded and the admin can retry the cancel.
+      return {
+        ok: false,
+        error: "The Stripe refund did not go through, so the order was not cancelled. Please try again in a moment.",
+      };
+    }
   }
   // Put stock back for any order that took it, however it was paid (Stripe card
   // OR a PayNow/manual order marked paid here). restockOrder self-guards on the

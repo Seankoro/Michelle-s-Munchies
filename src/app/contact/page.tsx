@@ -24,7 +24,7 @@ export default async function ContactPage() {
     },
     {
       q: "Do you deliver, or can I pick up my order?",
-      a: `Both! Self-pickup is free. Delivery is priced by distance from our kitchen, starting from ${formatPrice(settings.deliveryFeeCents)}, and it's free for orders over ${formatPrice(settings.freeDeliveryMinCents)}.`,
+      a: `Both! Self-pickup is free. Delivery is priced by distance from our kitchen, starting from ${formatPrice(settings.deliveryFeeCents)}${settings.freeDeliveryMinCents > 0 ? `, and it's free for orders over ${formatPrice(settings.freeDeliveryMinCents)}` : ""}.`,
     },
     {
       q: "How do I pay?",

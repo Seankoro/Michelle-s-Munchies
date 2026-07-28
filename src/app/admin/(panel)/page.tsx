@@ -61,7 +61,7 @@ export default function AdminDashboardPage() {
   ).length;
   const awaitingPayment = orders.filter((o) => o.paymentStatus === "pending").length;
   const revenue = orders
-    .filter((o) => o.paymentStatus === "paid")
+    .filter((o) => o.paymentStatus === "paid" && o.status !== "cancelled")
     .reduce((sum, o) => sum + o.totalCents, 0);
 
   // What needs baking, grouped by the day the customer wants it, earliest window

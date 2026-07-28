@@ -22,7 +22,11 @@ export function computeZonedDeliveryFeeCents(input: {
   freeDeliveryMinCents: number | null;
 }): number {
   if (input.fulfillment === "pickup") return 0;
-  if (input.freeDeliveryMinCents != null && input.subtotalCents >= input.freeDeliveryMinCents) {
+  if (
+    input.freeDeliveryMinCents != null &&
+    input.freeDeliveryMinCents > 0 &&
+    input.subtotalCents >= input.freeDeliveryMinCents
+  ) {
     return 0;
   }
   return feeForDistanceKm(input.distanceKm, input.tiers, input.fallbackFeeCents);

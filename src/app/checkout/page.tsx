@@ -571,7 +571,8 @@ export default function CheckoutPage() {
                   <span className="mt-1 block text-sm text-muted">
                     {type === "pickup"
                       ? "Free · pick up from us"
-                      : subtotalCents >= settings.freeDeliveryMinCents
+                      : settings.freeDeliveryMinCents > 0 &&
+                          subtotalCents >= settings.freeDeliveryMinCents
                         ? "Free delivery!"
                         : `from ${formatPrice(settings.deliveryFeeCents)} · by distance`}
                   </span>

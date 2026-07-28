@@ -49,7 +49,7 @@ export default function AdminAnalyticsPage() {
 
   const a = useMemo(() => {
     const today = singaporeDateString();
-    const paid = orders.filter((o) => o.paymentStatus === "paid");
+    const paid = orders.filter((o) => o.paymentStatus === "paid" && o.status !== "cancelled");
     const dayOf = (iso: string) => singaporeDateString(iso);
     // Cost by product name (order items snapshot the name). Only treats with a
     // cost entered contribute to margin, so profit figures are honestly partial.

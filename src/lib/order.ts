@@ -44,6 +44,7 @@ export function computeDeliveryFeeCents(
   if (fulfillment === "pickup") return 0;
   if (
     settings.freeDeliveryMinCents != null &&
+    settings.freeDeliveryMinCents > 0 &&
     subtotalCents >= settings.freeDeliveryMinCents
   ) {
     return 0;

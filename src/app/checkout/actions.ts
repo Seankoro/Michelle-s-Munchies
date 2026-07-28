@@ -391,6 +391,22 @@ export async function placeOrder(
         (sum, e) => sum + e.delta,
         0,
       );
+      // Points redeemed on this customer's placed-but-still-pending orders are
+      // not debited from the ledger until the order is marked paid, so subtract
+      // them from the balance here. Otherwise the same points could be redeemed
+      // again on a second, concurrent order and drive the ledger negative.
+      const admin = createAdminClient();
+      const { data: heldRows } = await admin
+        .from("orders")
+        .select("points_redeemed")
+        .eq("user_id", user.id)
+        .eq("payment_status", "pending")
+        .neq("status", "cancelled");
+      const heldPoints = ((heldRows as { points_redeemed: number }[] | null) ?? []).reduce(
+        (sum, o) => sum + (o.points_redeemed ?? 0),
+        0,
+      );
+      const available = Math.max(0, balance - heldPoints);
       const { data: settingsRow } = await supabase
         .from("settings")
         .select("point_value_cents")
@@ -400,7 +416,7 @@ export async function placeOrder(
         (settingsRow as { point_value_cents: number } | null)?.point_value_cents ?? 5;
       // A point value of 0 (owner set it blank) would make the discount NaN.
       pointsDiscount =
-        pointValue > 0 ? Math.floor(Math.min(balance * pointValue, room) / pointValue) * pointValue : 0;
+        pointValue > 0 ? Math.floor(Math.min(available * pointValue, room) / pointValue) * pointValue : 0;
       pointsRedeemed = pointValue > 0 ? pointsDiscount / pointValue : 0;
       room -= pointsDiscount;
     }

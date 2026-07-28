@@ -41,4 +41,15 @@ describe("computeZonedDeliveryFeeCents", () => {
       computeZonedDeliveryFeeCents({ ...base, fulfillment: "delivery", subtotalCents: 3000, distanceKm: 12 }),
     ).toBe(1200);
   });
+  it("a zero threshold does not make delivery free for everyone", () => {
+    expect(
+      computeZonedDeliveryFeeCents({
+        ...base,
+        freeDeliveryMinCents: 0,
+        fulfillment: "delivery",
+        subtotalCents: 999_999,
+        distanceKm: 12,
+      }),
+    ).toBe(1200);
+  });
 });

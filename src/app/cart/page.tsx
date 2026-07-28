@@ -68,8 +68,10 @@ export default function CartPage() {
     );
   }
 
-  const remaining = Math.max(0, freeMin - subtotalCents);
-  const qualifiesForFreeDelivery = remaining === 0;
+  // A zero threshold means free delivery is switched off, not that every cart
+  // qualifies, so only promote it when a real positive threshold is set.
+  const remaining = freeMin > 0 ? Math.max(0, freeMin - subtotalCents) : 0;
+  const qualifiesForFreeDelivery = freeMin > 0 && remaining === 0;
   const belowMin = subtotalCents < minOrder;
 
   return (
