@@ -275,17 +275,8 @@ async function restockOrder(orderId: string) {
     .eq("order_id", orderId);
   for (const item of (itemRows as { product_id: string | null; quantity: number }[] | null) ?? []) {
     if (!item.product_id) continue;
-    const { data: prod } = await supabase
-      .from("products")
-      .select("stock_count")
-      .eq("id", item.product_id)
-      .maybeSingle();
-    const stock = (prod as { stock_count: number | null } | null)?.stock_count;
-    if (stock == null) continue; // untracked
-    await supabase
-      .from("products")
-      .update({ stock_count: stock + item.quantity, updated_at: new Date().toISOString() })
-      .eq("id", item.product_id);
+    // Atomic restock in the DB. Untracked products return no row and are skipped.
+    await supabase.rpc("adjust_product_stock", { p_id: item.product_id, p_delta: item.quantity });
   }
 }
 
@@ -368,29 +359,22 @@ async function decrementStockForOrder(orderId: string) {
   const items = (itemRows as { product_id: string | null; quantity: number }[] | null) ?? [];
   for (const item of items) {
     if (!item.product_id) continue;
-    const { data: prod } = await supabase
-      .from("products")
-      .select("stock_count, name")
-      .eq("id", item.product_id)
-      .maybeSingle();
-    const product = prod as { stock_count: number | null; name: string } | null;
-    const stock = product?.stock_count;
-    if (stock == null) continue; // untracked → unlimited
-    const next = Math.max(0, stock - item.quantity);
-    const patch: { stock_count: number; is_available?: boolean; updated_at: string } = {
-      stock_count: next,
-      updated_at: new Date().toISOString(),
-    };
-    if (next <= 0) patch.is_available = false; // never silently re-enables a sold-out item
-    await supabase.from("products").update(patch).eq("id", item.product_id);
-    // Low-stock alert, fire when the new count crosses the owner's threshold.
+    // Atomic decrement in the DB, so two orders paid at once for the same product
+    // cannot both read the same count and clobber each other's write.
+    const { data: rows } = await supabase.rpc("adjust_product_stock", {
+      p_id: item.product_id,
+      p_delta: -item.quantity,
+    });
+    const row = (rows as { old_count: number; new_count: number; product_name: string }[] | null)?.[0];
+    if (!row) continue; // untracked → unlimited
+    // Low-stock alert, fire only on the decrement that crosses the threshold.
     if (
       ownerEmail &&
       lowStockThreshold != null &&
-      stock > lowStockThreshold &&
-      next <= lowStockThreshold
+      row.old_count > lowStockThreshold &&
+      row.new_count <= lowStockThreshold
     ) {
-      await sendLowStockEmail(ownerEmail, product?.name ?? "A product", next);
+      await sendLowStockEmail(ownerEmail, row.product_name, row.new_count);
     }
   }
 }
