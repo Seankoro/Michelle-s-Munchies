@@ -52,12 +52,29 @@ export function computeDeliveryFeeCents(
   return settings.deliveryFeeCents;
 }
 
-/** Human-friendly order number, e.g. "MM-260602-7K3Q". */
+/**
+ * A random base-36 string at least `length` chars long. Chains extra
+ * Math.random() draws in the rare case one draw's fractional digits fall
+ * short, so the result is never silently thinner than requested.
+ */
+function randomBase36(length: number): string {
+  let out = "";
+  while (out.length < length) {
+    out += Math.random().toString(36).slice(2);
+  }
+  return out.slice(0, length).toUpperCase();
+}
+
+/**
+ * Human-friendly order number, e.g. "MM-260602-7K3QP9WL". The 8-char suffix
+ * (36^8, ~2.8 trillion combinations) makes a same-day collision with another
+ * order astronomically unlikely, so the insert doesn't need a retry loop.
+ */
 export function generateOrderNumber(date = new Date()): string {
   const yy = String(date.getFullYear()).slice(-2);
   const mm = String(date.getMonth() + 1).padStart(2, "0");
   const dd = String(date.getDate()).padStart(2, "0");
-  const random = Math.random().toString(36).slice(2, 6).toUpperCase();
+  const random = randomBase36(8);
   return `MM-${yy}${mm}${dd}-${random}`;
 }
 
@@ -149,6 +166,20 @@ export const orderStatusLabels: Record<OrderStatus, string> = {
 export const EARLY_STATUSES: OrderStatus[] = ["received", "confirmed"];
 export const isChangeable = (status: OrderStatus | string): boolean =>
   EARLY_STATUSES.includes(status as OrderStatus);
+
+/**
+ * Fulfilment statuses that mean real work has started, so an order may only be
+ * moved into them once it is paid. `received` and `confirmed` are the pre-work
+ * window, and `cancelled` is always allowed, so none of those are gated.
+ */
+export const STATUSES_REQUIRING_PAYMENT: OrderStatus[] = [
+  "baking",
+  "ready",
+  "out_for_delivery",
+  "completed",
+];
+export const statusRequiresPayment = (status: OrderStatus): boolean =>
+  STATUSES_REQUIRING_PAYMENT.includes(status);
 
 /** Rank a time window by the owner's configured order, unknowns sorting last. */
 export const windowRank = (timeWindows: string[], w: string | null): number => {

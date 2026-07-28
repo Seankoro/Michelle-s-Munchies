@@ -1,7 +1,12 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { sendStatusEmail, sendLowStockEmail, sendReviewRequestEmail } from "@/lib/email";
+import {
+  sendStatusEmail,
+  sendLowStockEmail,
+  sendReviewRequestEmail,
+  sendRescheduleEmail,
+} from "@/lib/email";
 import { notifySubscribers } from "@/lib/stock-notify";
 import { fetchStoreSettings, parseMascotMessages } from "@/lib/settings";
 import { rowToFeatureFlags } from "@/lib/feature-flags";
@@ -15,6 +20,7 @@ import type {
   OrderStatus,
   PaymentStatus,
 } from "@/lib/order";
+import { statusRequiresPayment } from "@/lib/order";
 import type { CartItem, Personalisation, Product, SelectedOption } from "@/lib/types";
 
 // ---- Orders. Not public-readable, admin and service-role only ----------
@@ -109,6 +115,19 @@ export async function fetchAdminOrders(): Promise<AdminOrder[]> {
 
 export async function updateOrderStatus(orderNumber: string, status: OrderStatus) {
   const supabase = createAdminClient();
+  // Paid-before-baking: an order can only move into a work status once it is
+  // paid. received/confirmed stay available while unpaid, and cancel is handled
+  // separately, so neither is blocked here.
+  if (statusRequiresPayment(status)) {
+    const { data: cur } = await supabase
+      .from("orders")
+      .select("payment_status")
+      .eq("order_number", orderNumber)
+      .maybeSingle();
+    if ((cur as { payment_status: PaymentStatus } | null)?.payment_status !== "paid") {
+      throw new Error("Mark this order paid before moving it to baking or beyond.");
+    }
+  }
   const { error } = await supabase
     .from("orders")
     .update({ status, updated_at: new Date().toISOString() })
@@ -231,6 +250,24 @@ export async function rescheduleOrder(orderNumber: string, date: string, timeWin
     .update({ scheduled_date: date, time_window: timeWindow, updated_at: new Date().toISOString() })
     .eq("order_number", orderNumber);
   if (error) throw new Error(`Failed to reschedule: ${error.message}`);
+
+  // Let the customer know their bake date moved. Best-effort, never throws.
+  const { data } = await supabase
+    .from("orders")
+    .select("email, customer_name, tracking_token")
+    .eq("order_number", orderNumber)
+    .maybeSingle();
+  if (data) {
+    const row = data as { email: string; customer_name: string; tracking_token: string };
+    await sendRescheduleEmail({
+      orderNumber,
+      trackingToken: row.tracking_token,
+      name: row.customer_name,
+      email: row.email,
+      scheduledDate: date,
+      timeWindow,
+    });
+  }
 }
 
 /** Record a deposit already collected on an order. 0 clears it back to null. */

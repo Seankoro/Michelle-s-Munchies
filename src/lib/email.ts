@@ -242,6 +242,24 @@ export async function sendStatusEmail(params: {
   await send(params.email, `Order ${params.orderNumber}: ${label}`, shell("Order update", body, params.trackingToken));
 }
 
+/** Customer notification when Michelle moves an order's bake date or window. */
+export async function sendRescheduleEmail(params: {
+  orderNumber: string;
+  trackingToken: string;
+  name: string;
+  email: string;
+  scheduledDate: string;
+  timeWindow: string;
+}): Promise<void> {
+  const when = `${formatLongDate(params.scheduledDate)}${params.timeWindow ? ` · ${escapeHtml(params.timeWindow)}` : ""}`;
+  const body = `
+    <p>Hi ${escapeHtml(params.name.split(" ")[0])}, heads up: we&rsquo;ve moved your order to a new date.</p>
+    <p style="margin:8px 0"><strong>Order ${params.orderNumber}</strong> is now set for
+      <strong style="color:#bc4a6a">${when}</strong>.</p>
+    <p style="margin:8px 0;font-size:13px;color:#8b746d">If this doesn&rsquo;t work for you, just reply or reach out on WhatsApp and we&rsquo;ll sort it out.</p>`;
+  await send(params.email, `Order ${params.orderNumber}: new date`, shell("Order rescheduled", body, params.trackingToken));
+}
+
 /** After a completed order, invite the buyer to review the treats they bought. */
 export async function sendReviewRequestEmail(params: {
   to: string;

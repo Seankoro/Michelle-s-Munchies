@@ -10,6 +10,7 @@ import {
   ORDER_STATUSES,
   orderStatusLabels,
   paymentStatusLabels,
+  statusRequiresPayment,
   type AdminOrder,
   type OrderStatus,
   type PaymentStatus,
@@ -284,6 +285,14 @@ function OrderDetailModal({
 }) {
   const advance = nextStatus(order);
   const alreadyCancelled = order.status === "cancelled";
+  // Only offer statuses that make sense for this order's fulfilment type (so a
+  // pickup order is never offered "Out for delivery"), plus the order's current
+  // status in case it's already in a state outside that flow (e.g. cancelled,
+  // or a stale delivery-only status saved before this filter existed).
+  const flow = statusFlow(order);
+  const statusOptions: OrderStatus[] = flow.includes(order.status)
+    ? flow
+    : [order.status, ...flow];
   const [reDate, setReDate] = useState(order.scheduledDate);
   const [reWindow, setReWindow] = useState(order.timeWindow);
   const [depositInput, setDepositInput] = useState(
@@ -518,16 +527,23 @@ function OrderDetailModal({
                 onChange={(e) => onStatusChange(e.target.value as OrderStatus)}
               >
                 {/* Cancelling is only offered through the Cancel button below,
-                    which also refunds and restocks. The status list drops it so
-                    it can't be set here as a second path that skips both. */}
-                {ORDER_STATUSES.filter(
-                  (status) => status !== "cancelled" || order.status === "cancelled",
-                ).map((status) => (
-                  <option key={status} value={status}>
+                    which also refunds and restocks, and delivery-only statuses
+                    (like "Out for delivery") never appear on a pickup order. */}
+                {statusOptions.map((status) => (
+                  <option
+                    key={status}
+                    value={status}
+                    disabled={order.paymentStatus !== "paid" && statusRequiresPayment(status)}
+                  >
                     {orderStatusLabels[status]}
                   </option>
                 ))}
               </select>
+              {order.paymentStatus !== "paid" && (
+                <span className="text-xs font-normal text-muted">
+                  Mark this order paid to start baking.
+                </span>
+              )}
             </label>
 
             <label className="flex flex-col gap-1 text-sm font-semibold">
@@ -550,7 +566,8 @@ function OrderDetailModal({
               <button
                 type="button"
                 onClick={() => onStatusChange(advance)}
-                className="rounded-full bg-rose-deep px-4 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:brightness-110 active:scale-95"
+                disabled={order.paymentStatus !== "paid" && statusRequiresPayment(advance)}
+                className="rounded-full bg-rose-deep px-4 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:brightness-110 active:scale-95 disabled:pointer-events-none disabled:opacity-50"
               >
                 Advance → {orderStatusLabels[advance]}
               </button>
