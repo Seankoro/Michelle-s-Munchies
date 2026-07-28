@@ -49,6 +49,31 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(redirectUrl);
   }
 
+  // A signed-in visitor has no reason to see the sign-in/sign-up forms. Send
+  // them on to wherever they were headed (or /account), honoring `next` only
+  // when it resolves back to our own origin, so this can't become an open
+  // redirect (forgot/reset stay reachable while signed in, e.g. to change a
+  // password from an active session).
+  const isSignInOrSignUp = path.startsWith("/account/sign-in") || path.startsWith("/account/sign-up");
+  if (isSignInOrSignUp && user) {
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = "/account";
+    redirectUrl.search = "";
+    const nextParam = request.nextUrl.searchParams.get("next");
+    if (nextParam) {
+      try {
+        const resolved = new URL(nextParam, request.nextUrl.origin);
+        if (resolved.origin === request.nextUrl.origin) {
+          redirectUrl.pathname = resolved.pathname;
+          redirectUrl.search = resolved.search;
+        }
+      } catch {
+        // Malformed `next`, fall back to /account.
+      }
+    }
+    return NextResponse.redirect(redirectUrl);
+  }
+
   // Only a signed-in admin whose email is in ADMIN_EMAILS reaches the admin area.
   // The login page is exempt. This is the authoritative gate, and admin Server
   // Actions also re-check via requireAdmin().

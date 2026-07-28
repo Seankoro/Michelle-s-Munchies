@@ -1,13 +1,41 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { AuthCard } from "@/components/account/AuthCard";
 import { Button } from "@/components/ui/Button";
 import { updatePassword } from "../actions";
 import { inputClass } from "@/lib/ui";
 
-export default function ResetPasswordPage() {
+// A relative path resolved against this fixed dummy origin keeps that same
+// origin; anything absolute (a scheme, or a "//host" trick) resolves to a
+// different one. That's enough to close the open-redirect hole in `next`
+// without needing the real page origin, so it also works during the server
+// render that hydrates this page.
+const DUMMY_ORIGIN = "http://n";
+
+function safeNextPath(raw: string | null): string {
+  if (!raw) return "/account";
+  try {
+    const resolved = new URL(raw, DUMMY_ORIGIN);
+    if (resolved.origin === DUMMY_ORIGIN) {
+      const path = resolved.pathname + resolved.search + resolved.hash;
+      // A safe local target is a single-slash absolute path. Reject "//" and
+      // "/\\", which window.location.assign would treat as an off-site URL.
+      if (path.startsWith("/") && !path.startsWith("//") && !path.startsWith("/\\")) {
+        return path;
+      }
+    }
+  } catch {
+    // Malformed `next`, fall back to the safe default.
+  }
+  return "/account";
+}
+
+function ResetPasswordForm() {
+  const searchParams = useSearchParams();
+  const next = searchParams.get("next");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
@@ -31,7 +59,7 @@ export default function ResetPasswordPage() {
       return;
     }
     // Full reload so the header reflects the signed-in session.
-    window.location.assign("/account");
+    window.location.assign(safeNextPath(next));
   }
 
   return (
@@ -88,5 +116,13 @@ export default function ResetPasswordPage() {
           </Link>
         </p>
     </AuthCard>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={null}>
+      <ResetPasswordForm />
+    </Suspense>
   );
 }

@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
 
+// The cookie updatePassword requires before it accepts a new password (see
+// account/actions.ts). Only set below, right after a genuine recovery-link
+// exchange, so a session that reaches /account/reset some other way (e.g. left
+// signed in on a shared device) can't be used to change the password (LOW-19).
+const RECOVERY_COOKIE = "mm-pw-recovery";
+
 // Handles the redirect from magic-link and email-confirmation links. Exchanges
 // the one-time code for a session, then sends the user on their way.
 export async function GET(request: Request) {
@@ -27,9 +33,24 @@ export async function GET(request: Request) {
     const supabase = await createServerSupabase();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
-      return NextResponse.redirect(target);
+      const response = NextResponse.redirect(target);
+      // sendPasswordReset always points its recovery link's `next` at exactly
+      // this path, so landing here means the code we just exchanged came from
+      // a genuine "forgot password" email, not from a magic link or OAuth.
+      if (target.pathname === "/account/reset") {
+        response.cookies.set(RECOVERY_COOKIE, "1", {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: "lax",
+          maxAge: 10 * 60,
+          path: "/account/reset",
+        });
+      }
+      return response;
     }
   }
 
+  // The code was missing, expired, or already used. Let the sign-in page know
+  // so it can explain rather than silently dumping the visitor on a blank form.
   return NextResponse.redirect(new URL("/account/sign-in?error=auth", origin));
 }

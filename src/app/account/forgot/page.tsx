@@ -1,13 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { AuthCard } from "@/components/account/AuthCard";
 import { Button } from "@/components/ui/Button";
 import { sendPasswordReset } from "../actions";
 import { inputClass } from "@/lib/ui";
 
-export default function ForgotPasswordPage() {
+function ForgotPasswordForm() {
+  // Carried over from a deep link via the sign-in page, so the reset flow can
+  // send the customer on to where they originally meant to go (LOW-16).
+  const searchParams = useSearchParams();
+  const next = searchParams.get("next");
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState("");
@@ -21,7 +26,7 @@ export default function ForgotPasswordPage() {
       return;
     }
     setLoading(true);
-    const result = await sendPasswordReset(email);
+    const result = await sendPasswordReset(email, next ?? undefined);
     setLoading(false);
     if (result.error) setError(result.error);
     else setPending(result.pending ?? "Check your inbox.");
@@ -80,5 +85,13 @@ export default function ForgotPasswordPage() {
           </Link>
         </p>
     </AuthCard>
+  );
+}
+
+export default function ForgotPasswordPage() {
+  return (
+    <Suspense fallback={null}>
+      <ForgotPasswordForm />
+    </Suspense>
   );
 }
