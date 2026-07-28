@@ -58,7 +58,7 @@ export function FlavourBoxPicker({
   }
 
   function add() {
-    if (remaining !== 0) return;
+    if (!product.isAvailable || remaining !== 0) return;
     const flatLabels: string[] = [];
     const optionRows = flavours
       .filter((value) => (counts[value.label] ?? 0) > 0)
@@ -163,14 +163,16 @@ export function FlavourBoxPicker({
       <button
         type="button"
         onClick={add}
-        disabled={remaining !== 0}
+        disabled={!product.isAvailable || remaining !== 0}
         className="mt-6 w-full rounded-full bg-rose-deep px-6 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 active:scale-95 disabled:opacity-40"
       >
-        {added
-          ? "Added ✓"
-          : remaining > 0
-            ? `Pick ${remaining} more`
-            : `Add box to cart · ${formatPrice(size.priceCents)}`}
+        {!product.isAvailable
+          ? "Sold out"
+          : added
+            ? "Added ✓"
+            : remaining > 0
+              ? `Pick ${remaining} more`
+              : `Add box to cart · ${formatPrice(size.priceCents)}`}
       </button>
     </div>
   );
