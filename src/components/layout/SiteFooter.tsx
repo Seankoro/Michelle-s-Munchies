@@ -18,7 +18,7 @@ export function SiteFooter({ channels = [] }: { channels?: FooterChannel[] }) {
           <div>
             <div className="flex items-center gap-2">
               <Image src="/logo.png" alt="" width={512} height={512} className="h-9 w-9" />
-              <p className="font-display text-xl font-semibold">Michelle&rsquo;s Munchies</p>
+              <p className="font-hand text-2xl font-semibold">Michelle&rsquo;s Munchies</p>
             </div>
             <p className="mt-2 max-w-xs text-sm text-muted">
               A home-based bakery in Singapore, baking fresh to order.

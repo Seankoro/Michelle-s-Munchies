@@ -13,6 +13,10 @@
 @theme inline {
   --font-display: var(--font-fraunces);
   --font-body: var(--font-nunito);
+  /* Michelle's handwriting -> the `font-hand` utility. Scoped to brand text.
+     To take all storefront headings to handwriting later, point --font-display
+     here and carve the admin back to Fraunces. */
+  --font-hand: var(--font-michelle);
 }
 
 @theme {

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Fraunces, Nunito } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { SiteChrome } from "@/components/layout/SiteChrome";
 import type { FooterChannel } from "@/components/layout/SiteFooter";
@@ -18,6 +19,15 @@ const fraunces = Fraunces({
 const nunito = Nunito({
   subsets: ["latin"],
   variable: "--font-nunito",
+  display: "swap",
+});
+
+// Michelle's own handwriting, for the wordmark and signature brand moments. A
+// small display face (limited glyphs), so it is scoped to brand text via the
+// font-hand utility, never body, prices, form fields, admin, or emails.
+const handwriting = localFont({
+  src: "./fonts/Michelle-Regular.ttf",
+  variable: "--font-michelle",
   display: "swap",
 });
 
@@ -74,7 +84,7 @@ export default async function RootLayout({
   ].filter(Boolean) as FooterChannel[];
 
   return (
-    <html lang="en" className={`${fraunces.variable} ${nunito.variable}`}>
+    <html lang="en" className={`${fraunces.variable} ${nunito.variable} ${handwriting.variable}`}>
       <body>
         <CartProvider>
           <SiteChrome features={features} footerChannels={footerChannels}>

@@ -91,7 +91,7 @@ export default async function HomePage() {
             Home-based bakery · Singapore
           </p>
           <h1
-            className="animate-rise font-display text-5xl font-semibold sm:text-6xl"
+            className="animate-rise font-hand text-6xl font-semibold sm:text-7xl"
             style={{ "--rise-delay": "170ms" } as CSSProperties}
           >
             Michelle&rsquo;s Munchies

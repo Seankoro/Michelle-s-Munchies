@@ -28,7 +28,7 @@ export function SiteHeader() {
           <MobileMenu />
           <Link href="/" className="flex items-center gap-2" aria-label="Michelle's Munchies home">
             <Image src="/logo.png" alt="" width={512} height={512} className="hidden h-14 w-14 md:block" />
-            <span className="font-display text-xl font-semibold sm:text-2xl">
+            <span className="font-hand text-2xl font-semibold sm:text-3xl">
               Michelle&rsquo;s Munchies
             </span>
           </Link>

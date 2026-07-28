@@ -81,7 +81,7 @@ export function MobileMenu() {
         <div className="flex items-center justify-between gap-2">
           <span className="flex items-center gap-2">
             <Image src="/logo.png" alt="" width={512} height={512} className="h-9 w-9" />
-            <span className="font-display text-lg font-semibold">Michelle&rsquo;s Munchies</span>
+            <span className="font-hand text-xl font-semibold">Michelle&rsquo;s Munchies</span>
           </span>
           <button
             type="button"
