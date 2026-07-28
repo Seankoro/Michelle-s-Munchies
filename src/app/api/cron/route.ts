@@ -7,6 +7,7 @@ import { grantBirthdayRewards } from "@/lib/birthday";
 import { notifyLaunchedDrops } from "@/lib/stock-notify";
 import { sendWinbackNudges } from "@/lib/winback";
 import { sendOccasionReminders } from "@/lib/occasions";
+import { expireStaleUnpaidOrders } from "@/lib/order-cleanup";
 
 export const dynamic = "force-dynamic";
 
@@ -80,6 +81,9 @@ export async function GET(request: NextRequest) {
   await run("occasionReminders", settings.features.occasionReminders, () =>
     sendOccasionReminders(),
   );
+  // Housekeeping, always on: cancel unpaid orders left in an early status past
+  // their scheduled date, so they stop holding promo slots and reserved points.
+  await run("expiredOrders", true, () => expireStaleUnpaidOrders());
 
   if (checkInId) {
     const anyFailed = Object.values(result).includes("failed");
