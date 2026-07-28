@@ -255,6 +255,14 @@ export async function placeOrder(
     if (!sanitized.ok) return { ok: false, error: sanitized.error };
     let items = sanitized.items;
 
+    // Quantities come from the client cart, and a forged request could send a
+    // negative, fractional, or absurd quantity that corrupts the subtotal, the
+    // bake list, and analytics. The UI only ever sends whole numbers from 1, so
+    // reject anything outside that range server-side.
+    if (items.some((i) => !Number.isInteger(i.quantity) || i.quantity < 1 || i.quantity > 99)) {
+      return { ok: false, error: "Please check the quantities in your cart and try again." };
+    }
+
     // Block items that haven't launched yet, the seasonal drops. Server-enforced.
     if (settings.features.drops) {
       const uuidRe = /^[0-9a-f-]{36}$/i;
@@ -303,6 +311,22 @@ export async function placeOrder(
           ];
         }
       }
+    }
+
+    // A gift the recipient will self-schedule legitimately has no address or time
+    // window yet; every other order must supply both, checked here because the
+    // client validation can be bypassed by a direct POST.
+    const giftSelfSchedule = Boolean(
+      settings.features.gifting && input.isGift && input.recipientScheduling,
+    );
+    if (input.fulfillmentType === "delivery" && !giftSelfSchedule) {
+      const postal = input.address?.postalCode?.trim() ?? "";
+      if (!input.address?.line1?.trim() || !/^\d{6}$/.test(postal)) {
+        return { ok: false, error: "Enter a delivery address with a 6-digit postal code." };
+      }
+    }
+    if (!giftSelfSchedule && (!input.timeWindow || !settings.timeWindows.includes(input.timeWindow))) {
+      return { ok: false, error: "Please choose a time window." };
     }
 
     const deliveryFeeCents = await resolveDeliveryFeeCents(
@@ -449,13 +473,22 @@ export async function placeOrder(
       appliedPromo,
     );
 
-    const checkoutUrl = await createCheckoutSession({
-      orderNumber: created.orderNumber,
-      trackingToken: created.trackingToken,
-      items,
-      deliveryFeeCents: created.deliveryFeeCents,
-      discountCents: created.discountCents,
-    });
+    // The order and its confirmation emails already exist, so a failure creating
+    // the Stripe session must not bubble to the generic catch that prompts a
+    // retry and duplicates the whole order. Fall back to the PayNow/WhatsApp
+    // tracking flow instead.
+    let checkoutUrl: string | null | undefined = null;
+    try {
+      checkoutUrl = await createCheckoutSession({
+        orderNumber: created.orderNumber,
+        trackingToken: created.trackingToken,
+        items,
+        deliveryFeeCents: created.deliveryFeeCents,
+        discountCents: created.discountCents,
+      });
+    } catch (sessionError) {
+      Sentry.captureException(sessionError);
+    }
 
     // Close any abandoned-cart intent for this email so no reminder is sent.
     if (settings.features.abandonedCart) await markConverted(input.email);
