@@ -78,6 +78,16 @@ export function NewOrderModal({ onClose }: { onClose: () => void }) {
       setError("Add at least one item.");
       return;
     }
+    if (fulfillment === "delivery") {
+      if (!line1.trim()) {
+        setError("Add the delivery address.");
+        return;
+      }
+      if (!/^\d{6}$/.test(postal.trim())) {
+        setError("Postal code must be 6 digits.");
+        return;
+      }
+    }
     setBusy(true);
     const result = await addManualOrder({
       items,

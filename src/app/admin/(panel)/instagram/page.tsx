@@ -191,9 +191,12 @@ export default function AdminInstagramPage() {
                 className={`${inputClass} max-w-20`}
                 value={String(draft.sortOrder)}
                 inputMode="numeric"
-                onChange={(e) =>
-                  setDraft((d) => (d ? { ...d, sortOrder: parseInt(e.target.value || "0", 10) } : d))
-                }
+                onChange={(e) => {
+                  const n = parseInt(e.target.value, 10);
+                  setDraft((d) =>
+                    d ? { ...d, sortOrder: Number.isFinite(n) ? Math.max(0, n) : 0 } : d,
+                  );
+                }}
               />
             </label>
           </div>

@@ -170,6 +170,7 @@ export default function AdminProductsPage() {
         <ProductFormModal
           product={editing}
           isNew={isNew}
+          existingProducts={products}
           onClose={() => setEditing(null)}
           onSave={(saved) => {
             if (isNew) addProduct(saved);
@@ -182,14 +183,19 @@ export default function AdminProductsPage() {
   );
 }
 
+/** Same format the bundle and box-template admin forms already enforce. */
+const SLUG_PATTERN = /^[a-z0-9-]{3,40}$/;
+
 function ProductFormModal({
   product,
   isNew,
+  existingProducts,
   onClose,
   onSave,
 }: {
   product: Product;
   isNew: boolean;
+  existingProducts: Product[];
   onClose: () => void;
   onSave: (product: Product) => void;
 }) {
@@ -200,6 +206,7 @@ function ProductFormModal({
   );
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   function set<K extends keyof Product>(key: K, value: Product[K]) {
     setDraft((prev) => ({ ...prev, [key]: value }));
@@ -344,11 +351,20 @@ function ProductFormModal({
   }
 
   function handleSave() {
+    setSaveError(null);
     const cents = Math.max(0, Math.round(parseFloat(priceText || "0") * 100));
     const costCents = costText.trim()
       ? Math.max(0, Math.round(parseFloat(costText) * 100))
       : null;
     const slug = draft.slug.trim() || slugify(draft.name);
+    if (!SLUG_PATTERN.test(slug)) {
+      setSaveError("Slug must be 3–40 lowercase letters, numbers, and dashes.");
+      return;
+    }
+    if (existingProducts.some((p) => p.id !== draft.id && p.slug === slug)) {
+      setSaveError(`A product with the slug "${slug}" already exists.`);
+      return;
+    }
     // Drop blank rows and normalise, so the stored recipe stays tidy.
     const ingredients = (draft.ingredients ?? [])
       .map((ing) => ({
@@ -357,7 +373,31 @@ function ProductFormModal({
         unit: ing.unit?.trim() || null,
       }))
       .filter((ing) => ing.name);
-    onSave({ ...draft, basePriceCents: cents, costCents, slug, ingredients });
+    // Drop option groups/values with blank trimmed names so the storefront
+    // never renders an empty choice.
+    const options = draft.options
+      .map((option) => ({
+        ...option,
+        name: option.name.trim(),
+        values: option.values
+          .map((value) => ({ ...value, label: value.label.trim() }))
+          .filter((value) => value.label),
+      }))
+      .filter((option) => option.name);
+    if (draft.flavourBox) {
+      const flavourOption = draft.flavourBox.flavourOption.trim();
+      if (!flavourOption || !options.some((option) => option.name === flavourOption)) {
+        setSaveError(
+          "The build-your-own box's flavour option must match one of the option groups above.",
+        );
+        return;
+      }
+      if (draft.flavourBox.sizes.length === 0) {
+        setSaveError("Add at least one box size, or turn off the build-your-own box.");
+        return;
+      }
+    }
+    onSave({ ...draft, basePriceCents: cents, costCents, slug, ingredients, options });
   }
 
   return (
@@ -863,6 +903,7 @@ function ProductFormModal({
           </fieldset>
         </div>
 
+        {saveError && <p className="mt-4 text-sm text-danger">{saveError}</p>}
         <div className="mt-6 flex gap-3">
           <button
             type="button"

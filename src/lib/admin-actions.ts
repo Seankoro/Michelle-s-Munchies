@@ -85,19 +85,66 @@ export async function loadAdminData(): Promise<{
   return { products, orders, settings };
 }
 
+const PRODUCT_SLUG_PATTERN = /^[a-z0-9-]{3,40}$/;
+
+/** Shared by create and update so a product can never save with a blank name
+ *  or a slug that doesn't match the format every other admin form enforces. */
+function validateProductInput(input: { name: string; slug: string }): string | null {
+  if (!input.name.trim()) return "Name is required.";
+  if (!PRODUCT_SLUG_PATTERN.test(input.slug)) {
+    return "Slug must be 3–40 lowercase letters, numbers, and dashes.";
+  }
+  return null;
+}
+
 export async function createProductAction(product: Product): Promise<Product> {
   await requireAdmin();
+  const err = validateProductInput(product);
+  if (err) throw new Error(err);
+  const existing = await fetchAdminProducts();
+  if (existing.some((p) => p.slug === product.slug)) {
+    throw new Error(`A product with the slug "${product.slug}" already exists.`);
+  }
   return createProduct(product);
 }
 
 export async function updateProductAction(id: string, patch: Partial<Product>): Promise<void> {
   await requireAdmin();
+  if (patch.name !== undefined && !patch.name.trim()) {
+    throw new Error("Name is required.");
+  }
+  if (patch.slug !== undefined) {
+    if (!PRODUCT_SLUG_PATTERN.test(patch.slug)) {
+      throw new Error("Slug must be 3–40 lowercase letters, numbers, and dashes.");
+    }
+    const existing = await fetchAdminProducts();
+    if (existing.some((p) => p.id !== id && p.slug === patch.slug)) {
+      throw new Error(`A product with the slug "${patch.slug}" already exists.`);
+    }
+  }
   await updateProduct(id, patch);
 }
 
 export async function deleteProductAction(id: string): Promise<void> {
   await requireAdmin();
-  await deleteProduct(id);
+  // A bundle's foreign key on products is RESTRICT, so a raw delete here
+  // fails with a cryptic Postgres constraint error. Check for that first and
+  // name the bundles, so the owner knows exactly what to fix.
+  const bundles = await fetchAdminBundles();
+  const usedIn = bundles.filter((b) => b.items.some((item) => item.productId === id));
+  if (usedIn.length > 0) {
+    throw new Error(
+      `Remove this product from its bundles first (${usedIn.map((b) => b.name).join(", ")}).`,
+    );
+  }
+  try {
+    await deleteProduct(id);
+  } catch (error) {
+    if (error instanceof Error && /foreign key/i.test(error.message)) {
+      throw new Error("Remove this product from its bundles first.");
+    }
+    throw error;
+  }
 }
 
 export async function updateOrderStatusAction(
@@ -148,6 +195,14 @@ export async function createManualOrderAction(input: ManualOrderInput): Promise<
   if (!input.scheduledDate) return { ok: false, error: "Pick a date." };
   if (!input.timeWindow) return { ok: false, error: "Pick a time window." };
   if (input.items.length === 0) return { ok: false, error: "Add at least one item." };
+  if (input.fulfillmentType === "delivery") {
+    if (!input.address?.line1?.trim()) {
+      return { ok: false, error: "Add the delivery address." };
+    }
+    if (!/^\d{6}$/.test(input.address?.postalCode?.trim() ?? "")) {
+      return { ok: false, error: "Postal code must be 6 digits." };
+    }
+  }
   try {
     const { orderNumber } = await createManualOrder(input);
     return { ok: true, orderNumber };

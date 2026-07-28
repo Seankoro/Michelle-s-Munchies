@@ -11,6 +11,37 @@ import { rateLimit } from "@/lib/rate-limit";
 
 export type ReviewResult = { ok: true } | { error: string };
 
+/** Never trust more than a few photos per review. */
+const MAX_REVIEW_IMAGES = 3;
+/** Generous headroom over a real `{supabase-url}/.../{uuid}/{uuid}.ext` URL. */
+const MAX_IMAGE_URL_LENGTH = 300;
+
+/**
+ * Drop any imageUrl that doesn't point at this user's own folder in the
+ * `review-images` public bucket, so a submitted review can't reference
+ * unrelated storage objects, and cap the count so the gallery can't be
+ * bloated with an unbounded number of entries.
+ */
+function sanitizeReviewImageUrls(userId: string, imageUrls: string[]): string[] {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!supabaseUrl) return [];
+  const prefix = `${supabaseUrl}/storage/v1/object/public/review-images/${userId}/`;
+  // After the user's own folder a real upload is a single `{uuid}.{ext}` file, so
+  // require exactly that shape. It rejects path traversal like
+  // `.../<uid>/../../avatars/x.png`, which would otherwise pass a bare startsWith.
+  const fileName = /^[a-z0-9-]+\.[a-z0-9]+$/i;
+  return imageUrls
+    .filter((url): url is string => typeof url === "string")
+    .filter(
+      (url) =>
+        url.length > 0 &&
+        url.length <= MAX_IMAGE_URL_LENGTH &&
+        url.startsWith(prefix) &&
+        fileName.test(url.slice(prefix.length)),
+    )
+    .slice(0, MAX_REVIEW_IMAGES);
+}
+
 export async function submitReview(
   slug: string,
   productId: string,
@@ -31,8 +62,11 @@ export async function submitReview(
     return { error: "You’re submitting too quickly. Please wait a few minutes and try again." };
   }
 
-  // Photos only when the photo-reviews feature is on.
-  const photos = settings.features.photoReviews ? imageUrls : [];
+  // Photos only when the photo-reviews feature is on, and only ones that are
+  // genuinely this user's own uploads to the review-images bucket.
+  const photos = settings.features.photoReviews
+    ? sanitizeReviewImageUrls(user.id, imageUrls)
+    : [];
   const result = await upsertReview(user.id, productId, rating, body, photos);
   if ("ok" in result) revalidatePath(`/menu/${slug}`);
   return result;

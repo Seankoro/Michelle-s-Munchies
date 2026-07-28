@@ -79,11 +79,15 @@ export default function AdminBoxesPage() {
   async function save() {
     if (!draft) return;
     setError("");
+    // Guard against a stray non-numeric character, which would otherwise send NaN
+    // to the item-count or price and fail the save on a NOT NULL column.
+    const itemCountParsed = parseInt(draft.itemCountStr, 10);
+    const priceParsed = parseFloat(draft.priceStr);
     const input = {
       name: draft.name.trim(),
       slug: draft.slug.trim() || slugify(draft.name),
-      itemCount: Math.max(1, parseInt(draft.itemCountStr || "1", 10)),
-      priceCents: Math.max(0, Math.round(parseFloat(draft.priceStr || "0") * 100)),
+      itemCount: Number.isFinite(itemCountParsed) ? Math.max(1, itemCountParsed) : 1,
+      priceCents: Number.isFinite(priceParsed) ? Math.max(0, Math.round(priceParsed * 100)) : 0,
       eligibleCategory: draft.eligibleCategory.trim() || null,
       isActive: draft.isActive,
       sortOrder: draft.sortOrder,
