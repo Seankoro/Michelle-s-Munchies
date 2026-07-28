@@ -11,12 +11,20 @@
    `inline` makes the utilities reference the variable rather than freezing a
    value at build time. */
 @theme inline {
-  --font-display: var(--font-fraunces);
+  /* Storefront headings render in Michelle's handwriting, falling back to
+     Fraunces for the few glyphs it lacks (hyphen, straight quote, etc.). The
+     admin is carved back to Fraunces via the .admin-fonts scope below. */
+  --font-display: var(--font-michelle), var(--font-fraunces);
   --font-body: var(--font-nunito);
-  /* Michelle's handwriting -> the `font-hand` utility. Scoped to brand text.
-     To take all storefront headings to handwriting later, point --font-display
-     here and carve the admin back to Fraunces. */
   --font-hand: var(--font-michelle);
+}
+
+/* The admin panel keeps the readable serif for headings; the handwriting is
+   storefront-only so admin data stays crisp. @theme inline bakes the value into
+   the font-display utility, so neutralise the raw handwriting var itself rather
+   than the token. */
+.admin-fonts {
+  --font-michelle: var(--font-fraunces);
 }
 
 @theme {

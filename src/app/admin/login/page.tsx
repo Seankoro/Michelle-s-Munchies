@@ -26,7 +26,7 @@ export default function AdminLoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-cream px-6">
+    <main className="admin-fonts flex min-h-screen items-center justify-center bg-cream px-6">
       <div className="w-full max-w-sm rounded-2xl border border-line bg-white p-8 shadow-soft">
         <div className="flex flex-col items-center text-center">
           <RibbonBow withTails={false} className="h-10 w-12" />

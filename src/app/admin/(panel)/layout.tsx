@@ -12,8 +12,10 @@ export const metadata: Metadata = {
 // reach here, and again by requireAdmin() inside every admin Server Action.
 export default function AdminPanelLayout({ children }: { children: ReactNode }) {
   return (
-    <AdminStoreProvider>
-      <AdminShell>{children}</AdminShell>
-    </AdminStoreProvider>
+    <div className="admin-fonts">
+      <AdminStoreProvider>
+        <AdminShell>{children}</AdminShell>
+      </AdminStoreProvider>
+    </div>
   );
 }
