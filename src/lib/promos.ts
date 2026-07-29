@@ -1,7 +1,7 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatPrice } from "@/lib/catalog";
-import { toISODate } from "@/lib/order";
+import { singaporeDateString } from "@/lib/time";
 
 export type PromoDiscountType = "percent" | "amount" | "free_delivery";
 
@@ -24,6 +24,9 @@ export type PromoValidation =
 export type PromoContext = {
   /** Signed-in customer, null for guests, needed for per-customer and first-order rules. */
   userId?: string | null;
+  /** The buyer's email, the only identity a guest order carries, so the
+   *  per-customer cap still means something without a sign-in. */
+  email?: string | null;
   /** Current delivery fee, used by the `free_delivery` discount type. */
   deliveryFeeCents?: number;
 };
@@ -39,14 +42,18 @@ export async function validatePromo(
 ): Promise<PromoValidation> {
   const code = rawCode.trim().toUpperCase();
   if (!code) return { ok: false, error: "Enter a code." };
-  const { userId = null, deliveryFeeCents = 0 } = context;
+  const { userId = null, email = null, deliveryFeeCents = 0 } = context;
+  const normalizedEmail = (email ?? "").trim();
 
   const admin = createAdminClient();
   const { data } = await admin.from("promo_codes").select("*").eq("code", code).maybeSingle();
   const promo = data as PromoRow | null;
 
   if (!promo || !promo.active) return { ok: false, error: "That code isn’t valid." };
-  if (promo.expires_at && promo.expires_at < toISODate(new Date())) {
+  // Expiry is a date-only column, so compare it against today in Singapore. The
+  // server runs in UTC, where the first eight hours of a Singapore day still
+  // read as yesterday and an expired code would keep working.
+  if (promo.expires_at && promo.expires_at < singaporeDateString()) {
     return { ok: false, error: "That code has expired." };
   }
   if (subtotalCents < promo.min_order_cents) {
@@ -81,14 +88,23 @@ export async function validatePromo(
     }
   }
 
-  // Per-customer cap, only enforceable for signed-in customers.
-  if (promo.per_customer_limit != null && userId) {
-    const { count } = await admin
+  // Per-customer cap. A signed-in customer is counted by account. Most orders
+  // here are placed without signing in, so a guest is counted by the email on
+  // their past orders instead, matched case-insensitively because an order keeps
+  // the address exactly as it was typed. With neither identity, at "Apply code"
+  // before the email is filled in, the cap is left to the placeOrder re-check.
+  if (promo.per_customer_limit != null && (userId || normalizedEmail)) {
+    const query = admin
       .from("orders")
       .select("id", { count: "exact", head: true })
       .eq("promo_code", code)
-      .eq("user_id", userId)
       .neq("status", "cancelled");
+    // `_` and `%` are wildcards to ilike and `_` is common in an address, so
+    // escape them and the match stays an exact one, case aside.
+    const emailPattern = normalizedEmail.replace(/[\\%_]/g, (char) => `\\${char}`);
+    const { count } = await (userId
+      ? query.eq("user_id", userId)
+      : query.ilike("email", emailPattern));
     if ((count ?? 0) >= promo.per_customer_limit) {
       return { ok: false, error: "You’ve already used this code." };
     }

@@ -13,7 +13,8 @@ export type RawCartLine = {
   productName?: string | null;
   quantity: number;
   selections: RawSelection[];
-  /** Carried through unchanged so a personalised line keeps its message and photo. */
+  /** Kept, capped, and checked against the product so a personalised line keeps
+   *  its message and photo without becoming a free-text channel to Michelle. */
   personalisation?: Personalisation;
 };
 
@@ -25,12 +26,50 @@ export type RawCartLine = {
  */
 export type SkippedLine = { name: string; href?: string };
 
+/** Longest personalisation message we keep, the same cap the form applies. */
+const MAX_PERSONALISATION_LENGTH = 120;
+/** A real upload is `{productId}/{uuid}.{ext}`, so require exactly that shape. */
+const UPLOADED_FILE_RE = /^[a-z0-9-]+\.[a-z0-9]+$/i;
+
+/**
+ * Keep a line's personalisation only where the product actually offers it. The
+ * cart is client state and checkout is a public action, so an edited or forged
+ * line could otherwise pin a piping instruction on a treat Michelle never
+ * personalises, print a wall of text across her packing slip, or point the
+ * "reference photo" link in her admin panel at someone else's site. These are
+ * the same checks the upload action makes, so both ends agree on what counts.
+ */
+function sanitizePersonalisation(
+  product: Product,
+  raw: Personalisation | undefined,
+): Personalisation | undefined {
+  if (!raw || !product.personalisation) return undefined;
+  const message = (raw.message ?? "").trim().slice(0, MAX_PERSONALISATION_LENGTH);
+  const photo = raw.photoUrl ?? "";
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+  // The photo must be an upload sitting in this product's own folder of our
+  // public bucket. Matching the file name too rejects path traversal like
+  // `.../<id>/../../avatars/x.png`, which a bare startsWith would let through.
+  const prefix = `${supabaseUrl}/storage/v1/object/public/personalisation-images/${product.id}/`;
+  const keepPhoto =
+    Boolean(supabaseUrl) &&
+    product.personalisation.allowPhoto &&
+    photo.startsWith(prefix) &&
+    UPLOADED_FILE_RE.test(photo.slice(prefix.length));
+  if (!message && !keepPhoto) return undefined;
+  return {
+    ...(message ? { message } : {}),
+    ...(keepPhoto ? { photoUrl: photo } : {}),
+  };
+}
+
 /**
  * Re-resolve "raw" cart lines against the current catalog, with live price and
  * availability, options matched by label, and the cart key built like
- * OptionPicker so lines merge with menu adds. Lines whose product is gone or
- * sold-out, or whose required options no longer exist, are reported in `skipped`
- * by name, with a deep link to re-add them where one exists.
+ * OptionPicker so lines merge with menu adds. Lines whose product is gone,
+ * sold-out, short on tracked stock, or whose chosen or required options no
+ * longer exist, are reported in `skipped` by name, with a deep link to re-add
+ * them where one exists.
  *
  * Shared by "Order again" in buildReorderCart and shared-cart links in
  * resolveSharedCart so the resolution logic lives in one place.
@@ -82,6 +121,13 @@ export async function resolveCartLines(
       else pushSkipped(line.productName ?? "an unavailable item");
       continue;
     }
+    // A tracked treat can only be sold down to what is actually left, the same
+    // ceiling the add-to-an-existing-order flow uses, so one cart can't commit
+    // Michelle to more than she has. Untracked stock stays unlimited.
+    if (product.stockCount != null && line.quantity > product.stockCount) {
+      skipped.push({ name: product.name, href: menuHref(product) });
+      continue;
+    }
 
     const selectedOptions: SelectedOption[] = [];
     const valueIds: string[] = [];
@@ -91,11 +137,20 @@ export async function resolveCartLines(
       const chosen =
         line.selections.find((s) => s.optionName === option.name) ??
         line.selections.find((s) => option.values.some((v) => v.label === s.valueLabel));
-      const value = chosen
+      const chosenValue = chosen
         ? option.values.find((v) => v.label === chosen.valueLabel)
-        : option.required
-          ? option.values[0]
-          : undefined;
+        : undefined;
+      // A value Michelle has unticked counts as gone. The line lands in
+      // `skipped` with a link to its page, rather than reaching the bake list as
+      // a flavour she ran out of, and the required fallback below picks a value
+      // she can still make instead of blindly taking the first one.
+      if (chosenValue?.isAvailable === false) {
+        mismatch = true;
+        break;
+      }
+      const value =
+        chosenValue ??
+        (option.required ? option.values.find((v) => v.isAvailable !== false) : undefined);
       if (option.required && !value) {
         mismatch = true;
         break;
@@ -110,7 +165,8 @@ export async function resolveCartLines(
       }
     }
     if (mismatch) {
-      // Product still sold, but a required option is gone; point at its page.
+      // Product still sold, but a chosen value sold out or a required option is
+      // gone; point at its page so they can choose again.
       skipped.push({ name: product.name, href: menuHref(product) });
       continue;
     }
@@ -122,6 +178,8 @@ export async function resolveCartLines(
     const unitPriceCents =
       product.basePriceCents + selectedOptions.reduce((sum, o) => sum + o.priceDeltaCents, 0);
 
+    const personalisation = sanitizePersonalisation(product, line.personalisation);
+
     items.push({
       key,
       productId: product.id,
@@ -130,7 +188,7 @@ export async function resolveCartLines(
       unitPriceCents,
       quantity: line.quantity,
       selectedOptions,
-      ...(line.personalisation ? { personalisation: line.personalisation } : {}),
+      ...(personalisation ? { personalisation } : {}),
     });
   }
 

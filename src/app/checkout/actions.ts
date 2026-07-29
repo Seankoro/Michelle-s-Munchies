@@ -12,8 +12,10 @@ import { resolveDeliveryFeeCents } from "@/lib/delivery-pricing";
 import { formatPrice } from "@/lib/catalog";
 import { rateLimit } from "@/lib/rate-limit";
 import { validatePromo, type PromoValidation } from "@/lib/promos";
-import { validateBundleForCheckout } from "@/lib/bundles";
-import { validateBoxForCheckout, validateFlavourBoxForCheckout } from "@/lib/boxes";
+import { fetchBundleBySlug, validateBundleForCheckout } from "@/lib/bundles";
+import { fetchBoxBySlug, validateBoxForCheckout, validateFlavourBoxForCheckout } from "@/lib/boxes";
+import { fetchProductById } from "@/lib/products";
+import type { BoxTemplate, CartItem, SelectedOption } from "@/lib/types";
 import { recordIntent, markConverted } from "@/lib/checkout-intents";
 import { resolveCartLines } from "@/lib/cart-resolve";
 import { EMAIL_RE } from "@/lib/text";
@@ -121,9 +123,53 @@ export async function estimateDeliveryFeeAction(
 }
 
 /**
+ * Group repeated picks into "2× Chocolate" rows the way the box pickers do, so
+ * what the bake list and packing slip show is built from the picks the server
+ * validated, not from a list the client sent alongside them.
+ */
+function pickRows(optionName: string, labels: string[]): SelectedOption[] {
+  const counts = new Map<string, number>();
+  for (const label of labels) counts.set(label, (counts.get(label) ?? 0) + 1);
+  return [...counts].map(([label, quantity]) => ({
+    optionName,
+    valueLabel: `${quantity}× ${label}`,
+    priceDeltaCents: 0,
+  }));
+}
+
+/**
+ * A special line rebuilt around what the server just validated. The quantity and
+ * the cart key stay as sent, while the name, the contents, and the price come
+ * from the database. Nothing here is personalisable, so a personalisation the
+ * request carried is dropped rather than passed on as an instruction.
+ */
+function specialLine(
+  item: CartItem,
+  name: string,
+  selectedOptions: SelectedOption[],
+  unitPriceCents: number,
+): CartItem {
+  return { ...item, name, selectedOptions, unitPriceCents, personalisation: undefined };
+}
+
+/** One build-a-box pick, `productId` or `productId~flavour`, named the way
+ *  BoxBuilder names it, so the order reads like the page it was built on. */
+function boxPickLabel(box: BoxTemplate, pick: string): string {
+  const separator = pick.indexOf("~");
+  const productId = separator === -1 ? pick : pick.slice(0, separator);
+  const flavour = separator === -1 ? "" : pick.slice(separator + 1);
+  const name = box.eligibleProducts.find((p) => p.id === productId)?.name ?? "Treat";
+  return flavour ? `${flavour} ${name}` : name;
+}
+
+/**
  * Re-validate and authoritatively re-price "special" cart lines server-side,
  * meaning bundles and build-a-box lines. The client-sent price and contents are
  * never trusted. The DB price wins, and unavailable items are rejected.
+ *
+ * The name and the contents are rebuilt from the database too. An order line for
+ * one of these carries no product id, so its name is the only record of what was
+ * bought, and Michelle bakes from that name on the bake list and packing slip.
  */
 async function sanitizeSpecialLines(
   items: CreateOrderInput["items"],
@@ -140,7 +186,14 @@ async function sanitizeSpecialLines(
       if (!v.available) {
         return { ok: false, error: `“${item.name}” has a sold-out item. Please remove it.` };
       }
-      out.push({ ...item, unitPriceCents: v.priceCents });
+      const bundle = await fetchBundleBySlug(slug);
+      if (!bundle) return { ok: false, error: `“${item.name}” is no longer available.` };
+      const contents = bundle.items.map((i) => ({
+        optionName: "Includes",
+        valueLabel: `${i.quantity}× ${i.productName}`,
+        priceDeltaCents: 0,
+      }));
+      out.push(specialLine(item, bundle.name, contents, v.priceCents));
     } else if (item.productId.startsWith("box:")) {
       if (!features.buildABox) {
         return { ok: false, error: "Build-a-box isn’t available right now." };
@@ -151,7 +204,13 @@ async function sanitizeSpecialLines(
       const v = await validateBoxForCheckout(slug, flatIds);
       if (!v) return { ok: false, error: `“${item.name}” is no longer available.` };
       if ("error" in v) return { ok: false, error: v.error };
-      out.push({ ...item, unitPriceCents: v.priceCents });
+      const box = await fetchBoxBySlug(slug);
+      if (!box) return { ok: false, error: `“${item.name}” is no longer available.` };
+      const picks = pickRows(
+        "Includes",
+        flatIds.map((pick) => boxPickLabel(box, pick)),
+      );
+      out.push(specialLine(item, box.name, picks, v.priceCents));
     } else if (item.productId.startsWith("fbox:")) {
       const productId = item.productId.slice("fbox:".length);
       // Cart key encodes the picks as fbox::<productId>::<count>::<label|label|...>
@@ -161,7 +220,12 @@ async function sanitizeSpecialLines(
       const v = await validateFlavourBoxForCheckout(productId, count, labels);
       if (!v) return { ok: false, error: `“${item.name}” is no longer available.` };
       if ("error" in v) return { ok: false, error: v.error };
-      out.push({ ...item, unitPriceCents: v.priceCents });
+      const product = await fetchProductById(productId);
+      const size = product?.flavourBox?.sizes.find((s) => s.count === count);
+      if (!product || !size) return { ok: false, error: `“${item.name}” is no longer available.` };
+      out.push(
+        specialLine(item, `${product.name} · ${size.label}`, pickRows(size.label, labels), v.priceCents),
+      );
     } else {
       plain.push(item);
     }
@@ -212,7 +276,15 @@ export async function recordCheckoutIntentAction(
   const normalizedEmail = email.trim().toLowerCase();
   if (!EMAIL_RE.test(normalizedEmail)) return;
   if (!(await rateLimit("checkout-intent", { limit: 20, windowMs: 5 * 60_000 }))) return;
-  if (!(await rateLimit(`checkout-intent:${normalizedEmail}`, { limit: 3, windowMs: 60 * 60_000 }))) {
+  // Keyed on the address alone, no client IP, so the cap really is "this many
+  // reminders to this inbox" rather than that many per source address.
+  if (
+    !(await rateLimit(`checkout-intent:${normalizedEmail}`, {
+      limit: 3,
+      windowMs: 60 * 60_000,
+      scope: "global",
+    }))
+  ) {
     return;
   }
   if (!(await fetchStoreSettings()).features.abandonedCart) return;
@@ -244,11 +316,16 @@ async function fetchGiftLine(productId: string): Promise<{ name: string; slug: s
   return { name: row.name, slug: row.slug };
 }
 
-/** Checkout "Apply code", validates a promo against the current subtotal and context. */
+/** Checkout "Apply code", validates a promo against the current subtotal and
+ *  context. `email` is what the customer has typed into the form so far, so a
+ *  guest's per-customer cap is checked here and not only when they place the
+ *  order. Blank until they have filled it in, which is fine, placeOrder always
+ *  re-validates with the real address. */
 export async function applyPromo(
   code: string,
   subtotalCents: number,
   deliveryFeeCents = 0,
+  email = "",
 ): Promise<PromoValidation> {
   // Throttle to deter promo-code guessing.
   if (!(await rateLimit("apply-promo", { limit: 20, windowMs: 5 * 60_000 }))) {
@@ -261,7 +338,7 @@ export async function applyPromo(
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  return validatePromo(code, subtotalCents, { userId: user?.id ?? null, deliveryFeeCents });
+  return validatePromo(code, subtotalCents, { userId: user?.id ?? null, email, deliveryFeeCents });
 }
 
 /**
@@ -369,9 +446,15 @@ export async function placeOrder(
 
     // A gift the recipient will self-schedule legitimately has no address or time
     // window yet; every other order must supply both, checked here because the
-    // client validation can be bypassed by a direct POST.
+    // client validation can be bypassed by a direct POST. Only a delivery gift
+    // can be self-scheduled, since what the recipient fills in is their own
+    // address, so a pickup order can't claim to be one and skip the checks. The
+    // checkout form offers it on the same terms.
     const giftSelfSchedule = Boolean(
-      settings.features.gifting && input.isGift && input.recipientScheduling,
+      settings.features.gifting &&
+        input.isGift &&
+        input.recipientScheduling &&
+        input.fulfillmentType === "delivery",
     );
     if (input.fulfillmentType === "delivery" && !giftSelfSchedule) {
       const postal = input.address?.postalCode?.trim() ?? "";
@@ -382,6 +465,10 @@ export async function placeOrder(
     if (!giftSelfSchedule && (!input.timeWindow || !settings.timeWindows.includes(input.timeWindow))) {
       return { ok: false, error: "Please choose a time window." };
     }
+    // The recipient chooses the window later, so a self-scheduled gift stores
+    // none. Anything the request carried was never checked against the
+    // allowlist above and must not reach the order or the bake list.
+    const timeWindow = giftSelfSchedule ? "" : input.timeWindow;
 
     const deliveryFeeCents = await resolveDeliveryFeeCents(
       input.fulfillmentType,
@@ -418,13 +505,13 @@ export async function placeOrder(
       }
     }
     // Per-time-window cap, where null or 0 means unlimited.
-    if (settings.perWindowCap && settings.perWindowCap > 0 && input.timeWindow) {
+    if (settings.perWindowCap && settings.perWindowCap > 0 && timeWindow) {
       const admin = createAdminClient();
       const { count } = await admin
         .from("orders")
         .select("id", { count: "exact", head: true })
         .eq("scheduled_date", input.scheduledDate)
-        .eq("time_window", input.timeWindow)
+        .eq("time_window", timeWindow)
         .neq("status", "cancelled");
       if ((count ?? 0) >= settings.perWindowCap) {
         return { ok: false, error: "That time slot is fully booked. Please pick another window." };
@@ -434,13 +521,22 @@ export async function placeOrder(
     // Always keep at least S$0.50 chargeable.
     let room = Math.max(0, subtotalCents + deliveryFeeCents - 50);
 
-    // Promo code, validated server-side and available to guests too. Skipped if
-    // the promo feature is turned off.
+    // Promo code, validated server-side and available to guests too.
     let promoDiscount = 0;
     let appliedPromo: string | null = null;
-    if (promoCode.trim() && settings.features.promos) {
+    if (promoCode.trim()) {
+      if (!settings.features.promos) {
+        // Michelle can pause promo codes while a checkout page is open, and that
+        // page is still showing the discount. Say so instead of quietly charging
+        // the full amount.
+        return {
+          ok: false,
+          error: "Promo codes have just been paused. Please remove the code, then place your order again.",
+        };
+      }
       const result = await validatePromo(promoCode, subtotalCents, {
         userId: user?.id ?? null,
+        email: input.email,
         deliveryFeeCents,
       });
       if (result.ok) {
@@ -460,7 +556,15 @@ export async function placeOrder(
     // Rewards points for signed-in customers only, filling whatever discount room remains.
     let pointsRedeemed = 0;
     let pointsDiscount = 0;
-    if (redeemPoints && user && settings.features.rewards) {
+    if (redeemPoints && user) {
+      if (!settings.features.rewards) {
+        // Same as the promo case: the total on their screen includes the points
+        // discount, so refuse rather than charge more than the page promised.
+        return {
+          ok: false,
+          error: "Rewards points have just been paused. Please untick “Use my points”, then place your order again.",
+        };
+      }
       const { data: ledger } = await supabase
         .from("points_ledger")
         .select("delta")
@@ -527,6 +631,10 @@ export async function placeOrder(
           recipientPhone: normalizedRecipientPhone ?? undefined,
           noteAnswers,
           isGift: settings.features.gifting ? input.isGift ?? false : false,
+          // Only a self-scheduled gift gets a recipient link, so mint one from
+          // the checked flag rather than from what the request asked for.
+          recipientScheduling: giftSelfSchedule,
+          timeWindow,
           deliveryFeeCents,
         },
         user?.id ?? null,

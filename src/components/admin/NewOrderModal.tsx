@@ -6,14 +6,61 @@ import { AdminModal } from "@/components/admin/AdminModal";
 import { formatPrice } from "@/lib/catalog";
 import { compactInputClass as inputClass } from "@/lib/ui";
 import { cn } from "@/lib/cn";
+import type { Product, ProductOptionValue, SelectedOption } from "@/lib/types";
 
-type Line = { productId: string; quantity: number };
+type Line = {
+  /** Empty on a custom line, which is off-catalogue by definition. */
+  productId: string;
+  quantity: number;
+  /** Chosen value id per option group id, the same shape the storefront keeps. */
+  choices: Record<string, string>;
+  /** Present only on a custom line: the wording and the price agreed on WhatsApp. */
+  custom?: { name: string; priceText: string };
+};
+
+/** One line resolved to exactly what gets written on the order. */
+type PricedLine = {
+  productId: string;
+  name: string;
+  unitPriceCents: number;
+  quantity: number;
+  selectedOptions: SelectedOption[];
+  /** Name of a required group with nothing picked, so submit can refuse. */
+  missingOption: string | null;
+};
+
+/**
+ * Pre-pick the first in-stock value of every group, the same way the storefront
+ * picker does, so the usual case stays one tap and a required size is never
+ * quietly left empty.
+ */
+function defaultChoices(product: Product | undefined): Record<string, string> {
+  const choices: Record<string, string> = {};
+  for (const option of product?.options ?? []) {
+    const first = option.values.find((v) => v.isAvailable !== false) ?? option.values[0];
+    if (first) choices[option.id] = first.id;
+  }
+  return choices;
+}
+
+/**
+ * One choice as a single string: the label, what it adds, and a sold-out marker.
+ * Sold out is a warning here rather than a block, because Michelle has already
+ * agreed to bake whatever the customer asked for on WhatsApp.
+ */
+function valueLabel(value: ProductOptionValue): string {
+  const delta = value.priceDeltaCents > 0 ? ` +${formatPrice(value.priceDeltaCents)}` : "";
+  const soldOut = value.isAvailable === false ? " (sold out)" : "";
+  return `${value.label}${delta}${soldOut}`;
+}
 
 /**
  * Log an order taken over WhatsApp or the phone. It becomes a real order, so it
  * shows in the list and flows into the bake list, packing slips, and Insights.
- * Items are picked from the live catalogue (at base price) so prep tools resolve
- * them; payment starts pending, to be marked paid once PayNow lands.
+ * Items are picked from the live catalogue with their sizes and flavours, priced
+ * base plus the chosen deltas exactly like the storefront, and anything the
+ * catalogue can't express goes on a custom line with its agreed amount. Payment
+ * starts pending, to be marked paid once PayNow lands.
  */
 export function NewOrderModal({ onClose }: { onClose: () => void }) {
   const { products, settings, orders, addManualOrder } = useAdmin();
@@ -30,20 +77,62 @@ export function NewOrderModal({ onClose }: { onClose: () => void }) {
   const [postal, setPostal] = useState("");
   const [notes, setNotes] = useState("");
   const [lines, setLines] = useState<Line[]>(() =>
-    available[0] ? [{ productId: available[0].id, quantity: 1 }] : [],
+    available[0]
+      ? [{ productId: available[0].id, quantity: 1, choices: defaultChoices(available[0]) }]
+      : [],
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const chosen = lines
-    .map((line) => ({
-      product: available.find((p) => p.id === line.productId),
-      quantity: line.quantity,
-    }))
-    .filter((x): x is { product: NonNullable<typeof x.product>; quantity: number } =>
-      Boolean(x.product),
-    );
-  const subtotalCents = chosen.reduce((sum, x) => sum + x.product.basePriceCents * x.quantity, 0);
+  // Price every line the way the storefront does: base plus each chosen value's
+  // delta, with the chosen labels carried onto the order so the bake list and
+  // the packing slip say which size to make. A custom line carries its own
+  // agreed amount, since nothing in the catalogue can price it.
+  const priced: PricedLine[] = lines.flatMap((line) => {
+    const custom = line.custom;
+    if (custom) {
+      const customName = custom.name.trim();
+      if (!customName) return [];
+      return [
+        {
+          productId: "",
+          name: customName,
+          unitPriceCents: Math.max(0, Math.round(parseFloat(custom.priceText || "0") * 100)),
+          quantity: line.quantity,
+          selectedOptions: [],
+          missingOption: null,
+        },
+      ];
+    }
+    const product = available.find((p) => p.id === line.productId);
+    if (!product) return [];
+    const selectedOptions: SelectedOption[] = [];
+    let missingOption: string | null = null;
+    for (const option of product.options) {
+      const value = option.values.find((v) => v.id === line.choices[option.id]);
+      if (!value) {
+        if (option.required && !missingOption) missingOption = option.name;
+        continue;
+      }
+      selectedOptions.push({
+        optionName: option.name,
+        valueLabel: value.label,
+        priceDeltaCents: value.priceDeltaCents,
+      });
+    }
+    return [
+      {
+        productId: product.id,
+        name: product.name,
+        unitPriceCents:
+          product.basePriceCents + selectedOptions.reduce((sum, o) => sum + o.priceDeltaCents, 0),
+        quantity: line.quantity,
+        selectedOptions,
+        missingOption,
+      },
+    ];
+  });
+  const subtotalCents = priced.reduce((sum, x) => sum + x.unitPriceCents * x.quantity, 0);
 
   // Warn (never block) when logging onto a blackout day or an over-cap day, so
   // Michelle can still override for a special case but is not caught out.
@@ -67,12 +156,23 @@ export function NewOrderModal({ onClose }: { onClose: () => void }) {
 
   async function submit() {
     setError("");
-    const items = chosen.map((x) => ({
-      productId: x.product.id,
-      name: x.product.name,
-      unitPriceCents: x.product.basePriceCents,
+    if (lines.some((l) => l.custom && !l.custom.name.trim())) {
+      setError("Name the custom item, or remove that line.");
+      return;
+    }
+    // A required size or flavour has to be on the order. There is no screen that
+    // can edit a line afterwards, and Michelle bakes what the line says.
+    const unanswered = priced.find((x) => x.missingOption !== null);
+    if (unanswered?.missingOption) {
+      setError(`Choose a ${unanswered.missingOption} for ${unanswered.name}.`);
+      return;
+    }
+    const items = priced.map((x) => ({
+      productId: x.productId,
+      name: x.name,
+      unitPriceCents: x.unitPriceCents,
       quantity: x.quantity,
-      selectedOptions: [],
+      selectedOptions: x.selectedOptions,
     }));
     if (items.length === 0) {
       setError("Add at least one item.");
@@ -159,51 +259,154 @@ export function NewOrderModal({ onClose }: { onClose: () => void }) {
           {/* Items */}
           <div>
             <p className="text-sm font-semibold">Items</p>
-            <div className="mt-2 flex flex-col gap-2">
-              {lines.map((line, index) => (
-                <div key={index} className="flex items-center gap-2">
-                  <select
-                    value={line.productId}
-                    onChange={(e) => setLine(index, { productId: e.target.value })}
-                    className={cn(inputClass, "flex-1")}
-                  >
-                    {available.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} · {formatPrice(p.basePriceCents)}
-                      </option>
+            <div className="mt-2 flex flex-col gap-3">
+              {lines.map((line, index) => {
+                const custom = line.custom;
+                const product = custom
+                  ? undefined
+                  : available.find((p) => p.id === line.productId);
+                return (
+                  <div key={index} className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      {custom ? (
+                        <input
+                          className={cn(inputClass, "flex-1")}
+                          value={custom.name}
+                          onChange={(e) =>
+                            setLine(index, {
+                              custom: { name: e.target.value, priceText: custom.priceText },
+                            })
+                          }
+                          placeholder="Custom item, e.g. 8 inch birthday cake"
+                          aria-label="Custom item"
+                        />
+                      ) : (
+                        <select
+                          value={line.productId}
+                          onChange={(e) => {
+                            // Option ids belong to the product, so start the new
+                            // one on its own defaults rather than carrying the
+                            // previous product's picks across.
+                            const next = available.find((p) => p.id === e.target.value);
+                            setLine(index, {
+                              productId: e.target.value,
+                              choices: defaultChoices(next),
+                            });
+                          }}
+                          className={cn(inputClass, "flex-1")}
+                        >
+                          {available.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name} · {formatPrice(p.basePriceCents)}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      <input
+                        type="number"
+                        min={1}
+                        value={line.quantity}
+                        onChange={(e) =>
+                          setLine(index, {
+                            quantity: Math.max(1, parseInt(e.target.value || "1", 10)),
+                          })
+                        }
+                        aria-label="Quantity"
+                        className={cn(inputClass, "w-16")}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setLines((prev) => prev.filter((_, i) => i !== index))}
+                        aria-label="Remove item"
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-blush-soft active:scale-90"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    {custom && (
+                      <label className="flex items-center gap-2 pl-1 text-xs font-semibold text-muted">
+                        Price each
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          className={cn(inputClass, "w-28 text-sm")}
+                          value={custom.priceText}
+                          onChange={(e) =>
+                            setLine(index, {
+                              custom: { name: custom.name, priceText: e.target.value },
+                            })
+                          }
+                          placeholder="0.00"
+                          aria-label="Custom item price"
+                        />
+                      </label>
+                    )}
+
+                    {product?.options.map((option) => (
+                      <label
+                        key={option.id}
+                        className="flex items-center gap-2 pl-1 text-xs font-semibold text-muted"
+                      >
+                        <span>
+                          {option.name}
+                          {option.required && <span className="text-rose-deep"> *</span>}
+                        </span>
+                        <select
+                          className={cn(inputClass, "flex-1 text-sm")}
+                          value={line.choices[option.id] ?? ""}
+                          onChange={(e) =>
+                            setLine(index, {
+                              choices: { ...line.choices, [option.id]: e.target.value },
+                            })
+                          }
+                        >
+                          {/* An optional group can genuinely be left off an order. */}
+                          {!option.required && <option value="">None</option>}
+                          {option.values.map((value) => (
+                            <option key={value.id} value={value.id}>
+                              {valueLabel(value)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
                     ))}
-                  </select>
-                  <input
-                    type="number"
-                    min={1}
-                    value={line.quantity}
-                    onChange={(e) =>
-                      setLine(index, { quantity: Math.max(1, parseInt(e.target.value || "1", 10)) })
-                    }
-                    aria-label="Quantity"
-                    className={cn(inputClass, "w-16")}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setLines((prev) => prev.filter((_, i) => i !== index))}
-                    aria-label="Remove item"
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-blush-soft active:scale-90"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
+                  </div>
+                );
+              })}
             </div>
-            <button
-              type="button"
-              onClick={() =>
-                setLines((prev) => [...prev, { productId: available[0]?.id ?? "", quantity: 1 }])
-              }
-              disabled={available.length === 0}
-              className="mt-2 rounded-full border border-line px-4 py-1.5 text-sm font-semibold transition hover:border-rose active:scale-95 disabled:opacity-50"
-            >
-              + Add item
-            </button>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setLines((prev) => [
+                    ...prev,
+                    {
+                      productId: available[0]?.id ?? "",
+                      quantity: 1,
+                      choices: defaultChoices(available[0]),
+                    },
+                  ])
+                }
+                disabled={available.length === 0}
+                className="rounded-full border border-line px-4 py-1.5 text-sm font-semibold transition hover:border-rose active:scale-95 disabled:opacity-50"
+              >
+                + Add item
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setLines((prev) => [
+                    ...prev,
+                    { productId: "", quantity: 1, choices: {}, custom: { name: "", priceText: "" } },
+                  ])
+                }
+                className="rounded-full border border-line px-4 py-1.5 text-sm font-semibold transition hover:border-rose active:scale-95"
+              >
+                + Custom item
+              </button>
+            </div>
           </div>
 
           {/* Fulfilment */}
