@@ -57,20 +57,47 @@ export async function fetchAdminBundles(): Promise<AdminBundle[]> {
   }));
 }
 
+/**
+ * Swap a bundle's items for a new set. There is no transaction across the delete
+ * and the insert, so the old rows are read first and put back if the insert
+ * fails. Otherwise a failed save would leave the bundle active and on sale at
+ * full price with nothing inside it.
+ */
 async function replaceBundleItems(
   bundleId: string,
   items: { productId: string; quantity: number }[],
 ) {
   const supabase = createAdminClient();
-  await supabase.from("bundle_items").delete().eq("bundle_id", bundleId);
-  if (items.length > 0) {
-    const rows = items.map((i) => ({
-      bundle_id: bundleId,
-      product_id: i.productId,
-      quantity: Math.max(1, i.quantity),
-    }));
-    const { error } = await supabase.from("bundle_items").insert(rows);
-    if (error) throw new Error(`Failed to save bundle items: ${error.message}`);
+  // Build and check the new rows before deleting anything, so a quantity typed
+  // wrongly in the admin form can't be the reason the items disappear.
+  const rows = items.map((i) => {
+    const quantity = Math.max(1, Math.round(i.quantity));
+    if (!Number.isFinite(quantity)) {
+      throw new Error("Each bundle item needs a quantity of at least 1.");
+    }
+    return { bundle_id: bundleId, product_id: i.productId, quantity };
+  });
+
+  const { data: existing, error: readError } = await supabase
+    .from("bundle_items")
+    .select("product_id, quantity")
+    .eq("bundle_id", bundleId);
+  if (readError) throw new Error(`Failed to read bundle items: ${readError.message}`);
+  const previous = ((existing as { product_id: string; quantity: number }[] | null) ?? []).map(
+    (row) => ({ bundle_id: bundleId, product_id: row.product_id, quantity: row.quantity }),
+  );
+
+  const { error: clearError } = await supabase
+    .from("bundle_items")
+    .delete()
+    .eq("bundle_id", bundleId);
+  if (clearError) throw new Error(`Failed to save bundle items: ${clearError.message}`);
+
+  if (rows.length === 0) return;
+  const { error } = await supabase.from("bundle_items").insert(rows);
+  if (error) {
+    if (previous.length > 0) await supabase.from("bundle_items").insert(previous);
+    throw new Error(`Failed to save bundle items: ${error.message}`);
   }
 }
 
@@ -90,7 +117,15 @@ export async function createBundle(input: NewBundle): Promise<void> {
     .select("id")
     .single();
   if (error) throw new Error(`Failed to create bundle: ${error.message}`);
-  await replaceBundleItems((data as { id: string }).id, input.items);
+  const bundleId = (data as { id: string }).id;
+  try {
+    await replaceBundleItems(bundleId, input.items);
+  } catch (e) {
+    // The bundle row is already saved, so drop it rather than leave an active
+    // bundle on the storefront with no items in it.
+    await supabase.from("bundles").delete().eq("id", bundleId);
+    throw e;
+  }
 }
 
 export async function updateBundle(id: string, input: NewBundle): Promise<void> {
@@ -166,16 +201,35 @@ export async function fetchAdminBoxTemplates(): Promise<AdminBoxTemplate[]> {
   }));
 }
 
+/** Same delete-then-insert swap as bundles, and the same restore if it fails, so
+ *  a box is never left active with none of its products ticked. */
 async function replaceBoxItems(boxId: string, productIds: string[]) {
   const supabase = createAdminClient();
-  await supabase.from("box_template_items").delete().eq("box_template_id", boxId);
-  if (productIds.length > 0) {
-    const rows = productIds.map((productId) => ({
-      box_template_id: boxId,
-      product_id: productId,
-    }));
-    const { error } = await supabase.from("box_template_items").insert(rows);
-    if (error) throw new Error(`Failed to save box items: ${error.message}`);
+  const { data: existing, error: readError } = await supabase
+    .from("box_template_items")
+    .select("product_id")
+    .eq("box_template_id", boxId);
+  if (readError) throw new Error(`Failed to read box items: ${readError.message}`);
+  const previous = ((existing as { product_id: string }[] | null) ?? []).map((row) => ({
+    box_template_id: boxId,
+    product_id: row.product_id,
+  }));
+
+  const { error: clearError } = await supabase
+    .from("box_template_items")
+    .delete()
+    .eq("box_template_id", boxId);
+  if (clearError) throw new Error(`Failed to save box items: ${clearError.message}`);
+
+  if (productIds.length === 0) return;
+  const rows = productIds.map((productId) => ({
+    box_template_id: boxId,
+    product_id: productId,
+  }));
+  const { error } = await supabase.from("box_template_items").insert(rows);
+  if (error) {
+    if (previous.length > 0) await supabase.from("box_template_items").insert(previous);
+    throw new Error(`Failed to save box items: ${error.message}`);
   }
 }
 
@@ -195,7 +249,14 @@ export async function createBoxTemplate(input: NewBoxTemplate): Promise<void> {
     .select("id")
     .single();
   if (error) throw new Error(`Failed to create box: ${error.message}`);
-  await replaceBoxItems((data as { id: string }).id, input.productIds);
+  const boxId = (data as { id: string }).id;
+  try {
+    await replaceBoxItems(boxId, input.productIds);
+  } catch (e) {
+    // Drop the half-made box rather than leave one live with no products.
+    await supabase.from("box_templates").delete().eq("id", boxId);
+    throw e;
+  }
 }
 
 export async function updateBoxTemplate(id: string, input: NewBoxTemplate): Promise<void> {

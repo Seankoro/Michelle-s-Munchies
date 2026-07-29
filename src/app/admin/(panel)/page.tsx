@@ -59,7 +59,11 @@ export default function AdminDashboardPage() {
   const readyCount = orders.filter((o) =>
     ["ready", "out_for_delivery"].includes(o.status),
   ).length;
-  const awaitingPayment = orders.filter((o) => o.paymentStatus === "pending").length;
+  // Cancelled orders keep their pending payment status, so they'd otherwise pile
+  // up here forever and make the chase list look longer than it is.
+  const awaitingPayment = orders.filter(
+    (o) => o.status !== "cancelled" && o.paymentStatus === "pending",
+  ).length;
   const revenue = orders
     .filter((o) => o.paymentStatus === "paid" && o.status !== "cancelled")
     .reduce((sum, o) => sum + o.totalCents, 0);

@@ -31,30 +31,46 @@ export default function AdminNewsletterPage() {
     if (!confirm(`Send this to all ${audienceLabel}?`)) return;
     setBusy("send");
     setMessage(null);
-    const result = await sendNewsletterAction(subject, body);
-    setBusy(null);
-    if (result.ok) {
+    try {
+      const result = await sendNewsletterAction(subject, body);
+      if (result.ok) {
+        setMessage({
+          kind: "ok",
+          text: `Sent to ${result.sent} subscriber${result.sent === 1 ? "" : "s"}.`,
+        });
+        setSubject("");
+        setBody("");
+      } else {
+        setMessage({ kind: "error", text: result.error });
+      }
+    } catch {
+      // Without this the button would sit on "Sending…" for good, with nothing
+      // on screen to say what went wrong. The send may have got part way through,
+      // so warn her before she sends the same thing again.
       setMessage({
-        kind: "ok",
-        text: `Sent to ${result.sent} subscriber${result.sent === 1 ? "" : "s"}.`,
+        kind: "error",
+        text: "Couldn’t finish sending. Some subscribers may already have it, so check before you send again.",
       });
-      setSubject("");
-      setBody("");
-    } else {
-      setMessage({ kind: "error", text: result.error });
+    } finally {
+      setBusy(null);
     }
   }
 
   async function sendTest() {
     setBusy("test");
     setMessage(null);
-    const result = await sendNewsletterTestAction(subject, body);
-    setBusy(null);
-    setMessage(
-      result.ok
-        ? { kind: "ok", text: `Test sent to ${result.email}. Check your inbox.` }
-        : { kind: "error", text: result.error },
-    );
+    try {
+      const result = await sendNewsletterTestAction(subject, body);
+      setMessage(
+        result.ok
+          ? { kind: "ok", text: `Test sent to ${result.email}. Check your inbox.` }
+          : { kind: "error", text: result.error },
+      );
+    } catch {
+      setMessage({ kind: "error", text: "Couldn’t send the test email. Please try again." });
+    } finally {
+      setBusy(null);
+    }
   }
 
   const paragraphs = body.trim() ? body.trim().split(/\n{2,}/) : [];

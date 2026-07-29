@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
 import { AdminModal } from "@/components/admin/AdminModal";
 import {
   loadInstagramPostsAction,
   createInstagramPostAction,
   updateInstagramPostAction,
   deleteInstagramPostAction,
+  uploadProductImageAction,
 } from "@/lib/admin-actions";
 import type { AdminInstagramPost } from "@/lib/admin-content";
 import { compactInputClass as inputClass } from "@/lib/ui";
@@ -36,7 +37,7 @@ export default function AdminInstagramPage() {
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState("");
-
+  const [uploading, setUploading] = useState(false);
 
   async function refresh() {
     setLoading(true);
@@ -50,6 +51,28 @@ export default function AdminInstagramPage() {
     void refresh();
   }, []);
 
+  /**
+   * The photo is uploaded into our own Supabase bucket rather than linked from
+   * Instagram, because the browser only trusts images from Supabase and because
+   * Instagram's own image links stop working after a while.
+   */
+  async function handleUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = ""; // allow re-selecting the same file
+    if (!file) return;
+    setError("");
+    setUploading(true);
+    const fd = new FormData();
+    fd.append("file", file);
+    const result = await uploadProductImageAction(fd);
+    setUploading(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setDraft((d) => (d ? { ...d, imageUrl: result.url } : d));
+  }
+
   async function save() {
     if (!draft) return;
     setError("");
@@ -60,6 +83,10 @@ export default function AdminInstagramPage() {
       isActive: draft.isActive,
       sortOrder: draft.sortOrder,
     };
+    if (!input.imageUrl) {
+      setError("Add a photo for this post.");
+      return;
+    }
     const result = draft.id
       ? await updateInstagramPostAction(draft.id, input)
       : await createInstagramPostAction(input);
@@ -95,8 +122,8 @@ export default function AdminInstagramPage() {
         </button>
       </div>
       <p className="mt-1 text-muted">
-        Paste image + post links to feature on the storefront. (Tip: right-click an Instagram photo
-        to copy its image address.)
+        Upload the photo and paste the link to the post it should open. We keep our own copy of the
+        photo because Instagram&rsquo;s image links stop working after a while.
       </p>
 
       <ul className="mt-6 flex flex-col gap-3">
@@ -152,14 +179,33 @@ export default function AdminInstagramPage() {
             </h2>
           }
         >
-          <label className="flex flex-col gap-1 text-sm font-semibold">
-            Image URL
-            <input
-              className={inputClass}
-              value={draft.imageUrl}
-              onChange={(e) => setDraft((d) => (d ? { ...d, imageUrl: e.target.value } : d))}
-            />
-          </label>
+          <div>
+            <span className="text-sm font-semibold">Photo</span>
+            <div className="mt-2 flex items-center gap-3">
+              {draft.imageUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={draft.imageUrl}
+                  alt="Post photo"
+                  className="h-20 w-20 shrink-0 rounded-xl border border-line object-cover"
+                />
+              )}
+              <label
+                className={`flex h-20 w-20 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-blush text-xs font-semibold text-rose-deep${
+                  uploading ? " opacity-60" : ""
+                }`}
+              >
+                {uploading ? "Uploading…" : draft.imageUrl ? "Replace" : "+ Add"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleUpload}
+                  disabled={uploading}
+                />
+              </label>
+            </div>
+          </div>
           <label className="mt-3 flex flex-col gap-1 text-sm font-semibold">
             Post link
             <input
@@ -205,7 +251,8 @@ export default function AdminInstagramPage() {
             <button
               type="button"
               onClick={save}
-              className="rounded-full bg-rose-deep px-5 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:brightness-110 active:scale-95"
+              disabled={uploading}
+              className="rounded-full bg-rose-deep px-5 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:brightness-110 active:scale-95 disabled:opacity-60"
             >
               Save post
             </button>

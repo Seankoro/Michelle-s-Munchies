@@ -397,7 +397,23 @@ function ProductFormModal({
         return;
       }
     }
-    onSave({ ...draft, basePriceCents: cents, costCents, slug, ingredients, options });
+    // Orders count the stock down while this modal sits open, so the number it
+    // loaded is stale the moment one comes in. Leave the field out of the save
+    // unless Michelle actually changed it, otherwise a description-only edit
+    // would write the loaded number back over those decrements. The check is
+    // against what was loaded rather than against blank, so a deliberate 0, or
+    // clearing the field back to untracked, still saves.
+    const { stockCount, ...withoutStock } = draft;
+    const saved: Product = {
+      ...withoutStock,
+      basePriceCents: cents,
+      costCents,
+      slug,
+      ingredients,
+      options,
+    };
+    if (stockCount !== product.stockCount) saved.stockCount = stockCount;
+    onSave(saved);
   }
 
   return (
@@ -464,7 +480,10 @@ function ProductFormModal({
                 inputMode="numeric"
                 placeholder="Untracked"
               />
-              <span className="font-normal text-muted">Blank = untracked. Auto sold-out at 0.</span>
+              <span className="font-normal text-muted">
+                Blank = untracked. Auto sold-out at 0. Orders count it down for you, so it only
+                saves when you change it here.
+              </span>
             </label>
             <label className="flex flex-col gap-1 text-sm font-semibold">
               Available from (seasonal drop)

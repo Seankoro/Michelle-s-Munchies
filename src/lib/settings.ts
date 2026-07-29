@@ -107,6 +107,9 @@ export const SETTINGS_SELECT =
 
 const DEFAULTS: StoreSettings = {
   ...mockSettings,
+  // No placeholder address. Until Michelle sets a pickup location the storefront
+  // shows nothing rather than a neighbourhood she never chose.
+  pickupLocation: "",
   dailyOrderCap: null,
   perWindowCap: null,
   dailyCutoffTime: null,
@@ -142,10 +145,13 @@ function rowToStoreSettings(row: SettingsRow | null): StoreSettings {
     freeDeliveryMinCents: row.free_delivery_min_cents ?? DEFAULTS.freeDeliveryMinCents,
     minOrderCents: row.min_order_cents ?? DEFAULTS.minOrderCents,
     leadTimeDays: row.lead_time_days ?? DEFAULTS.leadTimeDays,
-    timeWindows:
-      row.time_windows && row.time_windows.length > 0 ? row.time_windows : DEFAULTS.timeWindows,
+    // An empty list is a real answer, not a missing value: it means Michelle
+    // cleared every slot to stop taking bookings, so the storefront offers none
+    // instead of quietly selling windows she deleted.
+    timeWindows: row.time_windows ?? DEFAULTS.timeWindows,
     blackoutDates: row.blackout_dates ?? DEFAULTS.blackoutDates,
-    pickupLocation: row.pickup_location_public || DEFAULTS.pickupLocation,
+    // Blank means she hasn't set a pickup address yet, so callers hide the line.
+    pickupLocation: row.pickup_location_public?.trim() ?? "",
     dailyOrderCap: row.daily_order_cap,
     perWindowCap: row.per_window_cap,
     dailyCutoffTime: row.daily_cutoff_time,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAdmin } from "@/components/admin/AdminStore";
 import { OrderStatusBadge, PaymentStatusBadge } from "@/components/admin/StatusBadge";
 import { NewOrderModal } from "@/components/admin/NewOrderModal";
@@ -22,6 +22,7 @@ import {
   paymentReminderMessage,
   telUrl,
 } from "@/lib/customer-contact";
+import { singaporeDateString } from "@/lib/time";
 import { cn } from "@/lib/cn";
 import { AdminModal } from "@/components/admin/AdminModal";
 import { TableStateRow } from "@/components/admin/TableStateRow";
@@ -65,6 +66,20 @@ function nextStatus(order: AdminOrder): OrderStatus | null {
   return flow[index + 1];
 }
 
+/**
+ * Paid, still to bake, and the date the customer picked at checkout has already
+ * gone by. scheduledDate never moves when payment lands late, so without a
+ * prompt these orders sit stranded in the past where nobody looks.
+ */
+function bakeDateHasPassed(order: AdminOrder, today: string): boolean {
+  return (
+    order.paymentStatus === "paid" &&
+    order.status !== "completed" &&
+    order.status !== "cancelled" &&
+    order.scheduledDate < today
+  );
+}
+
 export default function AdminOrdersPage() {
   const {
     orders,
@@ -88,6 +103,9 @@ export default function AdminOrdersPage() {
     if (target) setSelected(target);
   }, []);
 
+  // Today in Singapore, for spotting orders whose bake date has already gone by.
+  const today = singaporeDateString();
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const byStatus = filter === "all" ? orders : orders.filter((o) => o.status === filter);
@@ -98,8 +116,16 @@ export default function AdminOrdersPage() {
           ),
         )
       : byStatus;
-    return [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }, [orders, filter, query]);
+    return [...list].sort((a, b) => {
+      // A paid order whose bake date has passed is the one thing that needs
+      // acting on today, so it goes above the usual newest-first order rather
+      // than staying buried where a late payment left it.
+      const aLate = bakeDateHasPassed(a, today);
+      const bLate = bakeDateHasPassed(b, today);
+      if (aLate !== bLate) return aLate ? -1 : 1;
+      return b.createdAt.localeCompare(a.createdAt);
+    });
+  }, [orders, filter, query, today]);
 
   const selectedOrder = orders.find((o) => o.orderNumber === selected) ?? null;
 
@@ -200,6 +226,11 @@ export default function AdminOrdersPage() {
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 font-semibold text-rose-deep">
                   {formatLongDate(order.scheduledDate)}
+                  {bakeDateHasPassed(order, today) && (
+                    <span className="mt-0.5 block text-xs font-semibold text-warning-ink">
+                      Paid, bake date has passed
+                    </span>
+                  )}
                 </td>
                 <td className="px-4 py-3">{formatPrice(order.totalCents)}</td>
                 <td className="px-4 py-3">
@@ -246,6 +277,7 @@ export default function AdminOrdersPage() {
           blackoutDates={settings.blackoutDates}
           dailyOrderCap={settings.dailyOrderCap}
           dayCounts={dayCounts}
+          today={today}
           onRecordDeposit={(cents) => recordDeposit(selectedOrder.orderNumber, cents)}
           onCancel={() => cancelOrder(selectedOrder.orderNumber)}
         />
@@ -267,6 +299,7 @@ function OrderDetailModal({
   blackoutDates,
   dailyOrderCap,
   dayCounts,
+  today,
   onRecordDeposit,
   onCancel,
 }: {
@@ -280,19 +313,32 @@ function OrderDetailModal({
   blackoutDates: string[];
   dailyOrderCap: number | null;
   dayCounts: Record<string, number>;
+  today: string;
   onRecordDeposit: (cents: number) => void;
-  onCancel: () => Promise<{ ok: boolean; refunded?: boolean; error?: string }>;
+  onCancel: () => Promise<{
+    ok: boolean;
+    refunded?: boolean;
+    /** Paid outside Stripe, so nothing was reversed and the money goes back by hand. */
+    manualRefundDue?: boolean;
+    amountCents?: number;
+    error?: string;
+  }>;
 }) {
   const advance = nextStatus(order);
   const alreadyCancelled = order.status === "cancelled";
   // Only offer statuses that make sense for this order's fulfilment type (so a
   // pickup order is never offered "Out for delivery"), plus the order's current
-  // status in case it's already in a state outside that flow (e.g. cancelled,
-  // or a stale delivery-only status saved before this filter existed).
+  // status in case it's already in a state outside that flow (e.g. a stale
+  // delivery-only status saved before this filter existed). A cancelled order is
+  // offered nothing else: putting it back into the flow would email the customer
+  // a confirmation after they were told it was cancelled, and leave an order
+  // that holds no stock and, once refunded, can't be marked paid again.
   const flow = statusFlow(order);
-  const statusOptions: OrderStatus[] = flow.includes(order.status)
-    ? flow
-    : [order.status, ...flow];
+  const statusOptions: OrderStatus[] = alreadyCancelled
+    ? ["cancelled"]
+    : flow.includes(order.status)
+      ? flow
+      : [order.status, ...flow];
   const [reDate, setReDate] = useState(order.scheduledDate);
   const [reWindow, setReWindow] = useState(order.timeWindow);
   const [depositInput, setDepositInput] = useState(
@@ -300,18 +346,30 @@ function OrderDetailModal({
       ? (order.depositCents / 100).toFixed(2)
       : "",
   );
+  // So the stranded-order banner can put the cursor straight in the date field
+  // instead of leaving Michelle to hunt down the reschedule block.
+  const reDateRef = useRef<HTMLInputElement>(null);
+  const bakeDatePassed = bakeDateHasPassed(order, today);
   const windowOptions = timeWindows.includes(order.timeWindow)
     ? timeWindows
     : [order.timeWindow, ...timeWindows].filter(Boolean);
-  // Safe payment transitions only. "Refunded" is reached through Cancel & refund
-  // (which actually refunds and restocks), and a paid order is never reverted
-  // here, since its points and stock side effects can't be undone by relabelling.
-  const paymentOptions: PaymentStatus[] =
+  // Safe payment transitions only. "Refunded" is reached through the cancel
+  // button below (which actually refunds and restocks), and a paid order is never
+  // reverted here, since its points and stock side effects can't be undone by
+  // relabelling.
+  const paymentTransitions: PaymentStatus[] =
     order.paymentStatus === "pending"
       ? ["pending", "paid", "failed"]
       : order.paymentStatus === "failed"
         ? ["failed", "pending", "paid"]
         : [order.paymentStatus];
+  // A cancelled order can never be marked paid. The server rejects it outright,
+  // and taking money for an order that holds no stock and gets no bake is a trap.
+  // Its own current status still has to stay in the list, or a cancelled order
+  // that was already paid renders a blank select.
+  const paymentOptions = alreadyCancelled
+    ? paymentTransitions.filter((status) => status === order.paymentStatus || status !== "paid")
+    : paymentTransitions;
   // Warn (never block) if the new slot is a blackout day or already at capacity.
   const reWarning =
     reDate && reDate !== order.scheduledDate
@@ -324,19 +382,26 @@ function OrderDetailModal({
   const waUrl = customerWhatsAppUrl(order.phone);
   const payNudgeUrl = customerWhatsAppUrl(order.phone, paymentReminderMessage(order));
 
+  // Only a card payment can be reversed from here. A PayNow or hand-marked order
+  // has no Stripe payment to refund, and the panel can't tell which it is until
+  // the cancel comes back, so never promise a refund it might not have made.
   async function handleCancel() {
     const paid = order.paymentStatus === "paid";
     if (
       !confirm(
         paid
-          ? "Cancel this order and refund the customer via Stripe?"
+          ? `Cancel this order and return ${formatPrice(order.totalCents)} to the customer? A card payment goes back through Stripe. A PayNow or hand-marked payment has to be sent back by you.`
           : "Cancel this order?",
       )
     )
       return;
     const result = await onCancel();
     if (!result.ok) alert(result.error ?? "Could not cancel the order.");
-    else if (result.refunded) alert("Order cancelled and refunded.");
+    else if (result.manualRefundDue)
+      alert(
+        `Order cancelled. This one was not paid through Stripe, so nothing was refunded. Send ${formatPrice(result.amountCents ?? order.totalCents)} back to the customer yourself.`,
+      );
+    else if (result.refunded) alert("Order cancelled and refunded through Stripe.");
     else alert("Order cancelled.");
   }
   const selectClass =
@@ -377,6 +442,26 @@ function OrderDetailModal({
             {order.fulfillmentType}
           </span>
         </div>
+
+        {/* Paid late, so the customer's own date slipped by while it sat unpaid. */}
+        {bakeDatePassed && (
+          <div className="mt-3 rounded-xl bg-warning-soft p-3">
+            <p className="text-sm font-semibold text-warning-ink">
+              Paid, bake date has passed. Reschedule it.
+            </p>
+            <p className="mt-0.5 text-sm text-warning-ink">
+              The date the customer picked, {formatLongDate(order.scheduledDate)}, has already
+              gone by and this order is still open.
+            </p>
+            <button
+              type="button"
+              onClick={() => reDateRef.current?.focus()}
+              className="mt-2 rounded-full border border-warning-ink/40 bg-white px-4 py-1.5 text-sm font-semibold text-warning-ink transition hover:border-warning-ink active:scale-95"
+            >
+              Pick a new date
+            </button>
+          </div>
+        )}
 
         {/* Items */}
         <ul className="mt-4 flex flex-col gap-2 text-sm">
@@ -524,6 +609,7 @@ function OrderDetailModal({
               <select
                 className={selectClass}
                 value={order.status}
+                disabled={alreadyCancelled}
                 onChange={(e) => onStatusChange(e.target.value as OrderStatus)}
               >
                 {/* Cancelling is only offered through the Cancel button below,
@@ -539,10 +625,16 @@ function OrderDetailModal({
                   </option>
                 ))}
               </select>
-              {order.paymentStatus !== "paid" && (
+              {alreadyCancelled ? (
                 <span className="text-xs font-normal text-muted">
-                  Mark this order paid to start baking.
+                  This order is cancelled. Take a fresh order if the customer wants it again.
                 </span>
+              ) : (
+                order.paymentStatus !== "paid" && (
+                  <span className="text-xs font-normal text-muted">
+                    Mark this order paid to start baking.
+                  </span>
+                )
               )}
             </label>
 
@@ -560,6 +652,11 @@ function OrderDetailModal({
                   </option>
                 ))}
               </select>
+              {alreadyCancelled && (
+                <span className="text-xs font-normal text-muted">
+                  A cancelled order cannot be marked paid.
+                </span>
+              )}
             </label>
 
             {advance && (
@@ -582,6 +679,7 @@ function OrderDetailModal({
             <p className="text-sm font-semibold">Reschedule</p>
             <div className="mt-2 flex flex-wrap items-end gap-2">
               <input
+                ref={reDateRef}
                 type="date"
                 value={reDate}
                 onChange={(e) => setReDate(e.target.value)}
@@ -616,7 +714,10 @@ function OrderDetailModal({
             )}
           </div>
 
-          {order.paymentStatus === "pending" && (
+          {/* Chasing payment on a cancelled order would be asking for money the
+              app has to hand straight back, so none of this shows once it is
+              cancelled. */}
+          {order.paymentStatus === "pending" && !alreadyCancelled && (
             <div className="mt-3 rounded-xl bg-warning-soft p-3">
               <p className="text-sm font-semibold text-warning-ink">
                 {order.depositCents != null && order.depositCents > 0
@@ -697,11 +798,11 @@ function OrderDetailModal({
                 onClick={handleCancel}
                 className="rounded-full border border-rose-deep px-4 py-2 text-sm font-semibold text-rose-deep transition hover:bg-blush-soft active:scale-95"
               >
-                Cancel order{order.paymentStatus === "paid" ? " & refund" : ""}
+                Cancel order
               </button>
               <p className="mt-2 text-xs text-muted">
                 {order.paymentStatus === "paid"
-                  ? "Refunds the payment via Stripe and puts any tracked stock back."
+                  ? "A card payment is refunded through Stripe. A PayNow or hand-marked payment cannot be refunded from here, so you send the money back yourself. Tracked stock goes back either way."
                   : "Marks the order cancelled."}
               </p>
             </div>

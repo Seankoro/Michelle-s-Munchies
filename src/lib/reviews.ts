@@ -3,6 +3,16 @@ import { createPublicClient } from "@/lib/supabase/public";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
+/** Longest review we store. Room for a real note, short enough that one review
+ *  can't run away with the product page. */
+const MAX_BODY_LENGTH = 2000;
+/** Author names come from the profile the customer edits themselves, so they get
+ *  a cap too. */
+const MAX_AUTHOR_NAME_LENGTH = 60;
+/** Home-page quotes are a teaser, not the whole review, so a long one doesn't
+ *  stretch the three-up social-proof row. */
+const MAX_QUOTE_LENGTH = 200;
+
 export type Review = {
   rating: number;
   body: string | null;
@@ -88,11 +98,17 @@ export async function fetchReviewHighlights(maxQuotes = 3): Promise<ReviewHighli
   const quotes = rows
     .filter((r) => r.rating >= 4 && (r.body ?? "").trim().length > 0)
     .slice(0, maxQuotes)
-    .map((r) => ({
-      rating: r.rating,
-      body: (r.body ?? "").trim(),
-      authorName: r.author_name ?? "A customer",
-    }));
+    .map((r) => {
+      const body = (r.body ?? "").trim();
+      return {
+        rating: r.rating,
+        body:
+          body.length > MAX_QUOTE_LENGTH
+            ? `${body.slice(0, MAX_QUOTE_LENGTH).trimEnd()}…`
+            : body,
+        authorName: r.author_name ?? "A customer",
+      };
+    });
   return { avg, count, quotes };
 }
 
@@ -171,14 +187,19 @@ export async function upsertReview(
     .select("full_name")
     .eq("id", userId)
     .single();
-  const authorName = (profile as { full_name: string | null } | null)?.full_name ?? "Customer";
+  const authorName =
+    (profile as { full_name: string | null } | null)?.full_name
+      ?.trim()
+      .slice(0, MAX_AUTHOR_NAME_LENGTH) || "Customer";
 
   const { error } = await admin.from("reviews").upsert(
     {
       product_id: productId,
       user_id: userId,
       rating,
-      body: body.trim() || null,
+      // Capped on the way in, since nothing between the textarea and the table
+      // limits the length and every review goes straight onto the storefront.
+      body: body.trim().slice(0, MAX_BODY_LENGTH) || null,
       author_name: authorName,
       image_paths: imageUrls,
       updated_at: new Date().toISOString(),
