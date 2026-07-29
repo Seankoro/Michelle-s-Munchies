@@ -81,8 +81,9 @@ export async function GET(request: NextRequest) {
   await run("occasionReminders", settings.features.occasionReminders, () =>
     sendOccasionReminders(),
   );
-  // Housekeeping, always on: cancel unpaid orders left in an early status past
-  // their scheduled date, so they stop holding promo slots and reserved points.
+  // Housekeeping, always on: cancel orders nobody has touched since checkout,
+  // days past their date and still unpaid, so they stop holding promo slots and
+  // reserved points. expireStaleUnpaidOrders owns the full abandoned test.
   await run("expiredOrders", true, () => expireStaleUnpaidOrders());
 
   if (checkInId) {

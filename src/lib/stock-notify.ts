@@ -83,7 +83,8 @@ export async function subscribeBackInStock(
 /**
  * Emails everyone waiting on a product on a best-effort basis and stamps them
  * notified so they aren't emailed again. Called when a product becomes
- * available. Only confirmed subscribers are ever emailed.
+ * available. Only confirmed subscribers are ever emailed, and only while the
+ * product is actually buyable.
  */
 export async function notifySubscribers(productId: string): Promise<void> {
   const supabase = createAdminClient();
@@ -98,22 +99,34 @@ export async function notifySubscribers(productId: string): Promise<void> {
 
   const { data: product } = await supabase
     .from("products")
-    .select("name, slug")
+    .select("name, slug, is_available, stock_count")
     .eq("id", productId)
     .maybeSingle();
-  const p = product as { name: string; slug: string } | null;
+  const p = product as {
+    name: string;
+    slug: string;
+    is_available: boolean;
+    stock_count: number | null;
+  } | null;
   if (!p) return;
+  // Never say "it's back" about something nobody can buy. The drops job below
+  // re-scans every product that ever had a launch time, so without this it
+  // would fire on a drop that launched and then sold out, and stamp that
+  // product's sold-out waitlist notified, swallowing the real restock alert.
+  if (!p.is_available || (p.stock_count != null && p.stock_count <= 0)) return;
 
+  // Stamp each subscriber only after their own email really went out. Stamping
+  // the whole batch afterwards meant one provider rejection silently marked
+  // someone notified who never heard anything, and the alert they were waiting
+  // for could never be sent again.
   for (const sub of rows) {
-    await sendBackInStockEmail(sub.email, p.name, p.slug);
+    const delivered = await sendBackInStockEmail(sub.email, p.name, p.slug);
+    if (!delivered) continue;
+    await supabase
+      .from("stock_notifications")
+      .update({ notified_at: new Date().toISOString() })
+      .eq("id", sub.id);
   }
-  await supabase
-    .from("stock_notifications")
-    .update({ notified_at: new Date().toISOString() })
-    .in(
-      "id",
-      rows.map((r) => r.id),
-    );
 }
 
 /**

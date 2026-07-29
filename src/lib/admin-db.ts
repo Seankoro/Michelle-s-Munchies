@@ -229,6 +229,7 @@ async function maybeSendReviewRequest(orderNumber: string) {
 }
 
 export async function updatePaymentStatus(orderNumber: string, paymentStatus: PaymentStatus) {
+  const supabase = createAdminClient();
   // Reaching "paid" must run the same side effects as a Stripe payment: award
   // loyalty points, deduct any the customer redeemed, decrement tracked stock,
   // and reward referrals. PayNow orders are marked paid here by hand, not by a
@@ -236,9 +237,27 @@ export async function updatePaymentStatus(orderNumber: string, paymentStatus: Pa
   // re-spent forever. markOrderPaid guards the transition, so it is idempotent.
   if (paymentStatus === "paid") {
     await markOrderPaid(orderNumber, null);
+    // markOrderPaid stays quiet when its guarded update matches nothing,
+    // because a duplicate Stripe webhook has to be a no-op. Michelle pressing
+    // Mark paid is never a duplicate, and the panel flips the badge to Paid
+    // before the action resolves, so silence would leave her looking at a Paid
+    // order the database still calls pending. Read the row back and say why.
+    const { data: after } = await supabase
+      .from("orders")
+      .select("status, payment_status")
+      .eq("order_number", orderNumber)
+      .maybeSingle();
+    const row = after as { status: OrderStatus; payment_status: PaymentStatus } | null;
+    if (!row) throw new Error("Order not found.");
+    if (row.payment_status !== "paid") {
+      throw new Error(
+        row.status === "cancelled"
+          ? "This order is cancelled. Move it back to confirmed before marking it paid."
+          : "Failed to mark this order paid.",
+      );
+    }
     return;
   }
-  const supabase = createAdminClient();
   const { data } = await supabase
     .from("orders")
     .select("id, status, payment_status")
@@ -257,11 +276,12 @@ export async function updatePaymentStatus(orderNumber: string, paymentStatus: Pa
     .update({ payment_status: paymentStatus, updated_at: new Date().toISOString() })
     .eq("order_number", orderNumber);
   if (error) throw new Error(`Failed to update payment: ${error.message}`);
-  // Undoing a mistaken paid puts any decremented stock back, mirroring the
-  // decrement that ran on the paid transition. Stamp-guarded, so an order
-  // that never took stock is a no-op, and marking paid again decrements again.
+  // Undoing a mistaken paid puts any decremented stock back and hands the
+  // loyalty points back, mirroring what ran on the paid transition. Stamp
+  // guarded, so an order that never went paid is a no-op, and marking it paid
+  // again applies the side effects again.
   if (order.payment_status === "paid") {
-    await restockOrder(order.id);
+    await reversePaidSideEffects(order.id);
   }
 }
 
@@ -328,12 +348,16 @@ export async function updateOwnerNote(orderNumber: string, note: string) {
   if (error) throw new Error(`Failed to save note: ${error.message}`);
 }
 
-/** Add ordered quantities back to any tracked product, reversing a paid decrement. */
-async function restockOrder(orderId: string) {
+/**
+ * Undo what the paid transition did to the rest of the shop: add ordered
+ * quantities back to any tracked product, and hand the loyalty points back.
+ */
+async function reversePaidSideEffects(orderId: string) {
   const supabase = createAdminClient();
-  // Only restock if stock was actually taken, and only once. Clearing the
-  // decrement stamp atomically means a re-cancel can't add the same units back
-  // twice, and an order that never decremented (unpaid) is a no-op.
+  // Only reverse if the paid transition actually ran, and only once. Clearing
+  // the decrement stamp atomically means a re-cancel can't add the same units
+  // back twice or refund the same points twice, and an order that never went
+  // paid is a no-op.
   const { data: claim } = await supabase
     .from("orders")
     .update({ stock_decremented_at: null })
@@ -349,22 +373,73 @@ async function restockOrder(orderId: string) {
   for (const item of (itemRows as { product_id: string | null; quantity: number }[] | null) ?? []) {
     if (!item.product_id) continue;
     // Atomic restock in the DB. Untracked products return no row and are skipped.
-    await supabase.rpc("adjust_product_stock", { p_id: item.product_id, p_delta: item.quantity });
+    const { data: rows } = await supabase.rpc("adjust_product_stock", {
+      p_id: item.product_id,
+      p_delta: item.quantity,
+    });
+    const row = (rows as { re_enabled: boolean }[] | null)?.[0];
+    // Crossing back above zero puts a product that sold itself out back on the
+    // menu from inside the SQL, without ever going through updateProduct. That
+    // is the moment the back-in-stock waitlist signed up for, so send the alert
+    // from here too, on the same feature flag the manual toggle uses.
+    if (row?.re_enabled) {
+      const { features } = await fetchStoreSettings();
+      if (features.backInStock) await notifySubscribers(item.product_id);
+    }
   }
+  await reverseOrderPoints(orderId);
 }
 
-export type CancelResult = { ok: true; refunded: boolean } | { ok: false; error: string };
+/**
+ * Give back the loyalty points an order moved when it went paid. The ledger is
+ * append-only, so undoing means writing the opposite row rather than deleting
+ * one: the points the customer spent come back to them, and the points they
+ * earned on money that is being returned come off again. Callers hold the
+ * decrement-stamp claim, so this runs at most once per paid transition. Never
+ * throws, since the cancel it belongs to has already gone through.
+ */
+async function reverseOrderPoints(orderId: string) {
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from("points_ledger")
+    .select("user_id, delta, reason")
+    .eq("order_id", orderId)
+    .in("reason", ["earned", "redeemed"]);
+  const rows = (data as { user_id: string; delta: number; reason: string }[] | null) ?? [];
+  if (rows.length === 0) return; // guest order, or rewards were off at the time
+  const { error } = await supabase.from("points_ledger").insert(
+    rows.map((row) => ({
+      user_id: row.user_id,
+      order_id: orderId,
+      delta: -row.delta,
+      reason: row.reason === "earned" ? "earn_reversed" : "redeem_reversed",
+    })),
+  );
+  if (error) console.error(`[points] Failed to reverse for order ${orderId}:`, error.message);
+}
+
+/**
+ * `manualRefundDue` says the customer paid but not through Stripe, so there is
+ * no payment for the app to reverse and Michelle owes them `amountCents` by
+ * PayNow herself. `amountCents` is the order total either way.
+ */
+export type CancelResult =
+  | { ok: true; refunded: boolean; manualRefundDue: boolean; amountCents: number }
+  | { ok: false; error: string };
 
 /**
  * Admin cancel and refund. Idempotent, so a cancelled order is a no-op. If the
- * order was paid, refunds the Stripe PaymentIntent and restocks, then marks the
- * order cancelled, and refunded when money was returned.
+ * order was paid through Stripe, refunds the PaymentIntent and restocks, then
+ * marks the order cancelled, and refunded when money was returned. A PayNow or
+ * hand-marked order has nothing to reverse, so it comes back manualRefundDue.
  */
 export async function cancelAndRefundOrder(orderNumber: string): Promise<CancelResult> {
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("orders")
-    .select("id, status, payment_status, stripe_payment_intent_id, email, customer_name, tracking_token")
+    .select(
+      "id, status, payment_status, stripe_payment_intent_id, total_cents, email, customer_name, tracking_token",
+    )
     .eq("order_number", orderNumber)
     .maybeSingle();
   if (error || !data) return { ok: false, error: "Order not found." };
@@ -373,11 +448,23 @@ export async function cancelAndRefundOrder(orderNumber: string): Promise<CancelR
     status: string;
     payment_status: string;
     stripe_payment_intent_id: string | null;
+    total_cents: number;
     email: string;
     customer_name: string;
     tracking_token: string;
   };
-  if (order.status === "cancelled") return { ok: true, refunded: order.payment_status === "refunded" };
+  // PayNow and hand-marked orders never got a Stripe PaymentIntent, and there
+  // is no way to reverse a bank transfer from here, so the money has to go back
+  // by hand. Report that instead of letting a quiet skip read as "refunded".
+  const manualRefundDue = order.payment_status === "paid" && !order.stripe_payment_intent_id;
+  if (order.status === "cancelled") {
+    return {
+      ok: true,
+      refunded: order.payment_status === "refunded",
+      manualRefundDue,
+      amountCents: order.total_cents,
+    };
+  }
 
   let refunded = false;
   if (order.payment_status === "paid" && order.stripe_payment_intent_id) {
@@ -392,10 +479,10 @@ export async function cancelAndRefundOrder(orderNumber: string): Promise<CancelR
       };
     }
   }
-  // Put stock back for any order that took it, however it was paid (Stripe card
-  // OR a PayNow/manual order marked paid here). restockOrder self-guards on the
-  // decrement stamp, so it is a no-op for orders that never touched stock.
-  await restockOrder(order.id);
+  // Put stock and loyalty points back for any order that took them, however it
+  // was paid (Stripe card OR a PayNow/manual order marked paid here). It self
+  // guards on the decrement stamp, so an order that never went paid is a no-op.
+  await reversePaidSideEffects(order.id);
   const { error: updErr } = await supabase
     .from("orders")
     .update({
@@ -419,7 +506,7 @@ export async function cancelAndRefundOrder(orderNumber: string): Promise<CancelR
   } catch (emailError) {
     console.error("[cancel] notification email failed:", emailError);
   }
-  return { ok: true, refunded };
+  return { ok: true, refunded, manualRefundDue, amountCents: order.total_cents };
 }
 
 /**
@@ -478,7 +565,11 @@ export async function markOrderPaid(orderNumber: string, paymentIntentId: string
     .from("orders")
     .update({
       payment_status: "paid",
-      stripe_payment_intent_id: paymentIntentId,
+      // Only write the column when there is an id to write. The webhook stamps
+      // it as a breadcrumb when it declines to apply a payment, so a later
+      // hand-marked PayNow order passing null would otherwise wipe the only
+      // handle Michelle has on a stray charge she still needs to refund.
+      ...(paymentIntentId ? { stripe_payment_intent_id: paymentIntentId } : {}),
       updated_at: new Date().toISOString(),
     })
     .eq("order_number", orderNumber)
@@ -722,8 +813,19 @@ export async function updateProduct(id: string, patch: Partial<Product>) {
   const supabase = createAdminClient();
   const columns: Record<string, unknown> = toProductColumns(patch);
   // An explicit availability choice from Michelle overrides any earlier
-  // auto-sell-out, so a later restock won't second-guess her.
-  if (patch.isAvailable !== undefined) columns.auto_disabled = false;
+  // auto-sell-out, so a later restock won't second-guess her. Only when she
+  // actually changed it, though: the product editor saves the whole draft, so
+  // a description-only edit would otherwise wipe the sold-itself-out marker and
+  // quietly stop a later restock from putting the product back on the menu.
+  if (patch.isAvailable !== undefined) {
+    const { data: current } = await supabase
+      .from("products")
+      .select("is_available")
+      .eq("id", id)
+      .maybeSingle();
+    const stored = (current as { is_available: boolean } | null)?.is_available;
+    if (stored !== patch.isAvailable) columns.auto_disabled = false;
+  }
   if (Object.keys(columns).length > 0) {
     const { error } = await supabase
       .from("products")
