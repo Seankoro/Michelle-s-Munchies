@@ -1,4 +1,5 @@
 import type { CartItem } from "@/lib/types";
+import { singaporeNow } from "@/lib/time";
 
 export type FulfillmentType = "pickup" | "delivery";
 
@@ -79,8 +80,11 @@ function randomBase36(length: number): string {
  * Human-friendly order number, e.g. "MM-260602-7K3QP9WL". The 8-char suffix
  * (36^8, ~2.8 trillion combinations) makes a same-day collision with another
  * order astronomically unlikely; createOrder still retries a collision anyway.
+ * The date part is Singapore's date, not the server's: on a UTC server the two
+ * disagree until 8am local, and the admin list shows the order's created date
+ * in Singapore time right next to this number.
  */
-export function generateOrderNumber(date = new Date()): string {
+export function generateOrderNumber(date = singaporeNow()): string {
   const yy = String(date.getFullYear()).slice(-2);
   const mm = String(date.getMonth() + 1).padStart(2, "0");
   const dd = String(date.getDate()).padStart(2, "0");

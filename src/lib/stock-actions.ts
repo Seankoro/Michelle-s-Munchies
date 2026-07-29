@@ -6,7 +6,9 @@ import { rateLimit } from "@/lib/rate-limit";
 import { subscribeBackInStock } from "@/lib/stock-notify";
 import { EMAIL_RE } from "@/lib/text";
 
-export type NotifyResult = { ok: true; confirmed: boolean } | { ok: false; error: string };
+export type NotifyResult =
+  | { ok: true; confirmed: boolean; alreadySent?: true }
+  | { ok: false; error: string };
 
 /**
  * Subscribe to a product's back-in-stock alert. Guests pass their email in, and
@@ -37,10 +39,26 @@ export async function subscribeBackInStockAction(
     return { ok: false, error: "Please enter a valid email." };
   }
   const preConfirmed = Boolean(user?.email);
-  // Per-address throttle so repeat subscribes can't bombard a guest-entered
-  // inbox with confirmation emails.
-  if (!preConfirmed && !(await rateLimit(`back-in-stock:${resolved}`, { limit: 3, windowMs: 60 * 60_000 }))) {
-    return { ok: true, confirmed: false };
+  // Throttles so repeat subscribes can't bombard a guest-entered inbox with
+  // confirmation emails. Both are keyed on the address alone, no client IP, or
+  // someone rotating their source address would get a fresh budget each time.
+  // Every product sends its own confirmation email, so the tight bucket counts
+  // per product. The looser one caps what a single inbox can get in total.
+  if (!preConfirmed) {
+    const throttled =
+      !(await rateLimit(`back-in-stock:${resolved}:${productId}`, {
+        limit: 3,
+        windowMs: 60 * 60_000,
+        scope: "global",
+      })) ||
+      !(await rateLimit(`back-in-stock:${resolved}`, {
+        limit: 10,
+        windowMs: 60 * 60_000,
+        scope: "global",
+      }));
+    // Say so rather than implying a fresh email just went out, since nothing is
+    // saved here and the visitor would otherwise wait for mail that never comes.
+    if (throttled) return { ok: true, confirmed: false, alreadySent: true };
   }
   await subscribeBackInStock(productId, resolved, user?.id ?? null, preConfirmed);
   return { ok: true, confirmed: preConfirmed };

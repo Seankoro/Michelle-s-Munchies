@@ -75,7 +75,11 @@ export async function sendAbandonedReminders(afterHours: number): Promise<number
         .eq("id", intent.id);
       continue;
     }
-    await sendAbandonedCartEmail(intent.email, intent.items ?? []);
+    // Only close the intent when the reminder actually went out. Stamping
+    // regardless meant a provider failure quietly consumed the one reminder
+    // this cart was ever going to get.
+    const delivered = await sendAbandonedCartEmail(intent.email, intent.items ?? []);
+    if (!delivered) continue;
     await supabase
       .from("checkout_intents")
       .update({ reminded_at: new Date().toISOString() })

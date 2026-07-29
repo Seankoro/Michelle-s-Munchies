@@ -15,29 +15,26 @@ export async function subscribeNewsletter(email: string): Promise<void> {
   if (!normalized) return;
   const { data } = await supabase
     .from("newsletter_subscribers")
-    .select("id, unsubscribed_at, confirmed_at, confirm_token")
+    .select("id, unsubscribed_at, confirmed_at")
     .eq("email", normalized)
     .maybeSingle();
   const existing = data as {
     id: string;
     unsubscribed_at: string | null;
     confirmed_at: string | null;
-    confirm_token: string | null;
   } | null;
 
   if (existing && existing.confirmed_at && !existing.unsubscribed_at) return; // already active
 
-  let confirmToken = existing?.confirm_token ?? null;
+  // A fresh token every time, never the one already on the row, so the link in
+  // the newest email is the only one that works and older copies go dead.
+  const confirmToken = newToken();
   if (existing) {
-    if (!confirmToken) {
-      confirmToken = newToken();
-      await supabase
-        .from("newsletter_subscribers")
-        .update({ confirm_token: confirmToken })
-        .eq("id", existing.id);
-    }
+    await supabase
+      .from("newsletter_subscribers")
+      .update({ confirm_token: confirmToken })
+      .eq("id", existing.id);
   } else {
-    confirmToken = newToken();
     await supabase.from("newsletter_subscribers").insert({
       email: normalized,
       unsubscribe_token: newToken(),
@@ -50,14 +47,20 @@ export async function subscribeNewsletter(email: string): Promise<void> {
 /**
  * Confirm a newsletter subscription by its token. Clears any earlier
  * unsubscribe, since clicking the link is fresh consent. Returns whether the
- * token matched. Idempotent.
+ * token matched.
+ *
+ * The token is spent in the same update, so the link works once. Otherwise it
+ * stays a permanent "put this address back on the list" URL, and an old email
+ * being re-opened, forwarded, or fetched by a mail scanner would quietly undo
+ * someone's unsubscribe. Someone who genuinely wants back on can subscribe
+ * again, which mints a new token.
  */
 export async function confirmNewsletterSubscription(token: string): Promise<boolean> {
   const supabase = createAdminClient();
   const now = new Date().toISOString();
   const { data } = await supabase
     .from("newsletter_subscribers")
-    .update({ confirmed_at: now, consented_at: now, unsubscribed_at: null })
+    .update({ confirmed_at: now, consented_at: now, unsubscribed_at: null, confirm_token: null })
     .eq("confirm_token", token)
     .select("id")
     .maybeSingle();

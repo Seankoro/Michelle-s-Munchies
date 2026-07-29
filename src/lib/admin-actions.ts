@@ -7,6 +7,7 @@ import { validateImageUpload } from "@/lib/image-upload";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { isAdminEmail, requireAdmin } from "@/lib/admin-auth";
+import { rateLimit } from "@/lib/rate-limit";
 import { fetchDeliveryConfig, updateDeliveryConfig, type DeliveryConfig } from "@/lib/delivery-config";
 import { geocodePostal } from "@/lib/onemap";
 import type { DistanceTier } from "@/lib/delivery-fee";
@@ -59,14 +60,39 @@ import type { Product } from "@/lib/types";
 
 export type AdminSignInResult = { ok: true } | { ok: false; error: string };
 
+/** The same words for every failed admin sign-in. A raw Supabase error tells an
+ *  attacker whether the password was wrong or the account merely unconfirmed,
+ *  and a separate "not an admin" line would confirm that a guessed email and
+ *  password really are a working login. */
+const ADMIN_SIGN_IN_FAILED = "That email or password is not right.";
+
 /** Admin sign-in, authenticate via Supabase, then require the admin allow-list. */
 export async function adminSignIn(email: string, password: string): Promise<AdminSignInResult> {
+  // This one password is the only gate on orders, customer details, refunds and
+  // settings, so the form gets two counters. The per-IP one stops a single
+  // source hammering it. The per-address one is keyed on the email alone, so
+  // rotating IPs can't hand out a fresh budget for every guess. It stays loose
+  // enough that Michelle's own mistyped attempts never trip it.
+  if (!(await rateLimit("admin-sign-in", { limit: 5, windowMs: 15 * 60_000 }))) {
+    return { ok: false, error: "Too many attempts. Please wait a few minutes." };
+  }
+  const normalizedEmail = email.trim().toLowerCase();
+  if (
+    normalizedEmail &&
+    !(await rateLimit(`admin-sign-in:${normalizedEmail}`, {
+      limit: 20,
+      windowMs: 60 * 60_000,
+      scope: "global",
+    }))
+  ) {
+    return { ok: false, error: "Too many attempts. Please wait a few minutes." };
+  }
   const supabase = await createServerSupabase();
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) return { ok: false, error: error.message };
+  if (error) return { ok: false, error: ADMIN_SIGN_IN_FAILED };
   if (!isAdminEmail(data.user?.email)) {
     await supabase.auth.signOut();
-    return { ok: false, error: "This account doesn’t have admin access." };
+    return { ok: false, error: ADMIN_SIGN_IN_FAILED };
   }
   return { ok: true };
 }
@@ -422,6 +448,12 @@ function validateBoxInput(input: NewBoxTemplate): string | null {
   if (input.productIds.length === 0 && !input.eligibleCategory) {
     return "Pick eligible products or a category.";
   }
+  // A box nobody can finish is hidden from the storefront rather than shown as
+  // a dead end, so saving one asking for more picks than it has products would
+  // look like a success and then quietly never appear anywhere.
+  if (input.productIds.length > 0 && input.productIds.length < input.itemCount) {
+    return `This box asks for ${input.itemCount} items but only ${input.productIds.length} products are ticked. Lower the item count or tick more products.`;
+  }
   return null;
 }
 
@@ -465,8 +497,25 @@ export async function loadInstagramPostsAction(): Promise<AdminInstagramPost[]> 
 
 export type SaveInstagramResult = { ok: true } | { ok: false; error: string };
 
+/** A photo uploaded by the form lands at the bucket root as `{uuid}.{ext}`. */
+const UPLOADED_FILE_PATTERN = /^[a-z0-9-]+\.[a-z0-9]+$/i;
+
+/** The photo has to be one of our own uploads in the public `product-images`
+ *  bucket, which is what the form's uploader saves. A pasted Instagram CDN link
+ *  would save happily and then show as a broken tile, because the CSP only
+ *  allows images from Supabase and Instagram's links expire anyway. Checking the
+ *  file name as well as the prefix rejects path traversal like
+ *  `.../product-images/../../avatars/x.png`, which a bare startsWith allows. */
 function validateInstagramInput(input: NewInstagramPost): string | null {
-  if (!/^https?:\/\/.+/i.test(input.imageUrl)) return "Image URL must start with http(s)://";
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+  const prefix = `${supabaseUrl}/storage/v1/object/public/product-images/`;
+  if (
+    !supabaseUrl ||
+    !input.imageUrl.startsWith(prefix) ||
+    !UPLOADED_FILE_PATTERN.test(input.imageUrl.slice(prefix.length))
+  ) {
+    return "Add the photo with the upload button. A pasted image link won’t load on the site.";
+  }
   if (!/^https?:\/\/.+/i.test(input.linkUrl)) return "Link URL must start with http(s)://";
   return null;
 }

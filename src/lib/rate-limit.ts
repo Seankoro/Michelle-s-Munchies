@@ -3,7 +3,8 @@ import { headers } from "next/headers";
 
 /**
  * Rate limiter for custom Server Actions. Supabase already throttles its own
- * auth endpoints. Keyed by client IP and action.
+ * auth endpoints. Keyed by action, and by client IP unless the caller asks for
+ * the "global" scope (see rateLimit below).
  *
  * Two backends, chosen automatically.
  *
@@ -76,12 +77,23 @@ async function upstashAllow(key: string, limit: number, windowMs: number): Promi
   return count <= limit;
 }
 
-/** Returns true if the request is allowed, false if it exceeds the limit. */
+/**
+ * Returns true if the request is allowed, false if it exceeds the limit.
+ *
+ * Scope picks what the counter is keyed on besides the action.
+ *
+ *  - "ip" (the default) counts per caller, which is what you want for ordinary
+ *    "stop one visitor hammering this form" limits.
+ *  - "global" leaves the IP out entirely. Callers that put an email address in
+ *    the action string need this. With the IP in the key, anyone rotating their
+ *    source address gets a fresh counter for every request, so the cap on how
+ *    much mail one inbox can receive never actually binds.
+ */
 export async function rateLimit(
   action: string,
-  opts: { limit: number; windowMs: number },
+  opts: { limit: number; windowMs: number; scope?: "ip" | "global" },
 ): Promise<boolean> {
-  const key = `rl:${action}:${await clientIp()}`;
+  const key = opts.scope === "global" ? `rl:${action}` : `rl:${action}:${await clientIp()}`;
 
   if (upstashReady) {
     try {

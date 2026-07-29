@@ -27,8 +27,15 @@ export async function subscribeNewsletterAction(email: string): Promise<SimpleRe
     return { ok: false, error: "Too many requests. Please wait a few minutes." };
   }
   // Per-address throttle so repeat subscribes can't bombard one inbox with
-  // confirmation emails.
-  if (!(await rateLimit(`newsletter-subscribe:${normalized}`, { limit: 3, windowMs: 60 * 60_000 }))) {
+  // confirmation emails. Keyed on the address alone, no client IP, or someone
+  // rotating their source address would get a fresh budget for every send.
+  if (
+    !(await rateLimit(`newsletter-subscribe:${normalized}`, {
+      limit: 3,
+      windowMs: 60 * 60_000,
+      scope: "global",
+    }))
+  ) {
     return { ok: true };
   }
   if (!(await fetchStoreSettings()).features.newsletter) {
@@ -64,10 +71,19 @@ export async function sendNewsletterAction(subject: string, body: string): Promi
   }
   const bodyHtml = renderNewsletterHtml(body);
   const subscribers = await listActiveSubscribers();
+  // Count what actually reached the provider, not what we attempted, so the
+  // "sent to N people" confirmation is not quietly wrong when sends fail.
+  let sent = 0;
   for (const sub of subscribers) {
-    await sendNewsletterEmail(sub.email, subject.trim(), bodyHtml, sub.unsubscribeToken);
+    const delivered = await sendNewsletterEmail(
+      sub.email,
+      subject.trim(),
+      bodyHtml,
+      sub.unsubscribeToken,
+    );
+    if (delivered) sent += 1;
   }
-  return { ok: true, sent: subscribers.length };
+  return { ok: true, sent };
 }
 
 export type TestResult = { ok: true; email: string } | { ok: false; error: string };

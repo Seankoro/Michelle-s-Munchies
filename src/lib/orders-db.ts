@@ -1,5 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
+import { after } from "next/server";
 import { newToken } from "@/lib/tokens";
 import { createPublicClient } from "@/lib/supabase/public";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -164,26 +165,31 @@ export async function createOrder(
     throw new Error(`Could not create order: ${error.message}`);
   }
 
-  // Confirmation to the customer and alert to Michelle. Never throws.
-  await sendOrderEmails({
-    orderNumber,
-    trackingToken,
-    name: input.name,
-    email: input.email,
-    items: input.items,
-    subtotalCents,
-    deliveryFeeCents,
-    discountCents,
-    promoCode,
-    totalCents,
-    fulfillmentType: input.fulfillmentType,
-    scheduledDate: input.scheduledDate,
-    timeWindow: input.timeWindow,
-    isGift: input.isGift ?? false,
-    giftMessage: input.isGift ? input.giftMessage?.trim() || undefined : undefined,
-    recipientName: input.isGift ? input.recipientName?.trim() || undefined : undefined,
-    noteAnswers: input.noteAnswers ?? [],
-  });
+  // Confirmation to the customer and alert to Michelle. Never throws. The order
+  // row is already committed, so these run after the response rather than
+  // holding the customer on a spinner: a slow email provider must never make a
+  // placed order look like it failed, or they place the whole thing again.
+  after(() =>
+    sendOrderEmails({
+      orderNumber,
+      trackingToken,
+      name: input.name,
+      email: input.email,
+      items: input.items,
+      subtotalCents,
+      deliveryFeeCents,
+      discountCents,
+      promoCode,
+      totalCents,
+      fulfillmentType: input.fulfillmentType,
+      scheduledDate: input.scheduledDate,
+      timeWindow: input.timeWindow,
+      isGift: input.isGift ?? false,
+      giftMessage: input.isGift ? input.giftMessage?.trim() || undefined : undefined,
+      recipientName: input.isGift ? input.recipientName?.trim() || undefined : undefined,
+      noteAnswers: input.noteAnswers ?? [],
+    }),
+  );
 
   return { orderNumber, trackingToken, deliveryFeeCents, discountCents, recipientToken };
 }

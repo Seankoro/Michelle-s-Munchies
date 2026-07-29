@@ -135,26 +135,80 @@ function itemRows(order: OrderEmailData): string {
   </table>`;
 }
 
-async function send(to: string, subject: string, html: string): Promise<void> {
+/**
+ * How long we wait on Resend before giving up on one email. The SDK sets no
+ * timeout of its own, so without this a hung provider holds the caller open
+ * until the platform kills the whole function.
+ */
+const SEND_TIMEOUT_MS = 8000;
+
+/**
+ * Resend's default allowance is 2 requests a second, and several jobs mail a
+ * whole list back to back. Every send goes through one shared queue that leaves
+ * a gap between calls, so a batch can never rate-limit itself into drops.
+ */
+const MIN_SEND_GAP_MS = 600;
+
+let sendQueue: Promise<unknown> = Promise.resolve();
+let lastSendAt = 0;
+
+/** Runs `attempt` once the previous send has finished and the gap has passed. */
+function queueSend<T>(attempt: () => Promise<T>): Promise<T> {
+  const next = sendQueue.then(async () => {
+    const wait = lastSendAt + MIN_SEND_GAP_MS - Date.now();
+    if (wait > 0) await new Promise<void>((resolve) => setTimeout(resolve, wait));
+    lastSendAt = Date.now();
+    return attempt();
+  });
+  // Swallow the failure on the queue's copy only, so one bad send never wedges
+  // every email behind it. The caller still sees the real outcome.
+  sendQueue = next.catch(() => undefined);
+  return next;
+}
+
+/** Rejects if `promise` hasn't settled in time, so no send can hang forever. */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expiry = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, expiry]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Sends one email and reports whether it actually went out. Callers that stamp
+ * "already sent" state must only do so when this returns true, or a rejected
+ * send silently marks the recipient as mailed and they never hear from us.
+ */
+async function send(to: string, subject: string, html: string): Promise<boolean> {
   const resend = getResend();
   if (!resend) {
     console.warn(`[email] RESEND_API_KEY not set, skipping "${subject}" to ${to}`);
-    return;
+    return false;
   }
   try {
-    const { error } = await resend.emails.send({ from: FROM, to, subject, html });
+    const { error } = await queueSend(() =>
+      withTimeout(
+        resend.emails.send({ from: FROM, to, subject, html }),
+        SEND_TIMEOUT_MS,
+        `Resend send of "${subject}"`,
+      ),
+    );
     if (error) {
       console.error(`[email] Resend rejected "${subject}" to ${to}:`, error);
       Sentry.captureMessage(`Resend rejected "${subject}"`, {
         level: "error",
         extra: { to, error },
       });
+      return false;
     }
+    return true;
   } catch (error) {
     // Email must never break the order flow. Log, report, and move on so the
     // customer's order still succeeds while Michelle finds out something broke.
     console.error(`[email] Failed to send "${subject}" to ${to}:`, error);
     Sentry.captureException(error, { extra: { subject, to } });
+    return false;
   }
 }
 
@@ -232,14 +286,14 @@ export async function sendStatusEmail(params: {
   name: string;
   email: string;
   status: OrderStatus;
-}): Promise<void> {
+}): Promise<boolean> {
   const label = orderStatusLabels[params.status];
   const line = statusLines[params.status] ?? "here&rsquo;s an update on your order.";
   const body = `
     <p>Hi ${escapeHtml(params.name.split(" ")[0])}, ${line}</p>
     <p style="margin:8px 0"><strong>Order ${params.orderNumber}</strong> is now
       <strong style="color:#bc4a6a">${label}</strong>.</p>`;
-  await send(params.email, `Order ${params.orderNumber}: ${label}`, shell("Order update", body, params.trackingToken));
+  return send(params.email, `Order ${params.orderNumber}: ${label}`, shell("Order update", body, params.trackingToken));
 }
 
 /** Customer notification when an order is cancelled, with the refund status. */
@@ -249,7 +303,7 @@ export async function sendOrderCancelledEmail(params: {
   name: string;
   email: string;
   refunded: boolean;
-}): Promise<void> {
+}): Promise<boolean> {
   const refundLine = params.refunded
     ? `<p style="margin:8px 0">Your payment has been refunded. It should appear back on your card within a few business days.</p>`
     : `<p style="margin:8px 0">If you had already paid, we&rsquo;ll be in touch about the refund. Reply here or message us on WhatsApp any time.</p>`;
@@ -258,7 +312,7 @@ export async function sendOrderCancelledEmail(params: {
     <p style="margin:8px 0"><strong>Order ${params.orderNumber}</strong> is now
       <strong style="color:#bc4a6a">cancelled</strong>.</p>
     ${refundLine}`;
-  await send(
+  return send(
     params.email,
     `Order ${params.orderNumber}: cancelled`,
     shell("Order cancelled", body, params.trackingToken),
@@ -273,14 +327,14 @@ export async function sendRescheduleEmail(params: {
   email: string;
   scheduledDate: string;
   timeWindow: string;
-}): Promise<void> {
+}): Promise<boolean> {
   const when = `${formatLongDate(params.scheduledDate)}${params.timeWindow ? ` · ${escapeHtml(params.timeWindow)}` : ""}`;
   const body = `
     <p>Hi ${escapeHtml(params.name.split(" ")[0])}, heads up: we&rsquo;ve moved your order to a new date.</p>
     <p style="margin:8px 0"><strong>Order ${params.orderNumber}</strong> is now set for
       <strong style="color:#bc4a6a">${when}</strong>.</p>
     <p style="margin:8px 0;font-size:13px;color:#8b746d">If this doesn&rsquo;t work for you, just reply or reach out on WhatsApp and we&rsquo;ll sort it out.</p>`;
-  await send(params.email, `Order ${params.orderNumber}: new date`, shell("Order rescheduled", body, params.trackingToken));
+  return send(params.email, `Order ${params.orderNumber}: new date`, shell("Order rescheduled", body, params.trackingToken));
 }
 
 /** After a completed order, invite the buyer to review the treats they bought. */
@@ -289,8 +343,8 @@ export async function sendReviewRequestEmail(params: {
   name: string;
   orderNumber: string;
   products: { name: string; slug: string }[];
-}): Promise<void> {
-  if (params.products.length === 0) return;
+}): Promise<boolean> {
+  if (params.products.length === 0) return false;
   const links = params.products
     .map(
       (p) =>
@@ -301,7 +355,7 @@ export async function sendReviewRequestEmail(params: {
     <p>Hi ${escapeHtml(params.name.split(" ")[0])}, we hope every bite of order ${params.orderNumber} was worth it!</p>
     <p style="margin:8px 0">A quick star rating helps other customers and means the world to a small home bakery. Tap a treat to leave a review:</p>
     <ul style="margin:8px 0;padding-left:18px">${links}</ul>`;
-  await send(params.to, "How were your treats? 🎀", shell("Leave a review", body));
+  return send(params.to, "How were your treats? 🎀", shell("Leave a review", body));
 }
 
 /** Tell the owner a customer added items to an existing order. */
@@ -309,9 +363,9 @@ export async function sendItemsAddedEmail(
   orderNumber: string,
   customerName: string,
   addedItems: string[],
-): Promise<void> {
+): Promise<boolean> {
   const owner = process.env.OWNER_NOTIFICATION_EMAIL;
-  if (!owner || addedItems.length === 0) return;
+  if (!owner || addedItems.length === 0) return false;
   const list = addedItems
     .map((line) => `<li style="padding:2px 0">${escapeHtml(line)}</li>`)
     .join("");
@@ -319,7 +373,7 @@ export async function sendItemsAddedEmail(
     <p><strong>${escapeHtml(customerName)}</strong> added items to order ${orderNumber}:</p>
     <ul style="margin:8px 0;padding-left:18px">${list}</ul>
     <p style="font-size:13px;color:#8b746d">The order total was updated. Same date and delivery.</p>`;
-  await send(owner, `Items added to ${orderNumber}`, shell("Order updated", body));
+  return send(owner, `Items added to ${orderNumber}`, shell("Order updated", body));
 }
 
 /** Tell the owner a gift recipient has filled in their delivery details. */
@@ -328,27 +382,27 @@ export async function sendGiftScheduledEmail(
   recipientName: string | null,
   address: { line1: string; unit?: string; postalCode: string },
   timeWindow: string,
-): Promise<void> {
+): Promise<boolean> {
   const owner = process.env.OWNER_NOTIFICATION_EMAIL;
-  if (!owner) return;
+  if (!owner) return false;
   const who = recipientName?.trim() ? escapeHtml(recipientName.trim()) : "The recipient";
   const line = `${escapeHtml(address.line1)}${address.unit ? `, ${escapeHtml(address.unit)}` : ""}, Singapore ${escapeHtml(address.postalCode)}`;
   const body = `
     <p><strong>${who}</strong> confirmed delivery details for gift order ${orderNumber}:</p>
     <p style="margin:8px 0"><strong>When:</strong> ${escapeHtml(timeWindow)}</p>
     <p style="margin:8px 0"><strong>Where:</strong> ${line}</p>`;
-  await send(owner, `Gift ${orderNumber} scheduled`, shell("Gift details confirmed", body));
+  return send(owner, `Gift ${orderNumber} scheduled`, shell("Gift details confirmed", body));
 }
 
 /** Warm nudge for a customer who hasn't ordered in a while. */
-export async function sendWinbackEmail(to: string, name: string): Promise<void> {
+export async function sendWinbackEmail(to: string, name: string): Promise<boolean> {
   const first = (name || "there").split(" ")[0];
   const body = `
     <p>Hi ${escapeHtml(first)}, it&rsquo;s been a while! Michelle has been baking up a storm and we&rsquo;d love to treat you again.</p>
     <p style="margin:24px 0 0;text-align:center">
       <a href="${SITE_URL}/menu" style="display:inline-block;background:#bc4a6a;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:999px">See what&rsquo;s fresh</a>
     </p>`;
-  await send(to, "We miss you at Michelle's Munchies 🎀", shell("Come back for a treat", body));
+  return send(to, "We miss you at Michelle's Munchies 🎀", shell("Come back for a treat", body));
 }
 
 /** Reminder that a saved occasion is coming up, with a nudge to reorder in time. */
@@ -357,7 +411,7 @@ export async function sendOccasionReminderEmail(
   name: string,
   label: string,
   daysBefore: number,
-): Promise<void> {
+): Promise<boolean> {
   const first = (name || "there").split(" ")[0];
   const when =
     daysBefore <= 0
@@ -371,14 +425,14 @@ export async function sendOccasionReminderEmail(
     <p style="margin:24px 0 0;text-align:center">
       <a href="${SITE_URL}/menu" style="display:inline-block;background:#bc4a6a;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:999px">Order a treat</a>
     </p>`;
-  await send(to, `${label} is coming up 🎀`, shell("A treat-worthy date is near", body));
+  return send(to, `${label} is coming up 🎀`, shell("A treat-worthy date is near", body));
 }
 
 /** Gentle nudge for a cart that was started but not checked out. */
 export async function sendAbandonedCartEmail(
   to: string,
   items: { name: string; quantity: number }[],
-): Promise<void> {
+): Promise<boolean> {
   const list = items
     .map((i) => `<li style="padding:2px 0">${i.quantity}× ${escapeHtml(i.name)}</li>`)
     .join("");
@@ -388,7 +442,7 @@ export async function sendAbandonedCartEmail(
     <p style="margin:24px 0 0;text-align:center">
       <a href="${SITE_URL}/cart" style="display:inline-block;background:#bc4a6a;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:999px">Finish your order</a>
     </p>`;
-  await send(to, "Still thinking it over? 🎀", shell("Your cart is waiting", body));
+  return send(to, "Still thinking it over? 🎀", shell("Your cart is waiting", body));
 }
 
 /** Send one newsletter email with an unsubscribe link in the footer. */
@@ -397,28 +451,28 @@ export async function sendNewsletterEmail(
   subject: string,
   bodyHtml: string,
   unsubscribeToken: string,
-): Promise<void> {
+): Promise<boolean> {
   const unsubUrl = `${SITE_URL}/unsubscribe?token=${unsubscribeToken}`;
   const body = `${bodyHtml}
     <p style="margin:24px 0 0;font-size:12px;color:#8b746d;text-align:center">
       You're getting this because you signed up at Michelle's Munchies.
       <a href="${unsubUrl}" style="color:#8b746d">Unsubscribe</a>.
     </p>`;
-  await send(to, subject, shell(subject, body));
+  return send(to, subject, shell(subject, body));
 }
 
 /** Owner alert, a customer has asked to cancel an order. */
 export async function sendCancellationRequestEmail(
   orderNumber: string,
   customerName: string,
-): Promise<void> {
+): Promise<boolean> {
   const owner = process.env.OWNER_NOTIFICATION_EMAIL;
-  if (!owner) return;
+  if (!owner) return false;
   const body = `
     <p><strong>${escapeHtml(customerName)}</strong> has asked to cancel order
       <strong>${escapeHtml(orderNumber)}</strong>.</p>
     <p style="margin:8px 0">Review it in Admin and cancel plus refund if you are happy to.</p>`;
-  await send(owner, `Cancellation request: ${orderNumber}`, shell("Cancellation request", body));
+  return send(owner, `Cancellation request: ${orderNumber}`, shell("Cancellation request", body));
 }
 
 /** Owner alert when a tracked product runs low on stock. */
@@ -426,16 +480,16 @@ export async function sendLowStockEmail(
   to: string,
   productName: string,
   remaining: number,
-): Promise<void> {
+): Promise<boolean> {
   const body = `
     <p><strong>${escapeHtml(productName)}</strong> is running low.</p>
     <p style="margin:8px 0">${remaining === 0 ? "It just sold out and is now hidden from the menu." : `Only ${remaining} left in stock.`}</p>
     <p style="margin:8px 0">Top up the count in Admin when you bake more.</p>`;
-  await send(to, `Low stock: ${productName}`, shell("Low stock alert", body));
+  return send(to, `Low stock: ${productName}`, shell("Low stock alert", body));
 }
 
 /** Birthday greeting + reward-points note. */
-export async function sendBirthdayEmail(to: string, points: number): Promise<void> {
+export async function sendBirthdayEmail(to: string, points: number): Promise<boolean> {
   const body = `
     <p>Happy birthday from Michelle&rsquo;s Munchies! 🎂</p>
     <p style="margin:8px 0">We&rsquo;ve popped <strong>${points} reward points</strong> into your
@@ -443,7 +497,7 @@ export async function sendBirthdayEmail(to: string, points: number): Promise<voi
     <p style="margin:24px 0 0;text-align:center">
       <a href="${SITE_URL}/menu" style="display:inline-block;background:#bc4a6a;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:999px">Treat yourself</a>
     </p>`;
-  await send(to, "Happy birthday! 🎂 A treat from us", shell("Happy birthday!", body));
+  return send(to, "Happy birthday! 🎂 A treat from us", shell("Happy birthday!", body));
 }
 
 /** "It's back!" email when a previously sold-out product is available again. */
@@ -451,7 +505,7 @@ export async function sendBackInStockEmail(
   to: string,
   productName: string,
   slug: string,
-): Promise<void> {
+): Promise<boolean> {
   const url = `${SITE_URL}/menu/${slug}`;
   const body = `
     <p>Good news! <strong>${escapeHtml(productName)}</strong> is back in stock.</p>
@@ -459,7 +513,7 @@ export async function sendBackInStockEmail(
     <p style="margin:24px 0 0;text-align:center">
       <a href="${url}" style="display:inline-block;background:#bc4a6a;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:999px">Order now</a>
     </p>`;
-  await send(to, `${productName} is back! 🎀`, shell("Back in stock", body));
+  return send(to, `${productName} is back! 🎀`, shell("Back in stock", body));
 }
 
 /**
@@ -471,7 +525,7 @@ export async function sendSubscriptionConfirmEmail(
   to: string,
   kind: { list: "newsletter" } | { list: "stock"; productName: string },
   confirmToken: string,
-): Promise<void> {
+): Promise<boolean> {
   const url = `${SITE_URL}/confirm/${confirmToken}`;
   const what =
     kind.list === "newsletter"
@@ -483,5 +537,38 @@ export async function sendSubscriptionConfirmEmail(
     <p style="margin:24px 0 0;text-align:center">
       <a href="${url}" style="display:inline-block;background:#bc4a6a;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:999px">Confirm my email</a>
     </p>`;
-  await send(to, "Please confirm your email 🎀", shell("One quick tap", body));
+  return send(to, "Please confirm your email 🎀", shell("One quick tap", body));
+}
+
+/**
+ * Owner alert for a Stripe payment we could not apply to its order, either
+ * because the amounts disagree or because no order matched. The money is real
+ * and sitting in Stripe, so Michelle needs the numbers in front of her to
+ * reconcile or refund by hand. `orderTotalCents` is null when no order matched.
+ */
+export async function sendPaymentReviewEmail(params: {
+  orderNumber: string;
+  sessionId: string;
+  amountPaidCents: number | null;
+  orderTotalCents: number | null;
+}): Promise<boolean> {
+  const owner = process.env.OWNER_NOTIFICATION_EMAIL;
+  if (!owner) return false;
+  const reason =
+    params.orderTotalCents == null
+      ? "we could not find an order with that number"
+      : "the amount paid does not match the order total";
+  const body = `
+    <p>A Stripe payment came in for order <strong>${escapeHtml(params.orderNumber)}</strong> but
+      ${reason}, so the order has been left unpaid.</p>
+    <p style="margin:8px 0"><strong>Paid:</strong> ${params.amountPaidCents == null ? "unknown" : formatPrice(params.amountPaidCents)}<br/>
+      <strong>Order total:</strong> ${params.orderTotalCents == null ? "no order found" : formatPrice(params.orderTotalCents)}<br/>
+      <strong>Stripe session:</strong> ${escapeHtml(params.sessionId)}</p>
+    <p style="margin:8px 0">The customer has been charged. Find the payment in Stripe, then either
+      refund it or settle the difference and mark the order paid by hand.</p>`;
+  return send(
+    owner,
+    `Payment needs review: ${params.orderNumber}`,
+    shell("Payment needs review", body),
+  );
 }

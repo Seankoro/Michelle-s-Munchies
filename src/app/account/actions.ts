@@ -149,7 +149,13 @@ export async function sendMagicLink(email: string, next?: string): Promise<AuthR
   }
   if (
     normalizedEmail &&
-    !(await rateLimit(`auth-magic-link:${normalizedEmail}`, { limit: 3, windowMs: 60 * 60_000 }))
+    // Keyed on the address alone, no client IP, so the cap really is "this many
+    // links to this inbox" rather than "this many per inbox per source address".
+    !(await rateLimit(`auth-magic-link:${normalizedEmail}`, {
+      limit: 3,
+      windowMs: 60 * 60_000,
+      scope: "global",
+    }))
   ) {
     return { error: "Too many requests for that email. Please wait a bit and try again." };
   }
@@ -181,7 +187,12 @@ export async function sendPasswordReset(email: string, next?: string): Promise<A
   }
   if (
     normalizedEmail &&
-    !(await rateLimit(`auth-password-reset:${normalizedEmail}`, { limit: 3, windowMs: 60 * 60_000 }))
+    // Address-only key, same reasoning as the magic link above.
+    !(await rateLimit(`auth-password-reset:${normalizedEmail}`, {
+      limit: 3,
+      windowMs: 60 * 60_000,
+      scope: "global",
+    }))
   ) {
     return { error: "Too many requests for that email. Please wait a bit and try again." };
   }
@@ -234,8 +245,17 @@ export async function updatePassword(newPassword: string): Promise<AuthResult> {
 
   const { error } = await supabase.auth.updateUser({ password: newPassword });
   if (error) return { error: error.message };
-  // One-time use, so a copied session cookie can't be replayed for a second change.
-  cookieStore.delete(RECOVERY_COOKIE);
+  // One-time use, so a copied session cookie can't be replayed for a second
+  // change. The overwrite has to repeat the path /auth/callback set it with,
+  // because a cookie is keyed by name and path, and a bare delete() sends back
+  // Path=/, which expires nothing and leaves the real one alive for 10 minutes.
+  cookieStore.set(RECOVERY_COOKIE, "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: 0,
+    path: "/account/reset",
+  });
   return { ok: true };
 }
 
