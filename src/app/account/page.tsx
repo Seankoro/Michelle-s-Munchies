@@ -53,36 +53,47 @@ export default async function AccountPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/account/sign-in");
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("full_name, phone, referral_code, birthday, dietary_prefs")
-    .eq("id", user.id)
-    .single();
+  // None of these reads depend on each other, so run them together instead of a
+  // serial waterfall. Nothing on the page streams until the slowest one lands.
+  const [
+    { data: profile },
+    { data: orderData },
+    { data: ledgerData },
+    { data: settingsRow },
+    { data: wishlistRows },
+    storeSettings,
+  ] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("full_name, phone, referral_code, birthday, dietary_prefs")
+      .eq("id", user.id)
+      .single(),
+    supabase
+      .from("orders")
+      .select("order_number, tracking_token, status, payment_status, total_cents, scheduled_date, created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("points_ledger")
+      .select("delta, reason, created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("settings")
+      .select(
+        "point_value_cents, points_per_dollar, referral_referrer_points, referral_referee_points",
+      )
+      .eq("id", 1)
+      .single(),
+    supabase.from("wishlists").select("product_id").eq("user_id", user.id),
+    fetchStoreSettings(),
+  ]);
+
   const referralCode = (profile as { referral_code: string | null } | null)?.referral_code ?? null;
-
-  const { data: orderData } = await supabase
-    .from("orders")
-    .select("order_number, tracking_token, status, payment_status, total_cents, scheduled_date, created_at")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false });
   const orders = (orderData as OrderRow[] | null) ?? [];
-
-  const { data: ledgerData } = await supabase
-    .from("points_ledger")
-    .select("delta, reason, created_at")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false });
   const ledger =
     (ledgerData as { delta: number; reason: string; created_at: string }[] | null) ?? [];
   const pointsBalance = ledger.reduce((sum, entry) => sum + entry.delta, 0);
-
-  const { data: settingsRow } = await supabase
-    .from("settings")
-    .select(
-      "point_value_cents, points_per_dollar, referral_referrer_points, referral_referee_points",
-    )
-    .eq("id", 1)
-    .single();
   const rewardSettings = settingsRow as
     | {
         point_value_cents: number;
@@ -96,17 +107,14 @@ export default async function AccountPage() {
   const referrerPoints = rewardSettings?.referral_referrer_points ?? 50;
   const refereePoints = rewardSettings?.referral_referee_points ?? 30;
 
-  const { data: wishlistRows } = await supabase
-    .from("wishlists")
-    .select("product_id")
-    .eq("user_id", user.id);
   const favIds = new Set(
     ((wishlistRows as { product_id: string }[] | null) ?? []).map((w) => w.product_id),
   );
+  // The catalogue read has to wait: it only happens when something is saved.
   const favourites = favIds.size > 0 ? (await fetchProducts()).filter((p) => favIds.has(p.id)) : [];
 
   const firstName = (profile?.full_name ?? "").split(" ")[0] || "there";
-  const features = (await fetchStoreSettings()).features;
+  const features = storeSettings.features;
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">

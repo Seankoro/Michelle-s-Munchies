@@ -14,6 +14,10 @@ export type GiftScheduleResult = { ok: true } | { ok: false; error: string };
  * the shared link. Auth is possession of the 32-char recipient token. Re-checks
  * the per-window cap on the buyer's chosen date, only while the order is still
  * early, and emails the owner so she has the address. Rate-limited.
+ *
+ * The gifting feature flag is deliberately not checked here. It only stops new
+ * gift purchases at checkout. A gift that is already bought and sent still needs
+ * somewhere to go, so switching gifting off must not strand it.
  */
 export async function scheduleGiftAction(
   token: string,
@@ -24,9 +28,6 @@ export async function scheduleGiftAction(
     return { ok: false, error: "Too many changes. Please wait a few minutes." };
   }
   const settings = await fetchStoreSettings();
-  if (!settings.features.gifting) {
-    return { ok: false, error: "This gift link isn’t available right now." };
-  }
 
   const line1 = address.line1.trim();
   const postal = address.postalCode.trim();

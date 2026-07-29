@@ -102,10 +102,17 @@ export default function CheckoutPage() {
     >
   >({
     ...mockSettings,
+    // No placeholder address. Until Michelle's own pickup location arrives the
+    // line stays hidden rather than naming a neighbourhood she never chose.
+    pickupLocation: "",
     dailyOrderCap: null,
     dailyCutoffTime: null,
     notePrompts: [],
   });
+  // The windows and the pickup line come from a browser read, so nothing derived
+  // from them is shown until it settles. Painting the fallbacks first would offer
+  // slots Michelle may have cleared, then pull them seconds later.
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [noteAnswers, setNoteAnswers] = useState<Record<string, string>>({});
   const [newsletterOptIn, setNewsletterOptIn] = useState(false);
   const [dietaryConflicts, setDietaryConflicts] = useState<string[]>([]);
@@ -117,7 +124,8 @@ export default function CheckoutPage() {
 
   const [fulfillment, setFulfillment] = useState<FulfillmentType>("pickup");
   const [date, setDate] = useState(earliest);
-  const [timeWindow, setTimeWindow] = useState(mockSettings.timeWindows[0]);
+  // No window is chosen until the live list says which ones exist.
+  const [timeWindow, setTimeWindow] = useState("");
   const [dayCapacity, setDayCapacity] = useState<DayCapacity | null>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -161,12 +169,16 @@ export default function CheckoutPage() {
     const supabase = createBrowserSupabase();
     let active = true;
     (async () => {
-      // Live store settings, for every shopper, signed in or not.
-      const r = await fetchClientSettingsRow();
+      // Live store settings, for every shopper, signed in or not. A read that
+      // fails still has to settle, or the schedule picker waits for windows that
+      // are never coming.
+      const r = await fetchClientSettingsRow().catch(() => null);
       if (!active) return;
       if (r) {
-        const windows =
-          r.time_windows && r.time_windows.length > 0 ? r.time_windows : mockSettings.timeWindows;
+        // An empty list is a real answer, not a missing value: it means Michelle
+        // cleared every slot to stop taking bookings, so we offer none instead of
+        // windows the server would reject.
+        const windows = r.time_windows ?? mockSettings.timeWindows;
         const leadTimeDays = r.lead_time_days ?? mockSettings.leadTimeDays;
         setSettings({
           deliveryFeeCents: r.delivery_fee_cents ?? mockSettings.deliveryFeeCents,
@@ -175,7 +187,8 @@ export default function CheckoutPage() {
           leadTimeDays,
           timeWindows: windows,
           blackoutDates: r.blackout_dates ?? mockSettings.blackoutDates,
-          pickupLocation: r.pickup_location_public || mockSettings.pickupLocation,
+          // Blank means she hasn't set a pickup address yet, so the line is hidden.
+          pickupLocation: r.pickup_location_public?.trim() ?? "",
           dailyOrderCap: r.daily_order_cap,
           dailyCutoffTime: r.daily_cutoff_time,
           notePrompts: Array.isArray(r.note_prompts) ? r.note_prompts : [],
@@ -184,8 +197,11 @@ export default function CheckoutPage() {
         // Keep the chosen date/window valid under the live rules.
         const liveEarliest = earliestFulfillmentDate(leadTimeDays, singaporeNow(), r.daily_cutoff_time);
         setDate((cur) => (cur < liveEarliest ? liveEarliest : cur));
-        setTimeWindow((cur) => (windows.includes(cur) ? cur : windows[0]));
+        setTimeWindow((cur) => (windows.includes(cur) ? cur : windows[0] ?? ""));
       }
+      // Settled either way. A failed read leaves the same defaults the server
+      // falls back to, so the form and the order check still agree.
+      setSettingsLoaded(true);
 
       // Rewards balance, signed-in only. Fetched server-side so points held by
       // the customer's other unpaid orders are already subtracted, and the
@@ -394,6 +410,28 @@ export default function CheckoutPage() {
   // so the buyer needn't know either. The date still anchors the bake schedule.
   const giftSelfSchedule = isGift && fulfillment === "delivery" && letRecipientSchedule;
 
+  // The day is full when the daily cap is reached, or when every window has hit
+  // the per-window cap. The second case matters because the select only ever
+  // offers the window already chosen, so "pick another window" is advice the
+  // form cannot take. Either way the date is what has to change.
+  const perWindowCap = dayCapacity?.perWindowCap ?? null;
+  const allWindowsFull =
+    perWindowCap !== null &&
+    perWindowCap > 0 &&
+    settings.timeWindows.length > 0 &&
+    settings.timeWindows.every((window) => (dayCapacity?.windowCounts[window] ?? 0) >= perWindowCap);
+  const dailyCapReached =
+    dayCapacity !== null &&
+    dayCapacity.dailyOrderCap !== null &&
+    dayCapacity.dailyOrderCap > 0 &&
+    dayCapacity.dayCount >= dayCapacity.dailyOrderCap;
+
+  // No windows at all means Michelle cleared every slot to stop taking bookings.
+  // Offering the fallback three would book slots the server refuses, so the form
+  // says so plainly and blocks submission. Only once settings land, so a slow
+  // read never flashes the paused notice.
+  const orderingPaused = settingsLoaded && settings.timeWindows.length === 0;
+
   function validate(): Record<string, string> {
     const next: Record<string, string> = {};
     if (!name.trim()) next.name = "Please tell us your name.";
@@ -415,7 +453,9 @@ export default function CheckoutPage() {
       dayCapacity.perWindowCap > 0 &&
       (dayCapacity.windowCounts[timeWindow] ?? 0) >= dayCapacity.perWindowCap
     ) {
-      next.timeWindow = "That time slot is fully booked. Please pick another window.";
+      next.timeWindow = allWindowsFull
+        ? "Every window on this date is taken. Please choose another date."
+        : "That time slot is fully booked. Please pick another window.";
     }
     if (fulfillment === "delivery" && !giftSelfSchedule) {
       if (!line1.trim()) next.line1 = "Delivery address is required.";
@@ -438,6 +478,9 @@ export default function CheckoutPage() {
   }
 
   async function handleSubmit() {
+    // Nothing to book while every window is cleared, and the server would refuse
+    // the order anyway, so stop here rather than sending it.
+    if (orderingPaused) return;
     const found = validate();
     setErrors(found);
     if (Object.keys(found).length > 0) {
@@ -577,7 +620,10 @@ export default function CheckoutPage() {
                 </button>
               ))}
             </div>
-            {fulfillment === "pickup" && (
+            {/* Only once she has saved an address. A blank one means she hasn't
+                picked a spot yet, and a placeholder would send shoppers to a
+                neighbourhood she never chose. */}
+            {fulfillment === "pickup" && settings.pickupLocation && (
               <p className="mt-3 rounded-xl bg-marble/60 px-4 py-3 text-sm text-muted">
                 📍 Pickup: {settings.pickupLocation}
               </p>
@@ -665,7 +711,25 @@ export default function CheckoutPage() {
                   onChange={(e) => setDate(e.target.value)}
                 />
               </Field>
-              {giftSelfSchedule ? (
+              {!settingsLoaded ? (
+                <Field label="Time window" htmlFor="timeWindow" error={errors.timeWindow}>
+                  <p
+                    id="timeWindow"
+                    className="rounded-xl bg-marble/60 px-4 py-3 text-sm text-muted"
+                  >
+                    Loading available times…
+                  </p>
+                </Field>
+              ) : orderingPaused ? (
+                <Field label="Time window" htmlFor="timeWindow">
+                  <p
+                    id="timeWindow"
+                    className="rounded-xl bg-marble/60 px-4 py-3 text-sm text-muted"
+                  >
+                    No time windows are open right now.
+                  </p>
+                </Field>
+              ) : giftSelfSchedule ? (
                 <Field label="Time window" htmlFor="timeWindow">
                   <p
                     id="timeWindow"
@@ -698,14 +762,17 @@ export default function CheckoutPage() {
                 </Field>
               )}
             </div>
-            {dayCapacity &&
-              dayCapacity.dailyOrderCap != null &&
-              dayCapacity.dailyOrderCap > 0 &&
-              dayCapacity.dayCount >= dayCapacity.dailyOrderCap && (
-                <p role="status" className="rounded-xl bg-blush-soft/60 px-3 py-2 text-sm text-rose-deep">
-                  {formatLongDate(date)} is fully booked. Please choose another date.
-                </p>
-              )}
+            {orderingPaused && (
+              <p role="status" className="rounded-xl bg-blush-soft/60 px-3 py-2 text-sm text-rose-deep">
+                Ordering is paused right now. There are no pickup or delivery times open, so please
+                check back soon.
+              </p>
+            )}
+            {!orderingPaused && (dailyCapReached || allWindowsFull) && (
+              <p role="status" className="rounded-xl bg-blush-soft/60 px-3 py-2 text-sm text-rose-deep">
+                {formatLongDate(date)} is fully booked. Please choose another date.
+              </p>
+            )}
           </section>
 
           {/* Contact */}
@@ -791,7 +858,13 @@ export default function CheckoutPage() {
                   label="Email me occasional updates"
                   className="mt-0.5"
                 />
-                <span>Email me occasional updates and new treats. Unsubscribe any time.</span>
+                {/* Subscribing is double opt-in, so the tick alone does nothing
+                    until the confirmation link is tapped. Say so here, or the
+                    confirmation email reads like a stray duplicate. */}
+                <span>
+                  Email me occasional updates and new treats. We&rsquo;ll send one email to confirm.
+                  Tap the link inside to finish signing up. Unsubscribe any time.
+                </span>
               </div>
             )}
           </section>
@@ -1021,10 +1094,14 @@ export default function CheckoutPage() {
 
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || orderingPaused}
               className={buttonClasses({ size: "lg", className: "mt-4 w-full" })}
             >
-              {submitting ? "Placing order…" : `Place order · ${formatPrice(totalCents)}`}
+              {orderingPaused
+                ? "Ordering is paused"
+                : submitting
+                  ? "Placing order…"
+                  : `Place order · ${formatPrice(totalCents)}`}
             </button>
             <p className="mt-2 text-center text-xs text-muted">
               You&rsquo;ll pay by PayNow after confirming on WhatsApp.

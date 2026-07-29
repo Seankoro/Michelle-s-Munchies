@@ -51,9 +51,11 @@ export function FlavourBoxPicker({
 
   function bump(label: string, delta: number) {
     setCounts((prev) => {
+      const current = prev[label] ?? 0;
+      if (delta < 0 && current === 0) return prev; // nothing to take away
       const total = Object.values(prev).reduce((sum, n) => sum + n, 0);
       if (delta > 0 && total >= size.count) return prev; // box already full
-      return { ...prev, [label]: Math.max(0, (prev[label] ?? 0) + delta) };
+      return { ...prev, [label]: current + delta };
     });
   }
 
@@ -101,7 +103,7 @@ export function FlavourBoxPicker({
               className={cn(
                 "rounded-full border px-4 py-2 text-sm font-semibold transition active:scale-95",
                 index === sizeIndex
-                  ? "border-rose-deep bg-blush-soft text-rose-deep"
+                  ? "border-rose-deep bg-blush-soft text-ink"
                   : "border-line bg-white text-ink hover:border-rose",
               )}
             >
@@ -111,7 +113,13 @@ export function FlavourBoxPicker({
         </div>
       )}
 
-      <div className="mt-4 flex items-center justify-between rounded-xl bg-blush-soft/60 px-4 py-3 text-sm font-semibold text-rose-deep">
+      {/* Spoken as it changes, so a keyboard user hears the box fill up rather
+          than pressing a "+" that has quietly stopped counting. */}
+      <div
+        role="status"
+        aria-live="polite"
+        className="mt-4 flex items-center justify-between rounded-xl bg-blush-soft/60 px-4 py-3 text-sm font-semibold text-rose-deep"
+      >
         <span>
           {chosen} of {size.count} chosen
         </span>
@@ -135,12 +143,20 @@ export function FlavourBoxPicker({
                 {soldOut && <span className="ml-1 text-xs font-normal text-muted">sold out</span>}
               </span>
               <div className="flex items-center gap-2">
+                {/* Zero-count and box-full use aria-disabled rather than
+                    disabled, because both land on the very button being
+                    pressed, and a button disabled under your finger drops
+                    focus to the page body. Inside the quick-pick dialog that
+                    tips the keyboard user straight out of the modal. bump()
+                    already ignores both cases, so the press does nothing
+                    either way. Sold out never flips mid-use, so it stays a
+                    real disabled and keeps its tab skip. */}
                 <button
                   type="button"
                   aria-label={`Remove one ${value.label}`}
                   onClick={() => bump(value.label, -1)}
-                  disabled={qty === 0}
-                  className="h-8 w-8 rounded-full border border-line text-ink transition active:scale-90 disabled:opacity-40"
+                  aria-disabled={qty === 0}
+                  className="h-8 w-8 rounded-full border border-line text-ink transition active:scale-90 aria-disabled:opacity-40"
                 >
                   −
                 </button>
@@ -149,8 +165,9 @@ export function FlavourBoxPicker({
                   type="button"
                   aria-label={`Add one ${value.label}`}
                   onClick={() => bump(value.label, 1)}
-                  disabled={soldOut || remaining <= 0}
-                  className="h-8 w-8 rounded-full border border-line text-ink transition active:scale-90 disabled:opacity-40"
+                  disabled={soldOut}
+                  aria-disabled={remaining <= 0}
+                  className="h-8 w-8 rounded-full border border-line text-ink transition active:scale-90 disabled:opacity-40 aria-disabled:opacity-40"
                 >
                   +
                 </button>

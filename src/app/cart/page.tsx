@@ -20,6 +20,10 @@ export default function CartPage() {
   const [freeMin, setFreeMin] = useState(mockSettings.freeDeliveryMinCents);
   // Live minimum order, so a below-minimum cart never sails into checkout.
   const [minOrder, setMinOrder] = useState(mockSettings.minOrderCents);
+  // These two arrive from the browser, so nothing derived from them is shown
+  // until the read settles. Painting the defaults first would quote a
+  // free-delivery figure Michelle may have changed, then flip it seconds later.
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   // Spend-gift nudge details, null until loaded or when off.
   const [giftThreshold, setGiftThreshold] = useState<number | null>(null);
   const [giftName, setGiftName] = useState<string | null>(null);
@@ -27,10 +31,15 @@ export default function CartPage() {
     let active = true;
     void (async () => {
       const row = await fetchClientSettingsRow();
-      if (!active || !row) return;
-      if (typeof row.free_delivery_min_cents === "number") setFreeMin(row.free_delivery_min_cents);
-      if (typeof row.min_order_cents === "number") setMinOrder(row.min_order_cents);
-      if (row.free_gift_threshold_cents && row.free_gift_product_id) {
+      if (!active) return;
+      if (row) {
+        if (typeof row.free_delivery_min_cents === "number") setFreeMin(row.free_delivery_min_cents);
+        if (typeof row.min_order_cents === "number") setMinOrder(row.min_order_cents);
+      }
+      // Settled either way. A failed read leaves the same defaults checkout and
+      // the server fall back to, so the two screens still agree.
+      setSettingsLoaded(true);
+      if (row?.free_gift_threshold_cents && row.free_gift_product_id) {
         setGiftThreshold(row.free_gift_threshold_cents);
         const { data: product } = await createBrowserSupabase()
           .from("products")
@@ -72,7 +81,8 @@ export default function CartPage() {
   // qualifies, so only promote it when a real positive threshold is set.
   const remaining = freeMin > 0 ? Math.max(0, freeMin - subtotalCents) : 0;
   const qualifiesForFreeDelivery = freeMin > 0 && remaining === 0;
-  const belowMin = subtotalCents < minOrder;
+  const showFreeDeliveryNudge = settingsLoaded && freeMin > 0;
+  const belowMin = settingsLoaded && subtotalCents < minOrder;
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
@@ -170,16 +180,19 @@ export default function CartPage() {
         ))}
       </ul>
 
-      {/* Free-delivery nudge */}
-      <div
-        role="status"
-        aria-live="polite"
-        className="mt-6 rounded-2xl bg-blush-soft/60 px-4 py-3 text-sm text-rose-deep"
-      >
-        {qualifiesForFreeDelivery
-          ? "🎉 Your order qualifies for free delivery!"
-          : `🚚 You're ${formatPrice(remaining)} away from free delivery.`}
-      </div>
+      {/* Free-delivery nudge. Nothing to say when the threshold is zero, since
+          that is how the settings screen switches free delivery off. */}
+      {showFreeDeliveryNudge && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="mt-6 rounded-2xl bg-blush-soft/60 px-4 py-3 text-sm text-rose-deep"
+        >
+          {qualifiesForFreeDelivery
+            ? "🎉 Your order qualifies for free delivery!"
+            : `🚚 You're ${formatPrice(remaining)} away from free delivery.`}
+        </div>
+      )}
 
       {/* Spend-gift nudge */}
       {features.spendGift && giftThreshold && giftName && (

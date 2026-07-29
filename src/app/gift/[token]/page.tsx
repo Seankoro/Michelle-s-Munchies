@@ -19,7 +19,11 @@ export default async function GiftSchedulePage({
 }) {
   const { token } = await params;
   const settings = await fetchStoreSettings();
-  const gift = settings.features.gifting ? await getGiftByToken(token) : null;
+  // The gifting feature flag only stops new gift purchases at checkout. A gift
+  // that is already bought and sent still needs somewhere to go, so the token
+  // alone decides whether this page loads. Otherwise switching gifting off would
+  // tell the recipient their perfectly good link had expired.
+  const gift = await getGiftByToken(token);
 
   if (!gift) {
     return (

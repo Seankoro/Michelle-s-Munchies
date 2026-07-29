@@ -187,6 +187,11 @@ export function MenuBrowser({
       .filter((section) => section.items.length > 0);
   }, [products, categories, query, category, dietary]);
 
+  const matchCount = useMemo(
+    () => sections.reduce((sum, section) => sum + section.items.length, 0),
+    [sections],
+  );
+
   const allCategories = ["All", ...categories];
 
   return (
@@ -263,6 +268,15 @@ export function MenuBrowser({
       <p className="mt-3 text-sm text-muted">
         Many treats can be made to suit dietary needs. Filter to browse what already fits, or add a
         note with your order.
+      </p>
+
+      {/* Searching or filtering rewrites the rails silently, so say what changed.
+          Rendered outside the branches below so the region is already there when
+          its text updates, which is what makes it announce. */}
+      <p className="sr-only" role="status" aria-live="polite">
+        {matchCount === 0
+          ? "No treats match that search."
+          : `${matchCount} ${matchCount === 1 ? "treat" : "treats"} match your search.`}
       </p>
 
       {sections.length === 0 ? (
