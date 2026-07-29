@@ -22,10 +22,12 @@ export async function expireStaleUnpaidOrders(): Promise<number> {
   // Today in Singapore. A scheduled_date strictly before this is at least one
   // full day past, which is the owner's chosen grace window.
   const today = singaporeDateString();
+  // Failed payments count as unpaid the same as pending ones, so an abandoned
+  // order whose payment failed also frees its promo slot and held points.
   const { data, error } = await admin
     .from("orders")
     .update({ status: "cancelled", updated_at: new Date().toISOString() })
-    .eq("payment_status", "pending")
+    .in("payment_status", ["pending", "failed"])
     .in("status", ["received", "confirmed"])
     .lt("scheduled_date", today)
     .or("deposit_cents.is.null,deposit_cents.eq.0")

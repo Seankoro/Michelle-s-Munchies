@@ -1,6 +1,7 @@
 import type Stripe from "stripe";
 import { getStripe } from "@/lib/stripe";
 import { markOrderPaid } from "@/lib/admin-db";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 // Stripe's SDK needs the Node runtime, not edge, and the raw request body.
 export const runtime = "nodejs";
@@ -29,6 +30,28 @@ export async function POST(request: Request) {
     if (!orderNumber) return;
     const paymentIntentId =
       typeof session.payment_intent === "string" ? session.payment_intent : null;
+
+    // The session was priced at the order's total when checkout started, but
+    // the order can legally grow before payment, through the add-items flow or
+    // a gift recipient scheduling a delivery fee. Paying that stale session
+    // must not mark the enlarged order paid, or the difference gets baked for
+    // free. On a mismatch the order stays unpaid and Michelle reconciles the
+    // Stripe payment by hand, which is the safe side of the error.
+    const admin = createAdminClient();
+    const { data } = await admin
+      .from("orders")
+      .select("total_cents")
+      .eq("order_number", orderNumber)
+      .maybeSingle();
+    const totalCents = (data as { total_cents: number } | null)?.total_cents;
+    if (totalCents == null) return;
+    if (session.amount_total != null && session.amount_total !== totalCents) {
+      console.error(
+        `[stripe-webhook] amount mismatch on ${orderNumber}: session paid ${session.amount_total}, order total ${totalCents}. Left unpaid for manual review.`,
+      );
+      return;
+    }
+
     await markOrderPaid(orderNumber, paymentIntentId);
   }
 

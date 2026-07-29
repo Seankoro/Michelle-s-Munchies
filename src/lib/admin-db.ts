@@ -118,22 +118,25 @@ export async function updateOrderStatus(orderNumber: string, status: OrderStatus
   const supabase = createAdminClient();
   // Paid-before-baking: an order can only move into a work status once it is
   // paid. received/confirmed stay available while unpaid, and cancel is handled
-  // separately, so neither is blocked here.
-  if (statusRequiresPayment(status)) {
-    const { data: cur } = await supabase
-      .from("orders")
-      .select("payment_status")
-      .eq("order_number", orderNumber)
-      .maybeSingle();
-    if ((cur as { payment_status: PaymentStatus } | null)?.payment_status !== "paid") {
-      throw new Error("Mark this order paid before moving it to baking or beyond.");
-    }
-  }
-  const { error } = await supabase
+  // separately, so neither is blocked here. The paid condition rides on the
+  // UPDATE itself rather than a separate read, so a payment change landing in
+  // between can never slip an unpaid order into baking.
+  let updateQuery = supabase
     .from("orders")
     .update({ status, updated_at: new Date().toISOString() })
     .eq("order_number", orderNumber);
+  if (statusRequiresPayment(status)) {
+    updateQuery = updateQuery.eq("payment_status", "paid");
+  }
+  const { data: updated, error } = await updateQuery.select("id").maybeSingle();
   if (error) throw new Error(`Failed to update status: ${error.message}`);
+  if (!updated) {
+    throw new Error(
+      statusRequiresPayment(status)
+        ? "Mark this order paid before moving it to baking or beyond."
+        : "Order not found.",
+    );
+  }
 
   // Notify the customer of the new status. Never throws.
   const { data } = await supabase
@@ -236,11 +239,30 @@ export async function updatePaymentStatus(orderNumber: string, paymentStatus: Pa
     return;
   }
   const supabase = createAdminClient();
+  const { data } = await supabase
+    .from("orders")
+    .select("id, status, payment_status")
+    .eq("order_number", orderNumber)
+    .maybeSingle();
+  const order = data as { id: string; status: OrderStatus; payment_status: PaymentStatus } | null;
+  if (!order) throw new Error("Order not found.");
+  // The paid-before-baking rule holds in both directions: once an order is in
+  // a work status, its payment cannot be flipped back to unpaid, or the order
+  // would keep baking while unpaid with nothing restoring the invariant.
+  if (statusRequiresPayment(order.status)) {
+    throw new Error("Move this order back to confirmed before changing its payment.");
+  }
   const { error } = await supabase
     .from("orders")
     .update({ payment_status: paymentStatus, updated_at: new Date().toISOString() })
     .eq("order_number", orderNumber);
   if (error) throw new Error(`Failed to update payment: ${error.message}`);
+  // Undoing a mistaken paid puts any decremented stock back, mirroring the
+  // decrement that ran on the paid transition. Stamp-guarded, so an order
+  // that never took stock is a no-op, and marking paid again decrements again.
+  if (order.payment_status === "paid") {
+    await restockOrder(order.id);
+  }
 }
 
 /** Admin reschedule: move an order's date and time window. No customer-facing caps. */
@@ -461,14 +483,21 @@ export async function markOrderPaid(orderNumber: string, paymentIntentId: string
     })
     .eq("order_number", orderNumber)
     .neq("payment_status", "paid")
+    // A cancelled order must never go paid: a late Stripe payment landing
+    // after the cron expired the order would otherwise debit points and take
+    // stock for an order nobody will bake. The payment stays visible in
+    // Stripe for a manual refund.
+    .neq("status", "cancelled")
     .select("id, user_id, subtotal_cents, points_redeemed")
     .maybeSingle();
   if (error) throw new Error(`Failed to mark order paid: ${error.message}`);
   if (!data) {
-    // Already paid, usually a duplicate webhook. If the admin marked a PayNow
-    // order paid by hand while Stripe was still processing, the PaymentIntent
-    // was never stored, which would leave a later refund with nothing to act
-    // on, so backfill the id without re-running any paid side effects.
+    // Already paid, usually a duplicate webhook, or cancelled as above. If the
+    // admin marked a PayNow order paid by hand while Stripe was still
+    // processing, the PaymentIntent was never stored, which would leave a
+    // later refund with nothing to act on, so backfill the id without
+    // re-running any paid side effects. The same backfill records the intent
+    // on a cancelled order so its stray payment is easy to find and refund.
     if (paymentIntentId) {
       await supabase
         .from("orders")

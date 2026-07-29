@@ -23,6 +23,7 @@ import {
   applyPromo,
   estimateDeliveryFeeAction,
   getDayCapacityAction,
+  getPointsBalanceAction,
   placeOrder,
   recordCheckoutIntentAction,
   type DayCapacity,
@@ -186,20 +187,15 @@ export default function CheckoutPage() {
         setTimeWindow((cur) => (windows.includes(cur) ? cur : windows[0]));
       }
 
-      // Rewards balance, signed-in only.
+      // Rewards balance, signed-in only. Fetched server-side so points held by
+      // the customer's other unpaid orders are already subtracted, and the
+      // preview never promises more than placeOrder will grant.
       const {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user || !active) return;
-      const { data: ledger } = await supabase
-        .from("points_ledger")
-        .select("delta")
-        .eq("user_id", user.id);
+      const { balance } = await getPointsBalanceAction();
       if (!active) return;
-      const balance = ((ledger as { delta: number }[] | null) ?? []).reduce(
-        (sum, e) => sum + e.delta,
-        0,
-      );
       setPointsBalance(balance);
     })();
     return () => {

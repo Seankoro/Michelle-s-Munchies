@@ -65,6 +65,36 @@ function subtotalOf(items: CreateOrderInput["items"]): number {
   return items.reduce((sum, item) => sum + item.unitPriceCents * item.quantity, 0);
 }
 
+/**
+ * The signed-in customer's redeemable points, with points held by their other
+ * unpaid orders already subtracted, so the checkout preview matches what
+ * placeOrder will actually grant. Guests get 0.
+ */
+export async function getPointsBalanceAction(): Promise<{ balance: number }> {
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { balance: 0 };
+  const { data: ledger } = await supabase
+    .from("points_ledger")
+    .select("delta")
+    .eq("user_id", user.id);
+  const total = ((ledger as { delta: number }[] | null) ?? []).reduce((sum, e) => sum + e.delta, 0);
+  const admin = createAdminClient();
+  const { data: heldRows } = await admin
+    .from("orders")
+    .select("points_redeemed")
+    .eq("user_id", user.id)
+    .in("payment_status", ["pending", "failed"])
+    .neq("status", "cancelled");
+  const held = ((heldRows as { points_redeemed: number }[] | null) ?? []).reduce(
+    (sum, o) => sum + (o.points_redeemed ?? 0),
+    0,
+  );
+  return { balance: Math.max(0, total - held) };
+}
+
 /** Checkout "delivery fee" preview, called as the customer fills in their postal
  *  code and cart, so the UI can show the real distance-zoned fee before placing
  *  the order. Rate-limited since it triggers a geocode/distance lookup. */
@@ -439,16 +469,18 @@ export async function placeOrder(
         (sum, e) => sum + e.delta,
         0,
       );
-      // Points redeemed on this customer's placed-but-still-pending orders are
-      // not debited from the ledger until the order is marked paid, so subtract
+      // Points redeemed on this customer's placed-but-unpaid orders are not
+      // debited from the ledger until the order is marked paid, so subtract
       // them from the balance here. Otherwise the same points could be redeemed
       // again on a second, concurrent order and drive the ledger negative.
+      // A failed payment is just as unpaid as a pending one, and the order can
+      // still be marked paid later, so failed orders hold their points too.
       const admin = createAdminClient();
       const { data: heldRows } = await admin
         .from("orders")
         .select("points_redeemed")
         .eq("user_id", user.id)
-        .eq("payment_status", "pending")
+        .in("payment_status", ["pending", "failed"])
         .neq("status", "cancelled");
       const heldPoints = ((heldRows as { points_redeemed: number }[] | null) ?? []).reduce(
         (sum, o) => sum + (o.points_redeemed ?? 0),
