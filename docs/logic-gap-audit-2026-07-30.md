@@ -8,6 +8,47 @@ The calibration example was the owner's own finding: scheduled_date is the date 
 
 Method: 8 reasoning lenses (temporal coherence, state completeness, out-of-order events, semantic drift, missing flows, settings under in-flight orders, money reconciliation, conflicting human intent), plus a pass for the unexamined dimension. Every gap was then attacked by a skeptic whose main test was: for a one-person bakery on WhatsApp, does messaging the customer resolve this completely with no wrong data left? If yes it was refuted.
 
+
+## STATUS: ALL 17 GAPS ADDRESSED (2026-07-30)
+
+Every confirmed gap below is now fixed, across four commits. Gate green
+throughout: type-check, 60/60 tests, lint, production build.
+
+Migrations added by this work, all applied AND exercised against the live
+database rather than only created:
+- 0036 paid_at, deposit_outstanding_cents, order_refunds, email_opt_outs, and
+  remove_items_from_order. Verified by creating a real order, removing one of
+  two lines, and confirming both totals moved with it.
+- 0037 email_opt_outs.opted_out_at. A token must exist before someone opts out,
+  since it is what the footer link is built from, so row presence alone could
+  not mean opted out. Verified both states behave correctly.
+- 0038 gift_reminder_sent_at. The first implementation stamped the reminder into
+  owner_note, which would have made an abandoned unpaid gift permanently immune
+  to the stale-order sweep, since that sweep treats an owner note and a moved
+  updated_at as proof a human was involved. Verified the chase fires once and
+  that neither owner_note nor updated_at moves.
+
+Two things found while fixing, that the audit itself had not caught:
+- The admin store was dropping manualRefundDue, so the warning that a PayNow
+  order cannot be refunded from the app could never appear.
+- The tracking page offered a date-change form in exactly the cases the new
+  reschedule rules refuse, so it could only fail.
+
+Owner decisions recorded during implementation:
+- Stock: availability is the shelf minus units already promised to unpaid
+  orders. Stock is NOT reserved at order time, so an abandoned cart never holds
+  inventory.
+- Reschedule: allowed until the order is confirmed or inside the lead time, and
+  always emails the owner.
+- Deposits on cancel: the owner is asked whether it went back or is still owed,
+  and an unanswered prompt means still owed.
+- Refunds and edits: both built. Money returned is recorded without cancelling,
+  and lines can be removed before baking.
+- The paid-before-baking gate stays FULL PAYMENT ONLY. A deposit does not
+  unlock baking. Unchanged by request.
+
+---
+
 ## Totals
 
 - Raised: 53
