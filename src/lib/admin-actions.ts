@@ -13,6 +13,7 @@ import { geocodePostal } from "@/lib/onemap";
 import type { DistanceTier } from "@/lib/delivery-fee";
 import {
   cancelAndRefundOrder,
+  clearDepositOwed,
   createProduct,
   createPromo,
   deletePromo,
@@ -21,6 +22,8 @@ import {
   fetchAdminSettings,
   fetchPromos,
   recordDeposit,
+  recordRefund,
+  removeOrderItems,
   rescheduleOrder,
   setPromoActive,
   updateOrderStatus,
@@ -208,9 +211,83 @@ export async function recordDepositAction(orderNumber: string, cents: number): P
   await recordDeposit(orderNumber, cents);
 }
 
-export async function cancelOrderAction(orderNumber: string): Promise<CancelResult> {
+/**
+ * `depositReturned` answers the question the cancel dialog asks when the order
+ * took a deposit, did the money go back or is it still owed. It defaults to
+ * still owed, the safe direction, because an unanswered prompt should leave the
+ * amount recorded and visible rather than quietly claim it was returned.
+ */
+export async function cancelOrderAction(
+  orderNumber: string,
+  depositReturned = false,
+): Promise<CancelResult> {
   await requireAdmin();
-  return cancelAndRefundOrder(orderNumber);
+  return cancelAndRefundOrder(orderNumber, depositReturned);
+}
+
+/** Michelle has settled a deposit she was still holding, so stop showing it. */
+export async function clearDepositOwedAction(orderNumber: string): Promise<void> {
+  await requireAdmin();
+  await clearDepositOwed(orderNumber);
+}
+
+export type RecordRefundResult = { ok: true } | { ok: false; error: string };
+
+/** Room for "one tin arrived squashed, sent S$20 back by PayNow" and no more. */
+const MAX_REFUND_REASON_LENGTH = 200;
+
+/**
+ * Record money that went back to a customer without cancelling the order, so a
+ * goodwill refund stops counting as revenue the shop kept. One row per amount
+ * returned, so a second partial refund on the same order is another call.
+ */
+export async function recordRefundAction(
+  orderNumber: string,
+  amountCents: number,
+  reason: string,
+  via: "manual" | "stripe",
+): Promise<RecordRefundResult> {
+  await requireAdmin();
+  // Money is integer cents everywhere and the table only accepts an amount
+  // above zero, so catch a stray 19.995 or a typed minus here, where the panel
+  // can show Michelle words instead of a Postgres constraint error.
+  if (!Number.isInteger(amountCents) || amountCents <= 0) {
+    return { ok: false, error: "Refund amount must be a whole number of cents above zero." };
+  }
+  const trimmedReason = reason.trim();
+  if (trimmedReason.length > MAX_REFUND_REASON_LENGTH) {
+    return { ok: false, error: `Reason must be ${MAX_REFUND_REASON_LENGTH} characters or fewer.` };
+  }
+  try {
+    await recordRefund(orderNumber, amountCents, trimmedReason, via);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not record the refund." };
+  }
+}
+
+export type RemoveItemsResult =
+  | { ok: true; removedCents: number }
+  | { ok: false; error: string };
+
+/**
+ * Drop lines Michelle could not bake, so the order describes what was actually
+ * delivered. The cents removed come back from the database, which works them
+ * out from the rows themselves and moves the totals in the same transaction,
+ * so no amount is passed in and the totals can never drift from the lines.
+ */
+export async function removeOrderItemsAction(
+  orderNumber: string,
+  itemIds: string[],
+): Promise<RemoveItemsResult> {
+  await requireAdmin();
+  if (itemIds.length === 0) return { ok: false, error: "Pick at least one item to remove." };
+  try {
+    const removedCents = await removeOrderItems(orderNumber, itemIds);
+    return { ok: true, removedCents };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not remove the items." };
+  }
 }
 
 export type ManualOrderResult = { ok: true; orderNumber: string } | { ok: false; error: string };

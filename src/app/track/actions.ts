@@ -5,7 +5,11 @@ import { rateLimit } from "@/lib/rate-limit";
 import { fetchStoreSettings } from "@/lib/settings";
 import { earliestFulfillmentDate, isChangeable } from "@/lib/order";
 import { singaporeDateString, singaporeNow } from "@/lib/time";
-import { sendCancellationRequestEmail, sendItemsAddedEmail } from "@/lib/email";
+import {
+  sendCancellationRequestEmail,
+  sendCustomerRescheduledEmail,
+  sendItemsAddedEmail,
+} from "@/lib/email";
 import {
   reorderFromOrderId,
   resolveCartLines,
@@ -34,6 +38,11 @@ const CANCELLATION_NOTE_PREFIX = "Cancellation requested by the customer on";
  * tracking token. Re-validates lead time, cutoff, blackout, and the per-window
  * and daily caps server-side while excluding this order's own slot, only while
  * the order is still early, capped at MAX_RESCHEDULES, rate-limited.
+ *
+ * Only an order Michelle has not confirmed yet and is not already shopping for
+ * can move on its own. Once she has confirmed it, or the date it currently sits
+ * on is inside the lead time, she has plans built around that day and the
+ * customer has to talk to her instead of moving it out from under her.
  */
 export async function rescheduleOrderAction(
   token: string,
@@ -51,24 +60,51 @@ export async function rescheduleOrderAction(
   const admin = createAdminClient();
   const { data } = await admin
     .from("orders")
-    .select("id, status, reschedule_count")
+    .select(
+      "id, status, reschedule_count, order_number, customer_name, scheduled_date, time_window",
+    )
     .eq("tracking_token", token)
     .maybeSingle();
-  const order = data as { id: string; status: string; reschedule_count: number } | null;
+  const order = data as {
+    id: string;
+    status: string;
+    reschedule_count: number;
+    order_number: string;
+    customer_name: string;
+    scheduled_date: string;
+    time_window: string | null;
+  } | null;
   if (!order) return { ok: false, error: "Order not found." };
   if (!isChangeable(order.status)) {
     return { ok: false, error: "This order is already being prepared and can’t be changed." };
+  }
+  // Confirming an order is Michelle saying she has taken it on for that day, so
+  // from then on the date is hers to move and not the customer's.
+  if (order.status !== "received") {
+    return {
+      ok: false,
+      error: "We’ve already confirmed this order. Please message us on WhatsApp to move the date.",
+    };
   }
   if (order.reschedule_count >= MAX_RESCHEDULES) {
     return { ok: false, error: "This order has been rescheduled too many times. Please message us." };
   }
 
-  // Re-validate the new slot exactly like checkout.
+  // Same lead time and cutoff checkout uses, applied twice, once to the date the
+  // order sits on now and once to the date they picked.
   const earliest = earliestFulfillmentDate(
     settings.leadTimeDays,
     singaporeNow(),
     settings.dailyCutoffTime,
   );
+  // Inside the lead time she is likely already shopping or baking for this one,
+  // so moving it silently would waste ingredients she has already bought.
+  if (order.scheduled_date < earliest) {
+    return {
+      ok: false,
+      error: "This order is too close to its date to move. Please message us on WhatsApp instead.",
+    };
+  }
   if (!newDate || newDate < earliest) {
     return { ok: false, error: "Please choose a later date." };
   }
@@ -113,6 +149,23 @@ export async function rescheduleOrderAction(
     })
     .eq("id", order.id);
   if (error) return { ok: false, error: "Couldn’t update the order. Please try again." };
+
+  // Nothing on the order records the old slot once it is overwritten, so the mail
+  // carries both. Best-effort like the other notification paths, so a mail hiccup
+  // never makes a reschedule that really happened look failed.
+  try {
+    await sendCustomerRescheduledEmail({
+      orderNumber: order.order_number,
+      customerName: order.customer_name,
+      fromDate: order.scheduled_date,
+      fromWindow: order.time_window ?? "",
+      toDate: newDate,
+      toWindow: newWindow,
+      trackingToken: token,
+    });
+  } catch (emailError) {
+    console.error("[reschedule] notification email failed:", emailError);
+  }
   return { ok: true };
 }
 

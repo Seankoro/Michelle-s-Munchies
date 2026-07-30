@@ -3,6 +3,7 @@ import { fetchProducts } from "@/lib/products";
 import { fetchActiveBundles } from "@/lib/bundles";
 import { fetchActiveBoxTemplates } from "@/lib/boxes";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { fetchCommittedUnits } from "@/lib/stock-availability";
 import { menuCartKey } from "@/lib/cart-key";
 import type { CartItem, Personalisation, Product, SelectedOption } from "@/lib/types";
 
@@ -83,6 +84,13 @@ export async function resolveCartLines(
   // Indices of skipped entries whose link still needs a by-name lookup below.
   const needsLink: number[] = [];
 
+  // Units already promised to other customers on orders that have not been paid
+  // yet. stock_count only drops when Michelle marks a PayNow transfer paid, days
+  // later, so without this the same batch is sold over and over to everyone who
+  // orders in between. One query for the whole cart.
+  const trackedIds = products.filter((p) => p.stockCount != null).map((p) => p.id);
+  const committed = await fetchCommittedUnits(trackedIds);
+
   // Bundles, build-a-box, and pick-your-flavours lines use a prefixed, non-uuid
   // id (bundle:/box:/fbox: or a "::" composite). Their full contents can't be
   // rebuilt from an order snapshot or a share link, so name them for re-adding
@@ -121,12 +129,16 @@ export async function resolveCartLines(
       else pushSkipped(line.productName ?? "an unavailable item");
       continue;
     }
-    // A tracked treat can only be sold down to what is actually left, the same
-    // ceiling the add-to-an-existing-order flow uses, so one cart can't commit
-    // Michelle to more than she has. Untracked stock stays unlimited.
-    if (product.stockCount != null && line.quantity > product.stockCount) {
-      skipped.push({ name: product.name, href: menuHref(product) });
-      continue;
+    // A tracked treat can only be sold down to what is genuinely uncommitted:
+    // what is on the shelf, minus what other unpaid orders have already promised
+    // away. Counting only the shelf let several unpaid PayNow orders each be
+    // sold the same batch. Untracked stock stays unlimited.
+    if (product.stockCount != null) {
+      const uncommitted = product.stockCount - (committed.get(product.id) ?? 0);
+      if (line.quantity > uncommitted) {
+        skipped.push({ name: product.name, href: menuHref(product) });
+        continue;
+      }
     }
 
     const selectedOptions: SelectedOption[] = [];

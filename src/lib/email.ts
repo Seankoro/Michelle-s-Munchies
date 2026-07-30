@@ -136,6 +136,21 @@ function itemRows(order: OrderEmailData): string {
 }
 
 /**
+ * One-click opt-out line for the emails that are marketing rather than news
+ * about a real order. Only those four carry it, because offering to unsubscribe
+ * from an order confirmation would read as though we might stop baking. The
+ * token is optional so callers that have no suppression token still compile,
+ * and with none there is nothing to link to.
+ */
+function marketingFooter(optOutToken?: string): string {
+  if (!optOutToken) return "";
+  return `<p style="margin:24px 0 0;font-size:12px;color:#8b746d;text-align:center">
+      Rather not get treat reminders?
+      <a href="${SITE_URL}/unsubscribe/marketing/${escapeHtml(optOutToken)}" style="color:#8b746d">Unsubscribe</a>.
+    </p>`;
+}
+
+/**
  * How long we wait on Resend before giving up on one email. The SDK sets no
  * timeout of its own, so without this a hung provider holds the caller open
  * until the platform kills the whole function.
@@ -337,6 +352,41 @@ export async function sendRescheduleEmail(params: {
   return send(params.email, `Order ${params.orderNumber}: new date`, shell("Order rescheduled", body, params.trackingToken));
 }
 
+/**
+ * Owner alert when the customer moves their own bake date from the tracking
+ * page. Every other self-serve change already mails her, and this one did not,
+ * so she could be shopping for a Saturday the order has already left. Both
+ * slots are shown because nothing in the order records the old date afterwards.
+ */
+export async function sendCustomerRescheduledEmail(params: {
+  orderNumber: string;
+  customerName: string;
+  fromDate: string;
+  fromWindow: string;
+  toDate: string;
+  toWindow: string;
+  trackingToken: string;
+}): Promise<boolean> {
+  const owner = process.env.OWNER_NOTIFICATION_EMAIL;
+  if (!owner) return false;
+  const was = `${formatLongDate(params.fromDate)}${params.fromWindow ? ` · ${escapeHtml(params.fromWindow)}` : ""}`;
+  const now = `${formatLongDate(params.toDate)}${params.toWindow ? ` · ${escapeHtml(params.toWindow)}` : ""}`;
+  const body = `
+    <p><strong>${escapeHtml(params.customerName)}</strong> moved order
+      <strong>${escapeHtml(params.orderNumber)}</strong> to a different slot themselves.</p>
+    <p style="margin:8px 0"><strong>Was:</strong> ${was}<br/>
+      <strong>Now:</strong> ${now}</p>
+    <p style="margin:8px 0">Check your bake list for both days in case you had already planned or shopped for the old one.</p>
+    <p style="margin:24px 0 0;text-align:center">
+      <a href="${SITE_URL}/track/${escapeHtml(params.trackingToken)}" style="display:inline-block;background:#bc4a6a;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:999px">See the order</a>
+    </p>`;
+  return send(
+    owner,
+    `Date moved by customer: ${params.orderNumber}`,
+    shell("Customer moved their date", body),
+  );
+}
+
 /** After a completed order, invite the buyer to review the treats they bought. */
 export async function sendReviewRequestEmail(params: {
   to: string;
@@ -394,14 +444,53 @@ export async function sendGiftScheduledEmail(
   return send(owner, `Gift ${orderNumber} scheduled`, shell("Gift details confirmed", body));
 }
 
+/**
+ * Nudge the gift buyer when the recipient still hasn't filled in an address or
+ * time window and the bake date is close. The buyer is the only person who
+ * knows the recipient, so they are the only one who can chase them, and the
+ * same link lets them fill it in themselves if they already know the details.
+ */
+export async function sendGiftScheduleReminderEmail(params: {
+  to: string;
+  buyerName: string;
+  recipientName: string | null;
+  orderNumber: string;
+  scheduledDate: string;
+  recipientToken: string;
+}): Promise<boolean> {
+  const who = params.recipientName?.trim()
+    ? escapeHtml(params.recipientName.trim())
+    : "Your recipient";
+  const url = `${SITE_URL}/gift/${escapeHtml(params.recipientToken)}`;
+  const body = `
+    <p>Hi ${escapeHtml(params.buyerName.split(" ")[0])}, gift order
+      <strong>${escapeHtml(params.orderNumber)}</strong> is set for
+      <strong style="color:#bc4a6a">${formatLongDate(params.scheduledDate)}</strong>, and we still
+      don&rsquo;t have a delivery address or time window for it.</p>
+    <p style="margin:8px 0">${who} hasn&rsquo;t filled theirs in yet. Pass on the link below to nudge them, or fill it in yourself if you already know where the box should go.</p>
+    <p style="margin:24px 0 0;text-align:center">
+      <a href="${url}" style="display:inline-block;background:#bc4a6a;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:999px">Add the delivery details</a>
+    </p>`;
+  return send(
+    params.to,
+    `Order ${params.orderNumber}: your gift still needs delivery details`,
+    shell("Your gift needs details", body),
+  );
+}
+
 /** Warm nudge for a customer who hasn't ordered in a while. */
-export async function sendWinbackEmail(to: string, name: string): Promise<boolean> {
+export async function sendWinbackEmail(
+  to: string,
+  name: string,
+  optOutToken?: string,
+): Promise<boolean> {
   const first = (name || "there").split(" ")[0];
   const body = `
     <p>Hi ${escapeHtml(first)}, it&rsquo;s been a while! Michelle has been baking up a storm and we&rsquo;d love to treat you again.</p>
     <p style="margin:24px 0 0;text-align:center">
       <a href="${SITE_URL}/menu" style="display:inline-block;background:#bc4a6a;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:999px">See what&rsquo;s fresh</a>
-    </p>`;
+    </p>
+    ${marketingFooter(optOutToken)}`;
   return send(to, "We miss you at Michelle's Munchies 🎀", shell("Come back for a treat", body));
 }
 
@@ -411,6 +500,7 @@ export async function sendOccasionReminderEmail(
   name: string,
   label: string,
   daysBefore: number,
+  optOutToken?: string,
 ): Promise<boolean> {
   const first = (name || "there").split(" ")[0];
   const when =
@@ -424,7 +514,8 @@ export async function sendOccasionReminderEmail(
     <p>Order now so Michelle has time to bake something special. Lead times mean the earlier the better!</p>
     <p style="margin:24px 0 0;text-align:center">
       <a href="${SITE_URL}/menu" style="display:inline-block;background:#bc4a6a;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:999px">Order a treat</a>
-    </p>`;
+    </p>
+    ${marketingFooter(optOutToken)}`;
   return send(to, `${label} is coming up 🎀`, shell("A treat-worthy date is near", body));
 }
 
@@ -432,6 +523,7 @@ export async function sendOccasionReminderEmail(
 export async function sendAbandonedCartEmail(
   to: string,
   items: { name: string; quantity: number }[],
+  optOutToken?: string,
 ): Promise<boolean> {
   const list = items
     .map((i) => `<li style="padding:2px 0">${i.quantity}× ${escapeHtml(i.name)}</li>`)
@@ -441,7 +533,8 @@ export async function sendAbandonedCartEmail(
     <ul style="margin:8px 0;padding-left:18px">${list}</ul>
     <p style="margin:24px 0 0;text-align:center">
       <a href="${SITE_URL}/cart" style="display:inline-block;background:#bc4a6a;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:999px">Finish your order</a>
-    </p>`;
+    </p>
+    ${marketingFooter(optOutToken)}`;
   return send(to, "Still thinking it over? 🎀", shell("Your cart is waiting", body));
 }
 
@@ -475,6 +568,26 @@ export async function sendCancellationRequestEmail(
   return send(owner, `Cancellation request: ${orderNumber}`, shell("Cancellation request", body));
 }
 
+/**
+ * Owner reminder that a cancelled order is still sitting on the customer's
+ * deposit. The deposit came in by bank transfer, so the app cannot send it back
+ * for her, and without this nothing tells her the money is still owed.
+ */
+export async function sendDepositOwedEmail(
+  orderNumber: string,
+  customerName: string,
+  amountCents: number,
+): Promise<boolean> {
+  const owner = process.env.OWNER_NOTIFICATION_EMAIL;
+  if (!owner) return false;
+  const body = `
+    <p>Order <strong>${escapeHtml(orderNumber)}</strong> is cancelled, but you are still holding
+      <strong>${formatPrice(amountCents)}</strong> of
+      <strong>${escapeHtml(customerName)}</strong>&rsquo;s deposit.</p>
+    <p style="margin:8px 0">Send it back by PayNow from your banking app, then clear the outstanding deposit in Admin so it stops showing as owed.</p>`;
+  return send(owner, `Deposit still owed: ${orderNumber}`, shell("Deposit still owed", body));
+}
+
 /** Owner alert when a tracked product runs low on stock. */
 export async function sendLowStockEmail(
   to: string,
@@ -489,14 +602,19 @@ export async function sendLowStockEmail(
 }
 
 /** Birthday greeting + reward-points note. */
-export async function sendBirthdayEmail(to: string, points: number): Promise<boolean> {
+export async function sendBirthdayEmail(
+  to: string,
+  points: number,
+  optOutToken?: string,
+): Promise<boolean> {
   const body = `
     <p>Happy birthday from Michelle&rsquo;s Munchies! 🎂</p>
     <p style="margin:8px 0">We&rsquo;ve popped <strong>${points} reward points</strong> into your
       account as a little treat. Enjoy something sweet on us.</p>
     <p style="margin:24px 0 0;text-align:center">
       <a href="${SITE_URL}/menu" style="display:inline-block;background:#bc4a6a;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:999px">Treat yourself</a>
-    </p>`;
+    </p>
+    ${marketingFooter(optOutToken)}`;
   return send(to, "Happy birthday! 🎂 A treat from us", shell("Happy birthday!", body));
 }
 

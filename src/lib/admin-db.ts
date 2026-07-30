@@ -7,7 +7,9 @@ import {
   sendReviewRequestEmail,
   sendRescheduleEmail,
   sendOrderCancelledEmail,
+  sendDepositOwedEmail,
 } from "@/lib/email";
+import { formatPrice } from "@/lib/catalog";
 import { notifySubscribers } from "@/lib/stock-notify";
 import { fetchStoreSettings, parseMascotMessages } from "@/lib/settings";
 import { rowToFeatureFlags } from "@/lib/feature-flags";
@@ -273,7 +275,14 @@ export async function updatePaymentStatus(orderNumber: string, paymentStatus: Pa
   }
   const { error } = await supabase
     .from("orders")
-    .update({ payment_status: paymentStatus, updated_at: new Date().toISOString() })
+    .update({
+      payment_status: paymentStatus,
+      // Moving off paid means the money is not in hand after all, so drop the
+      // arrival date with it rather than leaving revenue booked to a month whose
+      // payment was undone.
+      paid_at: null,
+      updated_at: new Date().toISOString(),
+    })
     .eq("order_number", orderNumber);
   if (error) throw new Error(`Failed to update payment: ${error.message}`);
   // Undoing a mistaken paid puts any decremented stock back and hands the
@@ -388,6 +397,63 @@ async function reversePaidSideEffects(orderId: string) {
     }
   }
   await reverseOrderPoints(orderId);
+  await reverseOrderReferral(orderId);
+}
+
+/**
+ * Undo the referral bonus this order triggered, and put the referral back to
+ * pending so it can legitimately pay out again if the same customer reorders.
+ *
+ * Without this a cancel took the buyer's own points back but left the referrer
+ * paid for a sale that never happened, and the referral row stayed 'rewarded'
+ * so the real order that followed was never rewarded at all. The ledger drifted
+ * in both directions at once. Never throws, since the cancel it belongs to has
+ * already gone through.
+ */
+async function reverseOrderReferral(orderId: string) {
+  const supabase = createAdminClient();
+  // The referrals row records no order id, so the ledger rows carrying this
+  // order's id are the only proof that THIS order is the one that paid the
+  // bonus out. No rows means nothing to undo.
+  const { data } = await supabase
+    .from("points_ledger")
+    .select("user_id, delta, reason")
+    .eq("order_id", orderId)
+    .in("reason", ["referral_referrer", "referral_referee", "referral_reversed"]);
+  const rows = (data as { user_id: string; delta: number; reason: string }[] | null) ?? [];
+  const bonuses = rows.filter((row) => row.reason !== "referral_reversed");
+  if (bonuses.length === 0) return; // no referral was rewarded against this order
+  // Already reversed by an earlier cancel, so stop rather than credit twice.
+  if (rows.some((row) => row.reason === "referral_reversed")) return;
+
+  const { error } = await supabase.from("points_ledger").insert(
+    bonuses.map((row) => ({
+      user_id: row.user_id,
+      order_id: orderId,
+      delta: -row.delta,
+      reason: "referral_reversed",
+    })),
+  );
+  if (error) {
+    console.error(`[referral] Failed to reverse for order ${orderId}:`, error.message);
+    return;
+  }
+
+  // Put the referral back to pending so it can pay out again on a real order.
+  // It is matched by referee, the same way markOrderPaid claimed it, since the
+  // referee is the customer whose order this was.
+  const { data: orderRow } = await supabase
+    .from("orders")
+    .select("user_id")
+    .eq("id", orderId)
+    .maybeSingle();
+  const userId = (orderRow as { user_id: string | null } | null)?.user_id;
+  if (!userId) return;
+  await supabase
+    .from("referrals")
+    .update({ status: "pending", rewarded_at: null })
+    .eq("referee_user_id", userId)
+    .eq("status", "rewarded");
 }
 
 /**
@@ -433,12 +499,15 @@ export type CancelResult =
  * marks the order cancelled, and refunded when money was returned. A PayNow or
  * hand-marked order has nothing to reverse, so it comes back manualRefundDue.
  */
-export async function cancelAndRefundOrder(orderNumber: string): Promise<CancelResult> {
+export async function cancelAndRefundOrder(
+  orderNumber: string,
+  depositReturned = false,
+): Promise<CancelResult> {
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("orders")
     .select(
-      "id, status, payment_status, stripe_payment_intent_id, total_cents, email, customer_name, tracking_token",
+      "id, status, payment_status, stripe_payment_intent_id, total_cents, deposit_cents, email, customer_name, tracking_token",
     )
     .eq("order_number", orderNumber)
     .maybeSingle();
@@ -449,6 +518,7 @@ export async function cancelAndRefundOrder(orderNumber: string): Promise<CancelR
     payment_status: string;
     stripe_payment_intent_id: string | null;
     total_cents: number;
+    deposit_cents: number | null;
     email: string;
     customer_name: string;
     tracking_token: string;
@@ -483,15 +553,29 @@ export async function cancelAndRefundOrder(orderNumber: string): Promise<CancelR
   // was paid (Stripe card OR a PayNow/manual order marked paid here). It self
   // guards on the decrement stamp, so an order that never went paid is a no-op.
   await reversePaidSideEffects(order.id);
+  // A deposit is money already sitting in Michelle's bank that the app cannot
+  // send back for her. If she has not returned it yet, record what is owed so it
+  // stays in front of her instead of vanishing with the cancelled order.
+  const depositCents = order.deposit_cents ?? 0;
+  const depositOwed = depositCents > 0 && !depositReturned ? depositCents : null;
   const { error: updErr } = await supabase
     .from("orders")
     .update({
       status: "cancelled",
       payment_status: refunded ? "refunded" : order.payment_status,
+      deposit_outstanding_cents: depositOwed,
       updated_at: new Date().toISOString(),
     })
     .eq("id", order.id);
   if (updErr) return { ok: false, error: updErr.message };
+
+  if (depositOwed != null) {
+    try {
+      await sendDepositOwedEmail(orderNumber, order.customer_name, depositOwed);
+    } catch (emailError) {
+      console.error("[cancel] deposit owed email failed:", emailError);
+    }
+  }
 
   // Tell the customer, like every other status change does. Best-effort, so a
   // mail hiccup never makes a completed cancel look failed.
@@ -507,6 +591,134 @@ export async function cancelAndRefundOrder(orderNumber: string): Promise<CancelR
     console.error("[cancel] notification email failed:", emailError);
   }
   return { ok: true, refunded, manualRefundDue, amountCents: order.total_cents };
+}
+
+/** Michelle has sent a held deposit back, so stop showing it as outstanding. */
+export async function clearDepositOwed(orderNumber: string) {
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from("orders")
+    .update({ deposit_outstanding_cents: null, updated_at: new Date().toISOString() })
+    .eq("order_number", orderNumber);
+  if (error) throw new Error(`Failed to clear the deposit owed: ${error.message}`);
+}
+
+/**
+ * Record money returned to a customer WITHOUT cancelling the order, which until
+ * now was the only way to give money back. A goodwill refund on a delivered
+ * order, a partial refund for one squashed tin, or a refund Michelle issued
+ * straight from the Stripe dashboard all belong here so the books stop counting
+ * that money as revenue she kept.
+ *
+ * Deliberately does not cancel, restock, or touch loyalty points. The whole
+ * point is that the food was delivered and the order stands; only money moved.
+ */
+export async function recordRefund(
+  orderNumber: string,
+  amountCents: number,
+  reason: string,
+  via: "manual" | "stripe",
+) {
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from("orders")
+    .select("id, total_cents")
+    .eq("order_number", orderNumber)
+    .maybeSingle();
+  const order = data as { id: string; total_cents: number } | null;
+  if (!order) throw new Error("Order not found.");
+
+  // Refunds accumulate, so check the running total rather than this one amount.
+  // Giving back more than was charged is always a mistake worth stopping.
+  const alreadyRefunded = await fetchRefundedCents(order.id);
+  if (alreadyRefunded + amountCents > order.total_cents) {
+    const room = Math.max(0, order.total_cents - alreadyRefunded);
+    throw new Error(
+      `That is more than is left on this order. At most ${formatPrice(room)} can still be refunded.`,
+    );
+  }
+
+  const { error } = await supabase.from("order_refunds").insert({
+    order_id: order.id,
+    amount_cents: amountCents,
+    reason: reason || null,
+    via,
+  });
+  if (error) throw new Error(`Failed to record the refund: ${error.message}`);
+}
+
+export type OrderRefund = {
+  id: string;
+  amountCents: number;
+  reason: string | null;
+  via: "manual" | "stripe";
+  createdAt: string;
+};
+
+/** Every amount returned on one order, newest first, for the order detail. */
+export async function fetchOrderRefunds(orderId: string): Promise<OrderRefund[]> {
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from("order_refunds")
+    .select("id, amount_cents, reason, via, created_at")
+    .eq("order_id", orderId)
+    .order("created_at", { ascending: false });
+  const rows =
+    (data as
+      | { id: string; amount_cents: number; reason: string | null; via: string; created_at: string }[]
+      | null) ?? [];
+  return rows.map((row) => ({
+    id: row.id,
+    amountCents: row.amount_cents,
+    reason: row.reason,
+    via: row.via === "stripe" ? "stripe" : "manual",
+    createdAt: row.created_at,
+  }));
+}
+
+/** Total returned on one order, so revenue can subtract it. */
+export async function fetchRefundedCents(orderId: string): Promise<number> {
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from("order_refunds")
+    .select("amount_cents")
+    .eq("order_id", orderId);
+  return ((data as { amount_cents: number }[] | null) ?? []).reduce(
+    (sum, row) => sum + row.amount_cents,
+    0,
+  );
+}
+
+/**
+ * Take lines off an order that could not be baked, so the record describes what
+ * was actually delivered rather than what was ordered. Refused once the order
+ * has reached baking, because by then the food exists and the honest fix is a
+ * refund against a truthful order rather than pretending it was never ordered.
+ *
+ * Returns the cents removed, worked out by the database from the rows
+ * themselves, so the caller can offer to refund exactly that much.
+ */
+export async function removeOrderItems(orderNumber: string, itemIds: string[]): Promise<number> {
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from("orders")
+    .select("id, status")
+    .eq("order_number", orderNumber)
+    .maybeSingle();
+  const order = data as { id: string; status: OrderStatus } | null;
+  if (!order) throw new Error("Order not found.");
+  if (statusRequiresPayment(order.status)) {
+    throw new Error(
+      "This order is already being baked. Record a refund instead of changing what was ordered.",
+    );
+  }
+
+  const { data: removed, error } = await supabase.rpc("remove_items_from_order", {
+    p_order_id: order.id,
+    p_item_ids: itemIds,
+  });
+  if (error) throw new Error(`Failed to remove the items: ${error.message}`);
+  return typeof removed === "number" ? removed : 0;
 }
 
 /**
@@ -565,6 +777,10 @@ export async function markOrderPaid(orderNumber: string, paymentIntentId: string
     .from("orders")
     .update({
       payment_status: "paid",
+      // When the money actually arrived. A PayNow order is marked paid by hand
+      // days after it was placed, so bucketing revenue by the order date put it
+      // in the wrong month and no period could be tied to the bank statement.
+      paid_at: new Date().toISOString(),
       // Only write the column when there is an id to write. The webhook stamps
       // it as a breadcrumb when it declines to apply a payment, so a later
       // hand-marked PayNow order passing null would otherwise wipe the only
