@@ -15,11 +15,14 @@ import type { FeatureFlags, NotePrompt } from "@/lib/settings";
 import { ALL_FEATURES_ON } from "@/lib/feature-flags";
 import {
   cancelOrderAction,
+  clearDepositOwedAction,
   createManualOrderAction,
   createProductAction,
   deleteProductAction,
   loadAdminData,
   recordDepositAction,
+  recordRefundAction,
+  removeOrderItemsAction,
   rescheduleOrderAdminAction,
   updateOrderStatusAction,
   updateOwnerNoteAction,
@@ -27,6 +30,8 @@ import {
   updateProductAction,
   updateSettingsAction,
   type ManualOrderResult,
+  type RecordRefundResult,
+  type RemoveItemsResult,
 } from "@/lib/admin-actions";
 import type { ManualOrderInput } from "@/lib/orders-db";
 
@@ -106,7 +111,27 @@ type AdminContextValue = {
   rescheduleOrder: (orderNumber: string, date: string, timeWindow: string) => void;
   recordDeposit: (orderNumber: string, cents: number) => void;
   addManualOrder: (input: ManualOrderInput) => Promise<ManualOrderResult>;
-  cancelOrder: (orderNumber: string) => Promise<{ ok: boolean; refunded?: boolean; error?: string }>;
+  /** `depositReturned` answers whether a deposit already went back to the
+   *  customer. Left off it means still owed, which keeps the money visible. */
+  cancelOrder: (
+    orderNumber: string,
+    depositReturned?: boolean,
+  ) => Promise<{
+    ok: boolean;
+    refunded?: boolean;
+    /** Paid outside Stripe, so nothing was reversed and the money goes back by hand. */
+    manualRefundDue?: boolean;
+    amountCents?: number;
+    error?: string;
+  }>;
+  clearDepositOwed: (orderNumber: string) => void;
+  recordRefund: (
+    orderNumber: string,
+    amountCents: number,
+    reason: string,
+    via: "manual" | "stripe",
+  ) => Promise<RecordRefundResult>;
+  removeOrderItems: (orderNumber: string, itemIds: string[]) => Promise<RemoveItemsResult>;
   updateSettings: (patch: Partial<AdminSettings>) => Promise<boolean>;
 };
 
@@ -326,8 +351,8 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
     return result;
   }
 
-  async function cancelOrder(orderNumber: string) {
-    const result = await cancelOrderAction(orderNumber);
+  async function cancelOrder(orderNumber: string, depositReturned = false) {
+    const result = await cancelOrderAction(orderNumber, depositReturned);
     if (result.ok) {
       setOrders((prev) =>
         prev.map((o) =>
@@ -336,13 +361,85 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
                 ...o,
                 status: "cancelled",
                 paymentStatus: result.refunded ? "refunded" : o.paymentStatus,
+                // Same sum the server records: a deposit she is still holding
+                // becomes money owed back the moment the order is cancelled.
+                depositOutstandingCents:
+                  !depositReturned && o.depositCents != null && o.depositCents > 0
+                    ? o.depositCents
+                    : null,
               }
             : o,
         ),
       );
-      return { ok: true, refunded: result.refunded };
+      // manualRefundDue and amountCents carry the "no Stripe payment to reverse,
+      // send it back yourself" case, so pass them through instead of dropping
+      // them and leaving the panel unable to say how much is owed.
+      return {
+        ok: true,
+        refunded: result.refunded,
+        manualRefundDue: result.manualRefundDue,
+        amountCents: result.amountCents,
+      };
     }
     return { ok: false, error: result.error };
+  }
+
+  function clearDepositOwed(orderNumber: string) {
+    persistOrderPatch(
+      orderNumber,
+      { depositOutstandingCents: null },
+      clearDepositOwedAction(orderNumber),
+      `Deposit owed on ${orderNumber}`,
+    );
+  }
+
+  /** Not optimistic: the server refuses a refund that would take back more than
+   *  the order charged, so wait to hear that it was accepted before adding it. */
+  async function recordRefund(
+    orderNumber: string,
+    amountCents: number,
+    reason: string,
+    via: "manual" | "stripe",
+  ): Promise<RecordRefundResult> {
+    const result = await recordRefundAction(orderNumber, amountCents, reason, via);
+    if (result.ok) {
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.orderNumber === orderNumber
+            ? { ...o, refundedCents: (o.refundedCents ?? 0) + amountCents }
+            : o,
+        ),
+      );
+    }
+    return result;
+  }
+
+  /** Also not optimistic: the database works out what the removed lines were
+   *  worth and refuses once the order is baking, so the totals here follow its
+   *  answer rather than guessing at one. */
+  async function removeOrderItems(
+    orderNumber: string,
+    itemIds: string[],
+  ): Promise<RemoveItemsResult> {
+    const result = await removeOrderItemsAction(orderNumber, itemIds);
+    if (result.ok) {
+      const removed = new Set(itemIds);
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.orderNumber === orderNumber
+            ? {
+                ...o,
+                items: o.items.filter((item) => !removed.has(item.key)),
+                // Floored at zero the same way the removal does it in Postgres,
+                // so the panel and the row can never disagree about the total.
+                subtotalCents: Math.max(0, o.subtotalCents - result.removedCents),
+                totalCents: Math.max(0, o.totalCents - result.removedCents),
+              }
+            : o,
+        ),
+      );
+    }
+    return result;
   }
 
   async function updateSettings(patch: Partial<AdminSettings>): Promise<boolean> {
@@ -383,6 +480,9 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
     recordDeposit,
     addManualOrder,
     cancelOrder,
+    clearDepositOwed,
+    recordRefund,
+    removeOrderItems,
     updateSettings,
   };
 

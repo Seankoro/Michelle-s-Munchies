@@ -24,6 +24,7 @@ import {
 } from "@/lib/customer-contact";
 import { singaporeDateString } from "@/lib/time";
 import { cn } from "@/lib/cn";
+import type { RecordRefundResult, RemoveItemsResult } from "@/lib/admin-actions";
 import { AdminModal } from "@/components/admin/AdminModal";
 import { TableStateRow } from "@/components/admin/TableStateRow";
 
@@ -91,6 +92,9 @@ export default function AdminOrdersPage() {
     rescheduleOrder,
     recordDeposit,
     cancelOrder,
+    clearDepositOwed,
+    recordRefund,
+    removeOrderItems,
   } = useAdmin();
   const [filter, setFilter] = useState<OrderStatus | "all">("all");
   const [query, setQuery] = useState("");
@@ -232,7 +236,21 @@ export default function AdminOrdersPage() {
                     </span>
                   )}
                 </td>
-                <td className="px-4 py-3">{formatPrice(order.totalCents)}</td>
+                <td className="px-4 py-3">
+                  {formatPrice(order.totalCents)}
+                  {/* Money of the customer's she is still holding. It has to be
+                      visible without opening the order, or it is forgotten. */}
+                  {order.depositOutstandingCents != null && order.depositOutstandingCents > 0 && (
+                    <span className="mt-0.5 block whitespace-nowrap text-xs font-semibold text-danger-ink">
+                      {formatPrice(order.depositOutstandingCents)} deposit owed
+                    </span>
+                  )}
+                  {order.refundedCents != null && order.refundedCents > 0 && (
+                    <span className="mt-0.5 block whitespace-nowrap text-xs text-muted">
+                      -{formatPrice(order.refundedCents)} refunded
+                    </span>
+                  )}
+                </td>
                 <td className="px-4 py-3">
                   <OrderStatusBadge status={order.status} />
                 </td>
@@ -279,7 +297,14 @@ export default function AdminOrdersPage() {
           dayCounts={dayCounts}
           today={today}
           onRecordDeposit={(cents) => recordDeposit(selectedOrder.orderNumber, cents)}
-          onCancel={() => cancelOrder(selectedOrder.orderNumber)}
+          onCancel={(depositReturned) =>
+            cancelOrder(selectedOrder.orderNumber, depositReturned)
+          }
+          onClearDepositOwed={() => clearDepositOwed(selectedOrder.orderNumber)}
+          onRecordRefund={(cents, reason, via) =>
+            recordRefund(selectedOrder.orderNumber, cents, reason, via)
+          }
+          onRemoveItems={(itemIds) => removeOrderItems(selectedOrder.orderNumber, itemIds)}
         />
       )}
 
@@ -302,6 +327,9 @@ function OrderDetailModal({
   today,
   onRecordDeposit,
   onCancel,
+  onClearDepositOwed,
+  onRecordRefund,
+  onRemoveItems,
 }: {
   order: AdminOrder;
   onClose: () => void;
@@ -315,7 +343,7 @@ function OrderDetailModal({
   dayCounts: Record<string, number>;
   today: string;
   onRecordDeposit: (cents: number) => void;
-  onCancel: () => Promise<{
+  onCancel: (depositReturned: boolean) => Promise<{
     ok: boolean;
     refunded?: boolean;
     /** Paid outside Stripe, so nothing was reversed and the money goes back by hand. */
@@ -323,6 +351,13 @@ function OrderDetailModal({
     amountCents?: number;
     error?: string;
   }>;
+  onClearDepositOwed: () => void;
+  onRecordRefund: (
+    amountCents: number,
+    reason: string,
+    via: "manual" | "stripe",
+  ) => Promise<RecordRefundResult>;
+  onRemoveItems: (itemIds: string[]) => Promise<RemoveItemsResult>;
 }) {
   const advance = nextStatus(order);
   const alreadyCancelled = order.status === "cancelled";
@@ -346,9 +381,26 @@ function OrderDetailModal({
       ? (order.depositCents / 100).toFixed(2)
       : "",
   );
+  // Money returned on an order that still stands, e.g. one squashed tin out of
+  // six. Kept separate from cancelling, which un-bakes the whole order.
+  const [refundAmount, setRefundAmount] = useState("");
+  const [refundReason, setRefundReason] = useState("");
+  const [refundVia, setRefundVia] = useState<"manual" | "stripe">("manual");
+  const [refundBusy, setRefundBusy] = useState(false);
+  const [showRefund, setShowRefund] = useState(false);
+  const [removeIds, setRemoveIds] = useState<string[]>([]);
+  const [removeBusy, setRemoveBusy] = useState(false);
+  const [showRemove, setShowRemove] = useState(false);
   // So the stranded-order banner can put the cursor straight in the date field
   // instead of leaving Michelle to hunt down the reschedule block.
   const reDateRef = useRef<HTMLInputElement>(null);
+  // Removing items offers the matching refund next, so the amount field needs to
+  // take focus with the figure already filled in.
+  const refundAmountRef = useRef<HTMLInputElement>(null);
+  const refundedCents = order.refundedCents ?? 0;
+  const depositOwedCents = order.depositOutstandingCents ?? 0;
+  // What the shop actually kept, which is the figure Insights now reports.
+  const netKeptCents = order.totalCents - refundedCents;
   const bakeDatePassed = bakeDateHasPassed(order, today);
   const windowOptions = timeWindows.includes(order.timeWindow)
     ? timeWindows
@@ -387,6 +439,7 @@ function OrderDetailModal({
   // the cancel comes back, so never promise a refund it might not have made.
   async function handleCancel() {
     const paid = order.paymentStatus === "paid";
+    const depositCents = order.depositCents ?? 0;
     if (
       !confirm(
         paid
@@ -395,14 +448,107 @@ function OrderDetailModal({
       )
     )
       return;
-    const result = await onCancel();
-    if (!result.ok) alert(result.error ?? "Could not cancel the order.");
-    else if (result.manualRefundDue)
-      alert(
-        `Order cancelled. This one was not paid through Stripe, so nothing was refunded. Send ${formatPrice(result.amountCents ?? order.totalCents)} back to the customer yourself.`,
+    // A deposit is money already sitting in her bank that the app cannot move,
+    // so the one useful thing it can do is write down which way it went. Only
+    // "OK, I have sent it" counts as returned: dismissing this leaves the amount
+    // recorded as owed, so a mis-tap keeps the money on screen rather than
+    // quietly claiming the customer already has it back.
+    const depositReturned =
+      depositCents > 0 &&
+      confirm(
+        `Have you already sent the ${formatPrice(depositCents)} deposit back to the customer?\n\nOK if the money is back with them. Cancel if you are still holding it, and this order will show ${formatPrice(depositCents)} owed until you send it.`,
       );
-    else if (result.refunded) alert("Order cancelled and refunded through Stripe.");
-    else alert("Order cancelled.");
+    const result = await onCancel(depositReturned);
+    if (!result.ok) {
+      alert(result.error ?? "Could not cancel the order.");
+      return;
+    }
+    const owed =
+      depositCents > 0 && !depositReturned
+        ? ` The ${formatPrice(depositCents)} deposit stays on this order as money owed until you send it back.`
+        : "";
+    if (result.manualRefundDue)
+      alert(
+        `Order cancelled. This one was not paid through Stripe, so nothing was refunded. Send ${formatPrice(result.amountCents ?? order.totalCents)} back to the customer yourself.${owed}`,
+      );
+    else if (result.refunded) alert(`Order cancelled and refunded through Stripe.${owed}`);
+    else alert(`Order cancelled.${owed}`);
+  }
+
+  function handleClearDepositOwed() {
+    if (
+      !confirm(
+        `Confirm you have sent ${formatPrice(depositOwedCents)} back to the customer. This only clears the reminder, it does not move any money.`,
+      )
+    )
+      return;
+    onClearDepositOwed();
+  }
+
+  /** Write down money that went back on an order that still stands. */
+  async function handleRecordRefund() {
+    const cents = Math.round(parseFloat(refundAmount || "0") * 100);
+    if (!Number.isFinite(cents) || cents <= 0) {
+      alert("Type how much went back to the customer.");
+      return;
+    }
+    setRefundBusy(true);
+    const result = await onRecordRefund(cents, refundReason, refundVia);
+    setRefundBusy(false);
+    if (!result.ok) {
+      alert(result.error);
+      return;
+    }
+    setRefundAmount("");
+    setRefundReason("");
+  }
+
+  /**
+   * Take lines off an order Michelle could not bake. The server refuses this
+   * once the order is baking, since by then the food exists, so surface its
+   * words rather than second-guessing the rule here.
+   */
+  async function handleRemoveItems() {
+    if (removeIds.length === 0) return;
+    // An order with no lines left is not an order. It would still hold a slot on
+    // the day, print an empty packing slip, and never tell the customer anything.
+    if (removeIds.length === order.items.length) {
+      alert(
+        "That is every line on the order. Cancel the order instead, so the customer is told and their points and stock go back.",
+      );
+      return;
+    }
+    if (
+      !confirm(
+        removeIds.length === 1
+          ? "Take this line off the order? The total drops by what it cost."
+          : `Take these ${removeIds.length} lines off the order? The total drops by what they cost.`,
+      )
+    )
+      return;
+    setRemoveBusy(true);
+    const result = await onRemoveItems(removeIds);
+    setRemoveBusy(false);
+    if (!result.ok) {
+      alert(result.error);
+      return;
+    }
+    setRemoveIds([]);
+    setShowRemove(false);
+    // The customer paid for food they are not getting, so offer the matching
+    // refund now instead of leaving it to be remembered later. She still picks
+    // how the money went back, so the form opens filled in rather than firing.
+    if (
+      result.removedCents > 0 &&
+      confirm(
+        `Removed ${formatPrice(result.removedCents)} of items. Record ${formatPrice(result.removedCents)} going back to the customer?`,
+      )
+    ) {
+      setRefundAmount((result.removedCents / 100).toFixed(2));
+      setRefundReason("Items removed from the order");
+      setShowRefund(true);
+      requestAnimationFrame(() => refundAmountRef.current?.focus());
+    }
   }
   const selectClass =
     "rounded-xl border border-line bg-white px-3 py-2 text-base focus:border-rose sm:text-sm";
@@ -442,6 +588,40 @@ function OrderDetailModal({
             {order.fulfillmentType}
           </span>
         </div>
+
+        {/* A deposit she took and has not sent back. Real money of the customer's
+            that the app cannot transfer for her, so it sits at the top of the
+            order until she says it has gone. */}
+        {depositOwedCents > 0 && (
+          <div className="mt-3 rounded-xl border border-danger/40 bg-danger-soft p-3">
+            <p className="text-sm font-semibold text-danger-ink">
+              You owe the customer {formatPrice(depositOwedCents)}
+            </p>
+            <p className="mt-0.5 text-sm text-danger-ink">
+              This is the deposit they paid on a cancelled order. Send it back by PayNow, then
+              clear this.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleClearDepositOwed}
+                className="rounded-full bg-danger px-4 py-1.5 text-sm font-semibold text-white transition hover:brightness-110 active:scale-95"
+              >
+                ✓ I have sent it back
+              </button>
+              {waUrl && (
+                <a
+                  href={waUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-full border border-danger/40 bg-white px-4 py-1.5 text-sm font-semibold text-danger-ink transition hover:border-danger active:scale-95"
+                >
+                  💬 WhatsApp them
+                </a>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Paid late, so the customer's own date slipped by while it sat unpaid. */}
         {bakeDatePassed && (
@@ -508,6 +688,20 @@ function OrderDetailModal({
           <span>Total ({order.deliveryFeeCents > 0 ? "incl. delivery" : "pickup"})</span>
           <span>{formatPrice(order.totalCents)}</span>
         </div>
+        {/* Money returned without cancelling, so the order total alone no longer
+            says what the shop kept. Both figures, so neither can be misread. */}
+        {refundedCents > 0 && (
+          <div className="mt-1 flex flex-col gap-1 text-sm">
+            <div className="flex justify-between text-muted">
+              <span>Refunded to the customer</span>
+              <span>-{formatPrice(refundedCents)}</span>
+            </div>
+            <div className="flex justify-between font-semibold text-rose-deep">
+              <span>Net kept</span>
+              <span>{formatPrice(netKeptCents)}</span>
+            </div>
+          </div>
+        )}
 
         {/* Contact / address / notes */}
         <dl className="mt-4 grid gap-1 text-sm">
@@ -791,6 +985,153 @@ function OrderDetailModal({
             </div>
           )}
 
+          {/* Trimming what was ordered, for a line she could not bake. The rule
+              about how late this is allowed lives in the database, so a refusal
+              comes back as words rather than being second-guessed here. */}
+          {!alreadyCancelled && order.items.length > 0 && (
+            <div className="mt-4 border-t border-line pt-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold">Remove items</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRemoveIds([]);
+                    setShowRemove((open) => !open);
+                  }}
+                  aria-expanded={showRemove}
+                  aria-controls={`remove-${order.orderNumber}`}
+                  className="rounded-full border border-line bg-white px-3.5 py-1.5 text-xs font-semibold transition hover:border-rose active:scale-95"
+                >
+                  {showRemove ? "Close" : "Choose items"}
+                </button>
+              </div>
+              <p className="mt-1 text-xs text-muted">
+                For a line you cannot bake, so the order says what the customer is actually
+                getting. Once an order is baking the food exists, so record a refund instead.
+              </p>
+              {showRemove && (
+                <div id={`remove-${order.orderNumber}`} className="mt-2 flex flex-col gap-2">
+                  {order.items.map((item) => (
+                    <label
+                      key={item.key}
+                      className="flex items-start gap-2 rounded-xl bg-white px-3 py-2 text-sm"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={removeIds.includes(item.key)}
+                        onChange={(e) =>
+                          setRemoveIds((prev) =>
+                            e.target.checked
+                              ? [...prev, item.key]
+                              : prev.filter((id) => id !== item.key),
+                          )
+                        }
+                        className="mt-1 h-4 w-4 shrink-0"
+                      />
+                      <span className="flex-1">
+                        <span className="font-semibold">{item.quantity}×</span> {item.name}
+                        {item.selectedOptions.length > 0 && (
+                          <span className="text-muted">
+                            {" "}
+                            ({item.selectedOptions.map((o) => o.valueLabel).join(", ")})
+                          </span>
+                        )}
+                      </span>
+                      <span className="font-semibold">
+                        {formatPrice(item.unitPriceCents * item.quantity)}
+                      </span>
+                    </label>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={handleRemoveItems}
+                    disabled={removeBusy || removeIds.length === 0}
+                    className="self-start rounded-full bg-rose-deep px-4 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:brightness-110 active:scale-95 disabled:pointer-events-none disabled:opacity-50"
+                  >
+                    {removeBusy
+                      ? "Removing…"
+                      : `Remove ${removeIds.length === 1 ? "1 line" : `${removeIds.length} lines`}`}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Money back without cancelling. Cancelling restocks the food and
+              claws back the customer's points, which is wrong for an order that
+              happened and just needs some money returned. */}
+          <div className="mt-4 border-t border-line pt-4">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold">Money returned</p>
+              <button
+                type="button"
+                onClick={() => setShowRefund((open) => !open)}
+                aria-expanded={showRefund}
+                aria-controls={`refund-${order.orderNumber}`}
+                className="rounded-full border border-line bg-white px-3.5 py-1.5 text-xs font-semibold transition hover:border-rose active:scale-95"
+              >
+                {showRefund ? "Close" : "Record a refund"}
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-muted">
+              {refundedCents > 0
+                ? `${formatPrice(refundedCents)} sent back so far. ${formatPrice(netKeptCents)} of this order is still kept, which is the most that can still go back.`
+                : "For a partial or goodwill refund on an order that still stands. The order keeps its items, its stock and the customer's points."}
+            </p>
+            {showRefund && (
+              <div id={`refund-${order.orderNumber}`} className="mt-2 flex flex-col gap-2">
+                <div className="flex flex-wrap gap-2">
+                  <label className="flex flex-col gap-1 text-sm font-semibold">
+                    Amount S$
+                    <input
+                      ref={refundAmountRef}
+                      inputMode="decimal"
+                      value={refundAmount}
+                      onChange={(e) => setRefundAmount(e.target.value)}
+                      placeholder="0.00"
+                      className={cn(selectClass, "w-28")}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-sm font-semibold">
+                    How it went back
+                    <select
+                      value={refundVia}
+                      onChange={(e) =>
+                        setRefundVia(e.target.value === "stripe" ? "stripe" : "manual")
+                      }
+                      className={selectClass}
+                    >
+                      <option value="manual">By hand, PayNow</option>
+                      <option value="stripe">Card, through Stripe</option>
+                    </select>
+                  </label>
+                </div>
+                <label className="flex flex-col gap-1 text-sm font-semibold">
+                  Reason
+                  <input
+                    value={refundReason}
+                    onChange={(e) => setRefundReason(e.target.value)}
+                    maxLength={200}
+                    placeholder="e.g. one tin arrived squashed"
+                    className={selectClass}
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={handleRecordRefund}
+                  disabled={refundBusy}
+                  className="self-start rounded-full bg-rose-deep px-4 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:brightness-110 active:scale-95 disabled:pointer-events-none disabled:opacity-50"
+                >
+                  {refundBusy ? "Recording…" : "Record refund"}
+                </button>
+                <p className="text-xs text-muted">
+                  This writes down that money moved, it does not move it. Send the PayNow, or
+                  refund the card in Stripe, then record it here.
+                </p>
+              </div>
+            )}
+          </div>
+
           {!alreadyCancelled && (
             <div className="mt-4 border-t border-line pt-4">
               <button
@@ -804,6 +1145,9 @@ function OrderDetailModal({
                 {order.paymentStatus === "paid"
                   ? "A card payment is refunded through Stripe. A PayNow or hand-marked payment cannot be refunded from here, so you send the money back yourself. Tracked stock goes back either way."
                   : "Marks the order cancelled."}
+                {order.depositCents != null &&
+                  order.depositCents > 0 &&
+                  ` You will be asked whether the ${formatPrice(order.depositCents)} deposit has gone back yet.`}
               </p>
             </div>
           )}

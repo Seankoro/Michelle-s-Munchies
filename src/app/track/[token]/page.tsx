@@ -21,6 +21,7 @@ import { GiftShareLink } from "@/components/track/GiftShareLink";
 import { TrackReorderButton } from "@/components/track/TrackReorderButton";
 import { fetchProducts, toCardProduct } from "@/lib/products";
 import { createServerSupabase } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getShopWhatsAppNumber, buildOrderWhatsAppUrl, buildFulfillmentLabel } from "@/lib/whatsapp";
 import { singaporeNow } from "@/lib/time";
 import { cn } from "@/lib/cn";
@@ -40,6 +41,34 @@ const deliveryFlow: OrderStatus[] = [
   "completed",
 ];
 
+/**
+ * How much of a deposit Michelle has recorded as still owed back to this
+ * customer, or null when nothing is owed.
+ *
+ * Every other field on this page arrives through get_order_by_token, whose
+ * returned JSON is a deliberate allow-list of columns, and
+ * deposit_outstanding_cents is newer than that function. Widening the allow-list
+ * needs a migration, so the one column is read here instead, scoped to the same
+ * token that already authorises the whole page. Best-effort, because a customer
+ * whose order was cancelled should not meet an error page over one money line.
+ */
+async function fetchDepositOwedCents(token: string): Promise<number | null> {
+  try {
+    const { data, error } = await createAdminClient()
+      .from("orders")
+      .select("deposit_outstanding_cents")
+      .eq("tracking_token", token)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    const row = data as { deposit_outstanding_cents: number | null } | null;
+    return row?.deposit_outstanding_cents ?? null;
+  } catch (error) {
+    console.error("[track] could not read the outstanding deposit:", error);
+    Sentry.captureException(error);
+    return null;
+  }
+}
+
 export default async function TrackOrderPage({
   params,
 }: {
@@ -47,14 +76,15 @@ export default async function TrackOrderPage({
 }) {
   const { token } = await params;
   // Guests reach this page by token with no login, so only nudge account
-  // creation when the visitor is not already signed in. These three reads are
+  // creation when the visitor is not already signed in. These reads are
   // independent, so run them together instead of a serial waterfall.
   const [order, settings, {
     data: { user },
-  }] = await Promise.all([
+  }, depositOwedCents] = await Promise.all([
     getOrderByToken(token),
     fetchStoreSettings(),
     (await createServerSupabase()).auth.getUser(),
+    fetchDepositOwedCents(token),
   ]);
   const signedIn = Boolean(user);
 
@@ -90,6 +120,29 @@ export default async function TrackOrderPage({
   const addableProducts = canAddItems
     ? (await fetchProducts()).map(toCardProduct)
     : [];
+
+  // The same lead-time boundary the server action applies, worked out once for
+  // the date picker's minimum and for the two tests below.
+  const earliest = earliestFulfillmentDate(
+    settings.leadTimeDays,
+    singaporeNow(),
+    settings.dailyCutoffTime,
+  );
+  // rescheduleOrderAction refuses a self-serve move once Michelle has confirmed
+  // the order, and once the date the order currently sits on is inside the lead
+  // time, because by then she has shopping and baking planned around that day.
+  // Showing the form under either condition offers a change that can only come
+  // back as an error, so it gives way to a plain line pointing at WhatsApp, which
+  // is where a change she has to agree to belongs anyway.
+  const changesOpen = settings.features.orderChanges && isChangeable(order.status);
+  const canReschedule =
+    changesOpen && order.status === "received" && order.scheduled_date >= earliest;
+  const rescheduleNotice =
+    !changesOpen || canReschedule
+      ? null
+      : order.status !== "received"
+        ? "We’ve already confirmed this order, so the date is ours to move now."
+        : "This order is too close to its date to move here.";
 
   // WhatsApp handoff. While an order is unpaid, offer a pre-filled message to the
   // shop's WhatsApp so the customer can confirm and arrange PayNow. It disappears
@@ -130,9 +183,13 @@ export default async function TrackOrderPage({
         <div className="flex justify-center">
           <MascotSays
             lines={[
-              needsPayment
-                ? "One more step and I get baking!"
-                : "I'm on it! Check back here any time.",
+              // A cancelled order must never be told we are on it, which is what
+              // the unpaid-or-paid pair alone would say.
+              cancelled
+                ? "This one's cancelled. I'm here if you need me."
+                : needsPayment
+                  ? "One more step and I get baking!"
+                  : "I'm on it! Check back here any time.",
             ]}
           />
         </div>
@@ -318,8 +375,12 @@ export default async function TrackOrderPage({
             <dt>Total</dt>
             <dd>{formatPrice(order.total_cents)}</dd>
           </div>
+          {/* A cancelled order is not waiting on a balance, so these rows would be
+              asking for money nobody owes any more. The one money line a cancelled
+              order can still carry runs the other way, and it is the row below. */}
           {order.deposit_cents != null &&
             order.deposit_cents > 0 &&
+            !cancelled &&
             order.payment_status !== "paid" && (
               <>
                 <div className="flex justify-between text-rose-deep">
@@ -332,6 +393,15 @@ export default async function TrackOrderPage({
                 </div>
               </>
             )}
+          {/* Michelle sends a held deposit back from her banking app, so this is
+              the customer's side of the amount she is still holding, and it stays
+              until she marks it returned. */}
+          {depositOwedCents != null && depositOwedCents > 0 && (
+            <div className="flex justify-between text-base font-semibold text-rose-deep">
+              <dt>Deposit we&rsquo;re sending back</dt>
+              <dd>{formatPrice(depositOwedCents)}</dd>
+            </div>
+          )}
         </dl>
       </div>
 
@@ -345,19 +415,41 @@ export default async function TrackOrderPage({
         )
       )}
 
-      {settings.features.orderChanges && isChangeable(order.status) && (
-          <OrderChangePanel
-            token={token}
-            currentDate={order.scheduled_date}
-            currentWindow={order.time_window}
-            earliest={earliestFulfillmentDate(
-              settings.leadTimeDays,
-              singaporeNow(),
-              settings.dailyCutoffTime,
-            )}
-            timeWindows={settings.timeWindows}
-          />
-        )}
+      {canReschedule && (
+        <OrderChangePanel
+          token={token}
+          currentDate={order.scheduled_date}
+          currentWindow={order.time_window}
+          earliest={earliest}
+          timeWindows={settings.timeWindows}
+        />
+      )}
+
+      {rescheduleNotice && (
+        <div className="mt-6 rounded-2xl border border-line bg-white p-6">
+          <h2 className="font-display text-xl font-semibold">Need to change something?</h2>
+          <p className="mt-1 text-sm text-muted">
+            {rescheduleNotice} Message us and we&rsquo;ll sort it out, cancelling included.
+          </p>
+          {waNumber ? (
+            <a
+              href={`https://wa.me/${waNumber}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={buttonClasses({ variant: "secondary", size: "sm", className: "mt-4" })}
+            >
+              Message us on WhatsApp
+            </a>
+          ) : (
+            <Link
+              href="/contact"
+              className={buttonClasses({ variant: "secondary", size: "sm", className: "mt-4" })}
+            >
+              Get in touch
+            </Link>
+          )}
+        </div>
+      )}
 
       {canAddItems && <AddToOrderPanel token={token} products={addableProducts} />}
 

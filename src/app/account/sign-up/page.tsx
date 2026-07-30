@@ -8,6 +8,7 @@ import { GoogleButton } from "@/components/account/GoogleButton";
 import { useFeatures } from "@/components/features/FeaturesProvider";
 import { Toggle } from "@/components/ui/Toggle";
 import { signUpWithPassword } from "../actions";
+import { stashReferralCode } from "@/lib/referrals-pending";
 import { subscribeNewsletterAction } from "@/lib/newsletter-actions";
 import { inputClass } from "@/lib/ui";
 
@@ -27,6 +28,20 @@ export default function SignUpPage() {
     const ref = new URLSearchParams(window.location.search).get("ref");
     if (ref) setReferral(ref.toUpperCase());
   }, []);
+
+  // Only the form below passes the code to signUpWithPassword. Signing up with
+  // Google leaves the page before that ever runs, so park the code on the server
+  // while it is being typed and let /auth/callback apply it on the way back. The
+  // short pause keeps this off every keystroke, and it has to happen here rather
+  // than on the tap because the Google button navigates away immediately.
+  useEffect(() => {
+    const code = referral.trim();
+    if (!code || !features.referrals) return;
+    const timer = setTimeout(() => {
+      void stashReferralCode(code);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [referral, features.referrals]);
 
   async function handleSubmit() {
     setError("");

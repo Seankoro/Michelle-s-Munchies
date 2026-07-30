@@ -8,6 +8,7 @@ import { notifyLaunchedDrops } from "@/lib/stock-notify";
 import { sendWinbackNudges } from "@/lib/winback";
 import { sendOccasionReminders } from "@/lib/occasions";
 import { expireStaleUnpaidOrders } from "@/lib/order-cleanup";
+import { remindUnscheduledGifts } from "@/lib/gift-reminders";
 
 export const dynamic = "force-dynamic";
 
@@ -85,6 +86,11 @@ export async function GET(request: NextRequest) {
   // days past their date and still unpaid, so they stop holding promo slots and
   // reserved points. expireStaleUnpaidOrders owns the full abandoned test.
   await run("expiredOrders", true, () => expireStaleUnpaidOrders());
+  // Housekeeping, always on: chase the buyer of a gift the recipient never
+  // scheduled, before the date arrives with no address to deliver to. The gifting
+  // flag only stops new gift purchases at checkout, so switching it off must not
+  // strand a gift already bought, the same reason the recipient's page ignores it.
+  await run("giftReminders", true, () => remindUnscheduledGifts());
 
   if (checkInId) {
     const anyFailed = Object.values(result).includes("failed");

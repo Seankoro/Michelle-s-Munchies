@@ -1,0 +1,19 @@
+-- A dedicated stamp for the gift-chase reminder.
+--
+-- The reminder needs to remember it was sent, or the hourly cron re-sends it
+-- every hour. The first implementation appended a marker line to owner_note,
+-- which works but breaks two other things:
+--
+--  1. expireStaleUnpaidOrders deliberately refuses to touch an order that has an
+--     owner_note or whose updated_at has moved since checkout, both being its
+--     signals that a human was involved. Writing a reminder marker tripped both,
+--     so an abandoned, unpaid, self-scheduled gift became permanently immune to
+--     the sweep and held its promo redemption and reserved loyalty points for
+--     good. That is precisely the leak the sweep exists to close.
+--
+--  2. owner_note is Michelle's own note about the order. It already carries
+--     cancellation requests, and the audit flagged that overloading as semantic
+--     drift. A third meaning makes the field mean nothing in particular.
+--
+-- A column of its own says exactly what it means and interferes with nothing.
+alter table public.orders add column if not exists gift_reminder_sent_at timestamptz;
