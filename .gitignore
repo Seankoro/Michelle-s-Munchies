@@ -45,3 +45,6 @@ Thumbs.db
 # supabase local
 /supabase/.branches
 /supabase/.temp
+
+# Cygwin/MSYS crash dumps from shell tooling
+*.stackdump
