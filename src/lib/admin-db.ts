@@ -54,11 +54,15 @@ type OrderRow = {
   recipient_phone: string | null;
   owner_note: string | null;
   deposit_cents: number | null;
+  paid_at: string | null;
+  deposit_outstanding_cents: number | null;
   subtotal_cents: number;
   delivery_fee_cents: number;
   total_cents: number;
   created_at: string;
   order_items: OrderItemRow[] | null;
+  /** Nested through the foreign key on order_refunds.order_id. */
+  order_refunds: { amount_cents: number }[] | null;
 };
 
 function rowToAdminOrder(row: OrderRow): AdminOrder {
@@ -91,6 +95,9 @@ function rowToAdminOrder(row: OrderRow): AdminOrder {
     recipientPhone: row.recipient_phone ?? undefined,
     ownerNote: row.owner_note ?? undefined,
     depositCents: row.deposit_cents,
+    paidAt: row.paid_at,
+    depositOutstandingCents: row.deposit_outstanding_cents,
+    refundedCents: (row.order_refunds ?? []).reduce((sum, r) => sum + r.amount_cents, 0),
     subtotalCents: row.subtotal_cents,
     deliveryFeeCents: row.delivery_fee_cents,
     totalCents: row.total_cents,
@@ -109,7 +116,7 @@ export async function fetchAdminOrders(): Promise<AdminOrder[]> {
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("orders")
-    .select("*, order_items(*)")
+    .select("*, order_items(*), order_refunds(amount_cents)")
     .order("created_at", { ascending: false })
     .limit(ADMIN_ORDER_LIMIT);
   if (error) throw new Error(`Failed to load orders: ${error.message}`);

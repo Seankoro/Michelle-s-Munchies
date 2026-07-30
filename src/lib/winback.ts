@@ -1,5 +1,6 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { fetchOptOutToken, fetchSuppressedEmails } from "@/lib/email-optout";
 import { sendWinbackEmail } from "@/lib/email";
 
 /** Days since a customer's last order before one win-back nudge is sent. */
@@ -68,6 +69,10 @@ export async function sendWinbackNudges(): Promise<number> {
     ]),
   );
 
+  // This is marketing, so anyone who asked to stop hearing from us is skipped.
+  // One query for the run rather than a check per customer.
+  const suppressed = await fetchSuppressedEmails(lapsedIds.map((id) => byUser.get(id)!.email));
+
   let sent = 0;
   for (const id of lapsedIds) {
     if (sent >= MAX_PER_RUN) break;
@@ -75,13 +80,18 @@ export async function sendWinbackNudges(): Promise<number> {
     const stamp = nudgedAt.get(id);
     // Skip if this lapse was already nudged (stamp is after their last order).
     if (stamp && stamp >= user.lastOrder) continue;
+    if (suppressed.has(user.email.trim().toLowerCase())) continue;
 
     // Stamp before sending so a failed send is not retried into spam.
     await admin
       .from("profiles")
       .update({ winback_sent_at: new Date().toISOString() })
       .eq("id", id);
-    await sendWinbackEmail(user.email, user.name);
+    // The footer link is what makes this a lawful marketing send, so a missing
+    // token means we do not send at all rather than mail without an opt-out.
+    const optOutToken = await fetchOptOutToken(user.email);
+    if (!optOutToken) continue;
+    await sendWinbackEmail(user.email, user.name, optOutToken);
     sent += 1;
   }
   return sent;

@@ -1,5 +1,6 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { fetchOptOutToken, fetchSuppressedEmails } from "@/lib/email-optout";
 import { fetchStoreSettings } from "@/lib/settings";
 import { singaporeDateString } from "@/lib/time";
 import { sendBirthdayEmail } from "@/lib/email";
@@ -55,9 +56,20 @@ export async function grantBirthdayRewards(): Promise<number> {
     });
 
     // Email the greeting on a best-effort basis, resolving the address from auth.
+    // The points are granted either way: they are a reward the customer earned,
+    // not marketing, so opting out of offers must not cost them the treat. Only
+    // the greeting email is suppressed.
     const { data: userData } = await supabase.auth.admin.getUserById(profile.id);
     const email = userData.user?.email;
-    if (email) await sendBirthdayEmail(email, settings.birthdayRewardPoints);
+    if (email) {
+      const suppressed = await fetchSuppressedEmails([email]);
+      if (!suppressed.has(email.trim().toLowerCase())) {
+        const optOutToken = await fetchOptOutToken(email);
+        if (optOutToken) {
+          await sendBirthdayEmail(email, settings.birthdayRewardPoints, optOutToken);
+        }
+      }
+    }
     rewarded += 1;
   }
   return rewarded;

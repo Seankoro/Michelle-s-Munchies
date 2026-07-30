@@ -216,4 +216,14 @@ export type AdminOrder = PlacedOrder & {
   ownerNote?: string;
   /** Deposit already collected. 0/null means none; balance = total - deposit. */
   depositCents?: number | null;
+  /**
+   * When the money actually arrived, not when the order was placed. A PayNow
+   * transfer is marked paid by hand days later, so revenue belongs to this date.
+   * Null while unpaid, and on orders paid before the column existed.
+   */
+  paidAt?: string | null;
+  /** A deposit still owed back on a cancelled order. Null means nothing owed. */
+  depositOutstandingCents?: number | null;
+  /** Total already returned to the customer without cancelling the order. */
+  refundedCents?: number;
 };

@@ -5,7 +5,7 @@ import { useAdmin } from "@/components/admin/AdminStore";
 import { PanelLoading } from "@/components/admin/PanelLoading";
 import { RevenueChart, type ChartPoint } from "@/components/admin/RevenueChart";
 import { singaporeDateString } from "@/lib/time";
-import { toISODate } from "@/lib/order";
+import { toISODate, type AdminOrder } from "@/lib/order";
 import { formatPrice } from "@/lib/catalog";
 import { cn } from "@/lib/cn";
 
@@ -51,6 +51,16 @@ export default function AdminAnalyticsPage() {
     const today = singaporeDateString();
     const paid = orders.filter((o) => o.paymentStatus === "paid" && o.status !== "cancelled");
     const dayOf = (iso: string) => singaporeDateString(iso);
+    // Revenue belongs to the day the money arrived, not the day the order was
+    // placed. Nearly every order here is a PayNow transfer that Michelle marks
+    // paid days later, so bucketing by the order date put takings in the wrong
+    // month and no period could be reconciled against her bank statement.
+    // Orders paid before paid_at existed have none, so they fall back to the
+    // order date, which is the closest honest answer available for them.
+    const earnedOn = (o: AdminOrder) => dayOf(o.paidAt ?? o.createdAt);
+    // What was actually kept: the total, less anything handed back on a refund
+    // that did not cancel the order.
+    const keptCents = (o: AdminOrder) => o.totalCents - (o.refundedCents ?? 0);
     // Cost by product name (order items snapshot the name). Only treats with a
     // cost entered contribute to margin, so profit figures are honestly partial.
     const costByName = new Map<string, number>();
@@ -62,20 +72,25 @@ export default function AdminAnalyticsPage() {
     const outstanding = orders.filter(
       (o) => o.paymentStatus === "pending" && o.status !== "cancelled",
     );
-    const toCollectCents = outstanding.reduce((s, o) => s + o.totalCents, 0);
+    // What is genuinely still owed, so a deposit already banked is not counted
+    // as money yet to come in.
+    const toCollectCents = outstanding.reduce(
+      (s, o) => s + Math.max(0, o.totalCents - (o.depositCents ?? 0)),
+      0,
+    );
 
     const in14 = addDays(today, 14);
     const upcoming = orders.filter(
       (o) => o.status !== "cancelled" && o.scheduledDate >= today && o.scheduledDate <= in14,
     );
     const bookedCents = upcoming.reduce((s, o) => s + o.totalCents, 0);
-    const lifetimeCents = paid.reduce((s, o) => s + o.totalCents, 0);
+    const lifetimeCents = paid.reduce((s, o) => s + keptCents(o), 0);
 
     // --- Resolve the selected range to a [start, end] window + bucket size ---
     let start: string;
     let end: string = today;
     let bucket: "day" | "week" | "month";
-    const firstPaidDay = paid.length ? paid.map((o) => dayOf(o.createdAt)).sort()[0] : today;
+    const firstPaidDay = paid.length ? paid.map((o) => earnedOn(o)).sort()[0] : today;
 
     if (range === "7d") [start, bucket] = [addDays(today, -6), "day"];
     else if (range === "30d") [start, bucket] = [addDays(today, -29), "day"];
@@ -164,14 +179,15 @@ export default function AdminAnalyticsPage() {
     >();
 
     for (const o of paid) {
-      const day = dayOf(o.createdAt);
+      const day = earnedOn(o);
       if (day < start || day > end) continue;
-      rangeRevenue += o.totalCents;
+      const kept = keptCents(o);
+      rangeRevenue += kept;
       rangeCount += 1;
       const b = byKey.get(bucketKey(day));
-      if (b) b.value += o.totalCents;
-      if (o.fulfillmentType === "delivery") deliveryCents += o.totalCents;
-      else pickupCents += o.totalCents;
+      if (b) b.value += kept;
+      if (o.fulfillmentType === "delivery") deliveryCents += kept;
+      else pickupCents += kept;
       weekdayCount[(parseDay(o.scheduledDate).getDay() + 6) % 7] += 1;
       for (const item of o.items) {
         const e =
@@ -194,8 +210,8 @@ export default function AdminAnalyticsPage() {
     const prevStart = addDays(prevEnd, -span);
     let prevRevenue = 0;
     for (const o of paid) {
-      const day = dayOf(o.createdAt);
-      if (day >= prevStart && day <= prevEnd) prevRevenue += o.totalCents;
+      const day = earnedOn(o);
+      if (day >= prevStart && day <= prevEnd) prevRevenue += keptCents(o);
     }
     const deltaPct =
       prevRevenue > 0 ? Math.round(((rangeRevenue - prevRevenue) / prevRevenue) * 100) : null;

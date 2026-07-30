@@ -88,24 +88,28 @@ export async function validatePromo(
     }
   }
 
-  // Per-customer cap. A signed-in customer is counted by account. Most orders
-  // here are placed without signing in, so a guest is counted by the email on
-  // their past orders instead, matched case-insensitively because an order keeps
-  // the address exactly as it was typed. With neither identity, at "Apply code"
-  // before the email is filled in, the cap is left to the placeOrder re-check.
+  // Per-customer cap, counted across BOTH halves of the same person. Matching on
+  // the account alone let a customer order once signed in and again as a guest
+  // for a fresh allowance, and matching on the email alone had the same hole in
+  // reverse. An order carries both, so count any order that matches either the
+  // account or the address. With neither identity, at "Apply code" before the
+  // email is filled in, the cap is left to the placeOrder re-check.
   if (promo.per_customer_limit != null && (userId || normalizedEmail)) {
-    const query = admin
+    // Read the code's orders and match in JS rather than composing an `or`
+    // filter: an order matching both identities must count once, not twice, and
+    // two separate counts would double it.
+    const { data: usageRows } = await admin
       .from("orders")
-      .select("id", { count: "exact", head: true })
+      .select("user_id, email")
       .eq("promo_code", code)
       .neq("status", "cancelled");
-    // `_` and `%` are wildcards to ilike and `_` is common in an address, so
-    // escape them and the match stays an exact one, case aside.
-    const emailPattern = normalizedEmail.replace(/[\\%_]/g, (char) => `\\${char}`);
-    const { count } = await (userId
-      ? query.eq("user_id", userId)
-      : query.ilike("email", emailPattern));
-    if ((count ?? 0) >= promo.per_customer_limit) {
+    const used = ((usageRows as { user_id: string | null; email: string | null }[] | null) ?? [])
+      .filter(
+        (row) =>
+          (userId != null && row.user_id === userId) ||
+          (normalizedEmail !== "" && (row.email ?? "").trim().toLowerCase() === normalizedEmail),
+      ).length;
+    if (used >= promo.per_customer_limit) {
       return { ok: false, error: "You’ve already used this code." };
     }
   }

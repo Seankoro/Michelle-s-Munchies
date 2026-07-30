@@ -1,5 +1,6 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { fetchOptOutToken, fetchSuppressedEmails } from "@/lib/email-optout";
 import { sendAbandonedCartEmail } from "@/lib/email";
 
 type IntentItem = { name: string; quantity: number };
@@ -59,8 +60,21 @@ export async function sendAbandonedReminders(afterHours: number): Promise<number
     (data as { id: string; email: string; items: IntentItem[]; created_at: string }[] | null) ??
     [];
 
+  // This is marketing, so anyone who asked to stop is skipped. One query for the
+  // whole run rather than a check per abandoned cart.
+  const suppressed = await fetchSuppressedEmails(intents.map((i) => i.email));
+
   let sent = 0;
   for (const intent of intents) {
+    // An opted-out address is closed off rather than left open, or the same cart
+    // would be reconsidered on every run forever.
+    if (suppressed.has(intent.email.trim().toLowerCase())) {
+      await supabase
+        .from("checkout_intents")
+        .update({ reminded_at: new Date().toISOString() })
+        .eq("id", intent.id);
+      continue;
+    }
     // Skip if a paid order arrived for this email since the cart was started.
     const { count } = await supabase
       .from("orders")
@@ -78,7 +92,11 @@ export async function sendAbandonedReminders(afterHours: number): Promise<number
     // Only close the intent when the reminder actually went out. Stamping
     // regardless meant a provider failure quietly consumed the one reminder
     // this cart was ever going to get.
-    const delivered = await sendAbandonedCartEmail(intent.email, intent.items ?? []);
+    // No footer link means no lawful marketing send, so leave the intent open
+    // for the next run rather than mailing without a way out.
+    const optOutToken = await fetchOptOutToken(intent.email);
+    if (!optOutToken) continue;
+    const delivered = await sendAbandonedCartEmail(intent.email, intent.items ?? [], optOutToken);
     if (!delivered) continue;
     await supabase
       .from("checkout_intents")

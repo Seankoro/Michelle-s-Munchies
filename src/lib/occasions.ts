@@ -1,5 +1,6 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { fetchOptOutToken, fetchSuppressedEmails } from "@/lib/email-optout";
 import { sendOccasionReminderEmail } from "@/lib/email";
 import { singaporeDateString } from "@/lib/time";
 
@@ -75,9 +76,25 @@ export async function sendOccasionReminders(): Promise<number> {
     const email = userData?.user?.email;
     if (!email) continue;
 
+    // This is marketing, so skip anyone who asked to stop hearing from us. The
+    // address only becomes known one customer at a time here, since it comes
+    // from the auth lookup above, so this is checked per recipient.
+    const suppressed = await fetchSuppressedEmails([email]);
+    if (suppressed.has(email.trim().toLowerCase())) continue;
+    // No footer link means no lawful marketing send, so skip rather than mail
+    // without a way out.
+    const optOutToken = await fetchOptOutToken(email);
+    if (!optOutToken) continue;
+
     // Stamp before sending so a failed send never becomes a daily repeat.
     await admin.from("occasions").update({ last_reminded_on: todayStr }).eq("id", occ.id);
-    await sendOccasionReminderEmail(email, nameById.get(occ.user_id) ?? "", occ.label, daysBefore);
+    await sendOccasionReminderEmail(
+      email,
+      nameById.get(occ.user_id) ?? "",
+      occ.label,
+      daysBefore,
+      optOutToken,
+    );
     sent += 1;
   }
   return sent;
