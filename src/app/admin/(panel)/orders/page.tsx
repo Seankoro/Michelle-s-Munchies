@@ -535,19 +535,15 @@ function OrderDetailModal({
     }
     setRemoveIds([]);
     setShowRemove(false);
-    // The customer paid for food they are not getting, so offer the matching
-    // refund now instead of leaving it to be remembered later. She still picks
-    // how the money went back, so the form opens filled in rather than firing.
-    if (
-      result.removedCents > 0 &&
-      confirm(
-        `Removed ${formatPrice(result.removedCents)} of items. Record ${formatPrice(result.removedCents)} going back to the customer?`,
-      )
-    ) {
-      setRefundAmount((result.removedCents / 100).toFixed(2));
-      setRefundReason("Items removed from the order");
-      setShowRefund(true);
-      requestAnimationFrame(() => refundAmountRef.current?.focus());
+    // Deliberately no refund prompt here. Removing lines is only allowed while
+    // the order is unpaid, so no money has changed hands and there is nothing to
+    // send back: the total simply drops to what is still being made. Offering a
+    // refund at this point booked the same reduction twice, once in the lowered
+    // total and again as money returned.
+    if (result.removedCents > 0) {
+      alert(
+        `Removed ${formatPrice(result.removedCents)} of items. The order total has come down to match.`,
+      );
     }
   }
   const selectClass =
@@ -770,14 +766,25 @@ function OrderDetailModal({
           </label>
           <textarea
             id={`note-${order.orderNumber}`}
+            // Re-seeded whenever the stored note changes, because this field is
+            // not the only writer: a customer's cancellation request is appended
+            // to the same note server-side. Without the key the box would keep
+            // showing whatever loaded when the modal opened.
+            key={order.ownerNote ?? ""}
             defaultValue={order.ownerNote ?? ""}
-            onBlur={(e) => onOwnerNoteSave(e.target.value)}
+            // Only write when she actually edited something. Blurring an
+            // untouched box used to save the value it was seeded with, which
+            // silently wiped a cancellation request that arrived in the meantime.
+            onBlur={(e) => {
+              if (e.target.value !== (order.ownerNote ?? "")) onOwnerNoteSave(e.target.value);
+            }}
             rows={2}
             placeholder="Private reminder only you see. e.g. double-bag, nut allergy"
             className="mt-1 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm transition focus:border-rose"
           />
           <p className="mt-1 text-xs text-muted">
-            Saved when you click away. The customer never sees this.
+            Saved when you click away. The customer never sees this. Cancellation requests are
+            added here too, so keep them unless you have dealt with them.
           </p>
         </div>
 

@@ -43,7 +43,11 @@ export async function validatePromo(
   const code = rawCode.trim().toUpperCase();
   if (!code) return { ok: false, error: "Enter a code." };
   const { userId = null, email = null, deliveryFeeCents = 0 } = context;
-  const normalizedEmail = (email ?? "").trim();
+  // Lower-cased as well as trimmed, because the per-customer count below
+  // compares it against the stored order email lower-cased. An order keeps the
+  // address exactly as it was typed, so "Sean@Gmail.com" and "sean@gmail.com"
+  // are the same buyer and must be counted as one.
+  const normalizedEmail = (email ?? "").trim().toLowerCase();
 
   const admin = createAdminClient();
   const { data } = await admin.from("promo_codes").select("*").eq("code", code).maybeSingle();

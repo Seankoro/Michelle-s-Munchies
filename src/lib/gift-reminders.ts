@@ -94,22 +94,28 @@ export async function remindUnscheduledGifts(): Promise<number> {
       .maybeSingle();
     if (stampError) throw new Error(`Failed to record the gift reminder: ${stampError.message}`);
     if (!claim) continue;
-    chased += 1;
 
-    // Best-effort, like every other notification path, so one bad send never
-    // fails the run for the gifts queued behind it.
-    try {
-      await sendGiftScheduleReminderEmail({
-        to: row.email,
-        buyerName: row.customer_name,
-        recipientName: row.recipient_name,
-        orderNumber: row.order_number,
-        scheduledDate: row.scheduled_date,
-        recipientToken: row.recipient_token,
-      });
-    } catch (emailError) {
-      console.error("[gift-reminder] notification email failed:", emailError);
+    // The senders report failure rather than throwing, so a false here is the
+    // only signal that nothing reached the buyer. Hand the claim back when that
+    // happens, or the one chase this gift was ever going to get is silently
+    // spent on an email that was never delivered.
+    const delivered = await sendGiftScheduleReminderEmail({
+      to: row.email,
+      buyerName: row.customer_name,
+      recipientName: row.recipient_name,
+      orderNumber: row.order_number,
+      scheduledDate: row.scheduled_date,
+      recipientToken: row.recipient_token,
+    });
+    if (!delivered) {
+      console.error(`[gift-reminder] send failed for ${row.order_number}, releasing the claim`);
+      await admin
+        .from("orders")
+        .update({ gift_reminder_sent_at: null })
+        .eq("id", row.id);
+      continue;
     }
+    chased += 1;
   }
   return chased;
 }

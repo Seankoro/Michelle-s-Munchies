@@ -64,9 +64,12 @@ export default function AdminDashboardPage() {
   const awaitingPayment = orders.filter(
     (o) => o.status !== "cancelled" && o.paymentStatus === "pending",
   ).length;
+  // Money kept, so anything handed back on a refund comes off. Insights uses
+  // the same subtraction, and two headline revenue figures that disagree are
+  // worse than either one being slightly off.
   const revenue = orders
     .filter((o) => o.paymentStatus === "paid" && o.status !== "cancelled")
-    .reduce((sum, o) => sum + o.totalCents, 0);
+    .reduce((sum, o) => sum + o.totalCents - (o.refundedCents ?? 0), 0);
 
   // What needs baking, grouped by the day the customer wants it, earliest window
   // first. Cancelled orders drop out; everything else is still live work. Order

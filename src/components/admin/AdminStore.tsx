@@ -305,7 +305,13 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
   function updatePaymentStatus(orderNumber: string, paymentStatus: PaymentStatus) {
     persistOrderPatch(
       orderNumber,
-      { paymentStatus },
+      // Mirror the server's paid_at stamp locally, or Insights would keep
+      // bucketing the money on the day the order was placed until the next full
+      // reload, which is the very thing paid_at was added to stop.
+      {
+        paymentStatus,
+        paidAt: paymentStatus === "paid" ? new Date().toISOString() : null,
+      },
       updatePaymentStatusAction(orderNumber, paymentStatus),
       `Payment status for ${orderNumber}`,
     );

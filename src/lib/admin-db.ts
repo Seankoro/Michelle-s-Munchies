@@ -563,8 +563,15 @@ export async function cancelAndRefundOrder(
   // A deposit is money already sitting in Michelle's bank that the app cannot
   // send back for her. If she has not returned it yet, record what is owed so it
   // stays in front of her instead of vanishing with the cancelled order.
+  //
+  // Only on an order that was NOT settled in full. Once an order is paid, the
+  // deposit is part of the total that was received, and the refund (Stripe, or
+  // the manualRefundDue amount she sends by hand) already covers the whole of
+  // it. Recording the deposit again on top would tell her to return the total
+  // AND the deposit, paying the customer twice for the same cancelled order.
   const depositCents = order.deposit_cents ?? 0;
-  const depositOwed = depositCents > 0 && !depositReturned ? depositCents : null;
+  const settledInFull = order.payment_status === "paid" || order.payment_status === "refunded";
+  const depositOwed = depositCents > 0 && !depositReturned && !settledInFull ? depositCents : null;
   const { error: updErr } = await supabase
     .from("orders")
     .update({
@@ -698,26 +705,66 @@ export async function fetchRefundedCents(orderId: string): Promise<number> {
 
 /**
  * Take lines off an order that could not be baked, so the record describes what
- * was actually delivered rather than what was ordered. Refused once the order
- * has reached baking, because by then the food exists and the honest fix is a
- * refund against a truthful order rather than pretending it was never ordered.
+ * was actually delivered rather than what was ordered. Only ever on an order
+ * that has not been paid for and has not started baking.
+ *
+ * Removing a line lowers total_cents. On an unpaid order that is exactly right:
+ * nothing has been collected, so the order is simply worth less now. On a PAID
+ * order it is wrong, because total_cents is also the only record of what the
+ * customer actually handed over, and lowering it makes the money unreconcilable
+ * in both directions: recording the matching refund subtracts the same amount
+ * twice, and not recording it hides money she is still holding. So a paid order
+ * is refused here and the honest tool is a refund against a truthful order,
+ * which is the same reasoning the baking guard already uses.
  *
  * Returns the cents removed, worked out by the database from the rows
- * themselves, so the caller can offer to refund exactly that much.
+ * themselves.
  */
 export async function removeOrderItems(orderNumber: string, itemIds: string[]): Promise<number> {
   const supabase = createAdminClient();
   const { data } = await supabase
     .from("orders")
-    .select("id, status")
+    .select("id, status, payment_status, total_cents, deposit_cents")
     .eq("order_number", orderNumber)
     .maybeSingle();
-  const order = data as { id: string; status: OrderStatus } | null;
+  const order = data as {
+    id: string;
+    status: OrderStatus;
+    payment_status: PaymentStatus;
+    total_cents: number;
+    deposit_cents: number | null;
+  } | null;
   if (!order) throw new Error("Order not found.");
   if (statusRequiresPayment(order.status)) {
     throw new Error(
       "This order is already being baked. Record a refund instead of changing what was ordered.",
     );
+  }
+  if (order.payment_status === "paid" || order.payment_status === "refunded") {
+    throw new Error(
+      "This order is already paid. Record a refund instead, so what was charged stays on the order.",
+    );
+  }
+
+  // A deposit is money already banked against this order. Letting the total fall
+  // below it would show the customer a negative balance due and leave her
+  // holding money the order no longer accounts for.
+  const depositCents = order.deposit_cents ?? 0;
+  if (depositCents > 0) {
+    const { data: rows } = await supabase
+      .from("order_items")
+      .select("line_total_cents")
+      .eq("order_id", order.id)
+      .in("id", itemIds);
+    const removing = ((rows as { line_total_cents: number }[] | null) ?? []).reduce(
+      (sum, row) => sum + row.line_total_cents,
+      0,
+    );
+    if (order.total_cents - removing < depositCents) {
+      throw new Error(
+        `That would take the order below the ${formatPrice(depositCents)} deposit already taken. Adjust the deposit first.`,
+      );
+    }
   }
 
   const { data: removed, error } = await supabase.rpc("remove_items_from_order", {

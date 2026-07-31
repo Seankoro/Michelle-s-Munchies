@@ -2,6 +2,7 @@
 
 import { requireAdmin, currentAdminEmail } from "@/lib/admin-auth";
 import { rateLimit } from "@/lib/rate-limit";
+import { fetchSuppressedEmails } from "@/lib/email-optout";
 import { fetchStoreSettings } from "@/lib/settings";
 import { sendNewsletterEmail } from "@/lib/email";
 import {
@@ -71,10 +72,16 @@ export async function sendNewsletterAction(subject: string, body: string): Promi
   }
   const bodyHtml = renderNewsletterHtml(body);
   const subscribers = await listActiveSubscribers();
+  // The marketing opt-out page promises to stop reminders AND offers, and a
+  // newsletter is an offer, so honour that list here too. Without this a
+  // customer who opted out of everything still received the broadcast, which
+  // makes the promise on that page untrue. One query for the whole send.
+  const suppressed = await fetchSuppressedEmails(subscribers.map((s) => s.email));
   // Count what actually reached the provider, not what we attempted, so the
   // "sent to N people" confirmation is not quietly wrong when sends fail.
   let sent = 0;
   for (const sub of subscribers) {
+    if (suppressed.has(sub.email.trim().toLowerCase())) continue;
     const delivered = await sendNewsletterEmail(
       sub.email,
       subject.trim(),
