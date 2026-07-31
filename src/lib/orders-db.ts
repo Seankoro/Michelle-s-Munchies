@@ -53,7 +53,18 @@ export type CreatedOrder = {
 export type OrderRedemption = { pointsRedeemed: number; discountCents: number };
 
 /** Daily and per-window order caps, enforced atomically inside the insert RPC. */
-export type OrderCapacity = { dailyCap: number | null; windowCap: number | null };
+/**
+ * The limits the insert re-asserts under a lock. Capacity is per bake date; the
+ * promo caps come from the promo row. Counting these in the action and inserting
+ * afterwards let simultaneous checkouts each pass the same check, so the real
+ * enforcement lives in the database function and these are what it enforces.
+ */
+export type OrderCapacity = {
+  dailyCap: number | null;
+  windowCap: number | null;
+  promoMaxRedemptions?: number | null;
+  promoPerCustomerLimit?: number | null;
+};
 
 /**
  * Creates an order and its items. Amounts are recomputed here, never trusted
@@ -63,9 +74,13 @@ export type OrderCapacity = { dailyCap: number | null; windowCap: number | null 
  *
  * The order row and its items are written by one Postgres function, so they
  * commit or roll back together and a fault can never leave an orphaned,
- * itemless order. The same function re-checks the capacity caps under a lock;
- * it raises `capacity_day_full` / `capacity_window_full`, which the checkout
- * action translates into the friendly copy the pre-checks already use.
+ * itemless order. That same function re-asserts every spend limit under a lock,
+ * in the transaction that does the insert: the capacity caps, the promo caps,
+ * and the customer's points balance. Each is raised as a marker
+ * (`capacity_day_full`, `capacity_window_full`, `promo_cap_reached`,
+ * `promo_customer_cap`, `points_unavailable`) which the checkout action turns
+ * into the same copy its own pre-checks use. Counting in the action alone let
+ * simultaneous checkouts all read the same state and each spend the limit.
  */
 export async function createOrder(
   input: CreateOrderInput,
@@ -153,11 +168,21 @@ export async function createOrder(
       p_items: itemRows,
       p_daily_cap: capacity.dailyCap,
       p_window_cap: capacity.windowCap,
+      p_promo_max_redemptions: capacity.promoMaxRedemptions ?? null,
+      p_promo_per_customer_limit: capacity.promoPerCustomerLimit ?? null,
     });
     if (!error) break;
-    // Capacity refusals carry a marker message for the action to translate.
-    if (error.message.includes("capacity_day_full")) throw new Error("capacity_day_full");
-    if (error.message.includes("capacity_window_full")) throw new Error("capacity_window_full");
+    // Every limit the function re-asserts raises its own marker for the action
+    // to translate into the copy the customer already sees from the pre-checks.
+    for (const marker of [
+      "capacity_day_full",
+      "capacity_window_full",
+      "promo_cap_reached",
+      "promo_customer_cap",
+      "points_unavailable",
+    ]) {
+      if (error.message.includes(marker)) throw new Error(marker);
+    }
     if (error.code === "23505" && attempt < MAX_INSERT_ATTEMPTS) {
       orderNumber = generateOrderNumber();
       continue;
@@ -284,8 +309,13 @@ export async function createManualOrder(input: ManualOrderInput): Promise<{ orde
         currency: "SGD",
       },
       p_items: itemRows,
+      // No caps at all: Michelle is logging an order she already accepted, so
+      // she decides, not the limits. A manual order carries no promo and no
+      // points either, so there is nothing for those guards to check.
       p_daily_cap: null,
       p_window_cap: null,
+      p_promo_max_redemptions: null,
+      p_promo_per_customer_limit: null,
     });
     if (!error) break;
     if (error.code === "23505" && attempt < MAX_INSERT_ATTEMPTS) {

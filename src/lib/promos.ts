@@ -18,7 +18,17 @@ type PromoRow = {
 };
 
 export type PromoValidation =
-  | { ok: true; code: string; discountCents: number; label: string }
+  | {
+      ok: true;
+      code: string;
+      discountCents: number;
+      label: string;
+      /** The code's own caps, carried back so the insert can re-assert them
+       *  under a lock. Counting here and inserting later let simultaneous
+       *  checkouts each pass the same check and spend a one-use code N times. */
+      maxRedemptions: number | null;
+      perCustomerLimit: number | null;
+    }
   | { ok: false; error: string };
 
 export type PromoContext = {
@@ -132,5 +142,12 @@ export async function validatePromo(
     label = "Free delivery";
   }
 
-  return { ok: true, code, discountCents, label };
+  return {
+    ok: true,
+    code,
+    discountCents,
+    label,
+    maxRedemptions: promo.max_redemptions,
+    perCustomerLimit: promo.per_customer_limit,
+  };
 }

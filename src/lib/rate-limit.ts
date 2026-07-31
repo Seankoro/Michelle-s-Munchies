@@ -103,7 +103,37 @@ export async function rateLimit(
       // in-memory limiter, which still bounds traffic on this instance.
       console.error("[rate-limit] Upstash unavailable, using in-memory fallback:", error);
     }
+  } else {
+    warnUnsharedInProduction();
   }
 
   return inMemoryAllow(key, opts.limit, opts.windowMs);
+}
+
+let warnedUnshared = false;
+
+/**
+ * Say loudly, once per instance, that the limits are not really binding.
+ *
+ * The in-memory fallback counts per serverless instance, and the host starts a
+ * fresh instance whenever it likes, so on a real deployment a caller can simply
+ * land on a new one and get a fresh allowance. Every cap that exists for
+ * security rather than tidiness stops meaning anything: the admin password
+ * guess limit, and the per-inbox caps that stop this domain being used to mail
+ * a stranger. It degrades silently, which is the dangerous part, so this makes
+ * it visible in the logs.
+ *
+ * Deliberately NOT fail-closed. Denying instead would lock Michelle out of her
+ * own admin panel and refuse real orders the moment Redis was missing, which is
+ * a worse outcome for a one-person bakery than a weaker limit. The real fix is
+ * configuring UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN.
+ */
+function warnUnsharedInProduction() {
+  if (warnedUnshared || process.env.NODE_ENV !== "production") return;
+  warnedUnshared = true;
+  console.error(
+    "[rate-limit] No shared store configured (UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN). " +
+      "Limits are per-instance only, so the admin sign-in cap and the per-inbox email caps do not " +
+      "bind across instances. Configure Upstash before relying on them.",
+  );
 }

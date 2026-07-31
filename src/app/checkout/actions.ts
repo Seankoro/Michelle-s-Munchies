@@ -355,6 +355,27 @@ export async function placeOrder(
     if (!(await rateLimit("place-order", { limit: 12, windowMs: 5 * 60_000 }))) {
       return { ok: false, error: "Too many orders in a short time. Please wait a moment." };
     }
+    // Placing an order emails the address typed into the form, and the order
+    // carries free text (name, notes, gift message) that ends up in that email.
+    // Without a cap keyed on the address alone, anyone could use checkout to
+    // send repeated, attacker-worded mail to a stranger's inbox from the
+    // bakery's own authenticated domain. Every other send path already has this
+    // bucket; this was the one that missed it. Keyed with no client IP, so
+    // rotating the source address does not buy a fresh allowance.
+    const orderEmail = input.email.trim().toLowerCase();
+    if (
+      EMAIL_RE.test(orderEmail) &&
+      !(await rateLimit(`place-order:${orderEmail}`, {
+        limit: 5,
+        windowMs: 60 * 60_000,
+        scope: "global",
+      }))
+    ) {
+      return {
+        ok: false,
+        error: "Too many orders for that email address just now. Please wait a little and try again.",
+      };
+    }
     const supabase = await createServerSupabase();
     const {
       data: { user },
@@ -524,6 +545,8 @@ export async function placeOrder(
     // Promo code, validated server-side and available to guests too.
     let promoDiscount = 0;
     let appliedPromo: string | null = null;
+    let promoMaxRedemptions: number | null = null;
+    let promoPerCustomerLimit: number | null = null;
     if (promoCode.trim()) {
       if (!settings.features.promos) {
         // Michelle can pause promo codes while a checkout page is open, and that
@@ -542,6 +565,9 @@ export async function placeOrder(
       if (result.ok) {
         promoDiscount = Math.min(result.discountCents, room);
         appliedPromo = result.code;
+        // Carried to the insert so the caps are re-asserted under a lock there.
+        promoMaxRedemptions = result.maxRedemptions;
+        promoPerCustomerLimit = result.perCustomerLimit;
         room -= promoDiscount;
       } else {
         // Never silently drop a discount the customer saw on the button. The
@@ -646,15 +672,35 @@ export async function placeOrder(
             settings.perWindowCap && settings.perWindowCap > 0 && !giftSelfSchedule
               ? settings.perWindowCap
               : null,
+          promoMaxRedemptions,
+          promoPerCustomerLimit,
         },
       );
     } catch (orderError) {
+      // The checks above give fast, friendly refusals, but each of them counts
+      // rows and can be raced by a second checkout before this one inserts. The
+      // insert re-asserts all of them under a lock and raises these markers, so
+      // a request that loses the race gets the same words rather than a crash.
       const message = orderError instanceof Error ? orderError.message : "";
       if (message === "capacity_day_full") {
         return { ok: false, error: "That date is fully booked. Please pick another." };
       }
       if (message === "capacity_window_full") {
         return { ok: false, error: "That time slot is fully booked. Please pick another window." };
+      }
+      if (message === "promo_cap_reached" || message === "promo_customer_cap") {
+        return {
+          ok: false,
+          error:
+            "That promo code has just been used up. Please remove it, then place your order again.",
+        };
+      }
+      if (message === "points_unavailable") {
+        return {
+          ok: false,
+          error:
+            "Your points have just been used on another order. Please refresh and place this one again.",
+        };
       }
       throw orderError;
     }
