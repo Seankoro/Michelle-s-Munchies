@@ -22,9 +22,18 @@ import type { SelectedOption } from "@/lib/types";
 
 export type LookupResult = { ok: true; token: string } | { ok: false; error: string };
 export type ChangeResult = { ok: true } | { ok: false; error: string };
-export type AddItemsResult = { ok: true; addedCents: number } | { ok: false; error: string };
+/**
+ * `added` names the lines that really went onto the order and `skipped` the ones
+ * that could not, so the panel never has to assume the add was whole.
+ */
+export type AddItemsResult =
+  | { ok: true; addedCents: number; added: string[] }
+  | { ok: false; error: string; skipped?: string[] };
 
 const MAX_RESCHEDULES = 3;
+/** Lines and per-line quantity one top-up may carry, the panel's own limits. */
+const MAX_ADD_LINES = 20;
+const MAX_ADD_QUANTITY = 20;
 
 /**
  * Marker the cancellation request writes into the owner's note. Kept as a
@@ -197,6 +206,11 @@ export async function reorderFromToken(token: string): Promise<ReorderResult> {
  * don't pay a second delivery fee. Token-gated, only while the order is still
  * early and unpaid and still inside the lead time, items re-priced server-side
  * against the live catalogue through the same resolver checkout uses.
+ *
+ * All or nothing. If any line cannot go on, nothing is written and the answer
+ * names the treats it refused, because adding some of them and reporting plain
+ * success leaves the customer certain that everything they picked is on the
+ * order and leaves Michelle baking against a list they never agreed to.
  */
 export async function addItemsToOrderAction(
   token: string,
@@ -209,8 +223,13 @@ export async function addItemsToOrderAction(
   if (!settings.features.orderChanges) {
     return { ok: false, error: "Order changes aren’t available right now." };
   }
-  const clean = (lines ?? []).filter((l) => l.productId && l.quantity > 0).slice(0, 20);
+  const clean = (lines ?? []).filter((l) => l.productId && l.quantity > 0);
   if (clean.length === 0) return { ok: false, error: "Choose at least one treat." };
+  // Trimming the list to the cap would be the same silent drop this action is
+  // meant to stop doing, so an oversized batch is refused instead.
+  if (clean.length > MAX_ADD_LINES) {
+    return { ok: false, error: "That’s too many treats to add at once. Please message us." };
+  }
 
   const admin = createAdminClient();
   const { data } = await admin
@@ -256,16 +275,24 @@ export async function addItemsToOrderAction(
   const raw: RawCartLine[] = [];
   // Products the customer picked that need a size or flavour we can't ask for here.
   const needsChoice: string[] = [];
+  // Products that can't go on the order at all, named so the answer below can say
+  // which treat instead of leaving the customer to work it out.
+  const unavailable: string[] = [];
   for (const line of clean) {
-    const product = products.find((p) => p.id === line.productId && p.isAvailable);
-    if (!product) continue;
+    const product = products.find((p) => p.id === line.productId);
     // A seasonal drop that hasn't opened yet is blocked at checkout, so it can't
-    // come in through the add-on panel either.
-    if (isUpcoming(product)) continue;
+    // come in through the add-on panel either. Everything else about whether a
+    // treat can be sold, unticked products, sold-out flavours and tracked stock,
+    // is resolveCartLines' rule below and is not repeated here.
+    if (!product || isUpcoming(product)) {
+      unavailable.push(product?.name ?? "a treat that’s no longer on the menu");
+      continue;
+    }
     const selections = (line.selections ?? []).filter((s) => s.valueLabel);
     // Never guess a required choice. Michelle bakes what the line says and no
     // admin screen can edit it afterwards, so an unanswered size or flavour has
-    // to be refused rather than silently defaulted.
+    // to be refused rather than silently defaulted, which is what the resolver's
+    // own fallback to the first value she can still make would do with it.
     const unanswered = product.options.some(
       (option) =>
         option.required &&
@@ -278,28 +305,49 @@ export async function addItemsToOrderAction(
       needsChoice.push(product.name);
       continue;
     }
-    // A tracked product can only be topped up to what is actually left, so the
-    // add-on flow can't commit Michelle to more than she can bake.
-    const stockLeft = product.stockCount == null ? 20 : Math.min(20, product.stockCount);
-    if (stockLeft <= 0) continue;
     raw.push({
       productId: product.id,
       productName: product.name,
-      quantity: Math.max(1, Math.min(stockLeft, Math.round(line.quantity))),
+      // Capped like the panel's own quantity box, so a forged call can't commit
+      // Michelle to a thousand cupcakes. Stock is deliberately not clamped here.
+      // The resolver refuses the line against what is genuinely uncommitted, and
+      // clamping to a bare stock_count would both overstate it and quietly hand
+      // back fewer treats than the customer asked for.
+      quantity: Math.max(1, Math.min(MAX_ADD_QUANTITY, Math.round(line.quantity))),
       selections,
     });
-  }
-  if (needsChoice.length > 0) {
-    const names = needsChoice.join(", ");
-    return {
-      ok: false,
-      error: `${names} ${needsChoice.length === 1 ? "needs a size or flavour chosen" : "need a size or flavour chosen"}. Please message us to add ${needsChoice.length === 1 ? "it" : "them"}.`,
-    };
   }
 
   // Same resolver as checkout, so the name, the chosen values, and the unit
   // price with each value's delta folded in all come from the live catalogue.
-  const { items } = await resolveCartLines(raw);
+  // Its `skipped` is the lines it would not price, which used to be dropped on
+  // the floor here and is the other half of what the customer is told below.
+  const { items, skipped } = await resolveCartLines(raw);
+  for (const line of skipped) unavailable.push(line.name);
+
+  // One refused line refuses the whole add. Nothing has been written yet, so the
+  // answer can say plainly that the order is untouched and which treat to take
+  // off, rather than reporting success over an order that is missing it.
+  const refused = [...needsChoice, ...unavailable];
+  if (refused.length > 0) {
+    const parts: string[] = [];
+    if (needsChoice.length > 0) {
+      parts.push(
+        `${needsChoice.join(", ")} ${needsChoice.length === 1 ? "needs" : "need"} a size or flavour chosen`,
+      );
+    }
+    if (unavailable.length > 0) {
+      parts.push(
+        `${unavailable.join(", ")} ${unavailable.length === 1 ? "isn’t" : "aren’t"} available right now`,
+      );
+    }
+    const them = refused.length === 1 ? "it" : "them";
+    return {
+      ok: false,
+      error: `${parts.join(", and ")}. Nothing was added, so take ${them} off and try again, or message us and we’ll add ${them} by hand.`,
+      skipped: refused,
+    };
+  }
 
   const rows: {
     product_id: string;
@@ -327,6 +375,9 @@ export async function addItemsToOrderAction(
       line_total_cents: lineTotal,
     });
   }
+  // Every raw line lands in the resolver's `items` or in its `skipped`, so an
+  // empty list here means that stopped holding. Guarded anyway, because an add
+  // of nothing answering "Added!" is the exact thing this function must not do.
   if (rows.length === 0) return { ok: false, error: "Those treats aren’t available right now." };
 
   // Delivery fee and any discount stay the same, that's the point of adding on.
@@ -340,7 +391,9 @@ export async function addItemsToOrderAction(
   if (rpcErr) return { ok: false, error: "Couldn’t add the items. Please try again." };
 
   await sendItemsAddedEmail(order.order_number, order.customer_name, addedNames);
-  return { ok: true, addedCents };
+  // The same list Michelle's email carries, so the customer is told exactly what
+  // went on rather than being left to trust that all of it did.
+  return { ok: true, addedCents, added: addedNames };
 }
 
 /**

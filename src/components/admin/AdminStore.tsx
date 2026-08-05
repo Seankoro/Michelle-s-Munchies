@@ -112,7 +112,8 @@ type AdminContextValue = {
   recordDeposit: (orderNumber: string, cents: number) => void;
   addManualOrder: (input: ManualOrderInput) => Promise<ManualOrderResult>;
   /** `depositReturned` answers whether a deposit already went back to the
-   *  customer. Left off it means still owed, which keeps the money visible. */
+   *  customer. Left off it means she is still holding it, and the cancel is
+   *  what decides whether that gets recorded as owed. */
   cancelOrder: (
     orderNumber: string,
     depositReturned?: boolean,
@@ -122,6 +123,8 @@ type AdminContextValue = {
     /** Paid outside Stripe, so nothing was reversed and the money goes back by hand. */
     manualRefundDue?: boolean;
     amountCents?: number;
+    /** What the cancel recorded as a deposit still owed. Null means nothing owed. */
+    depositOwedCents?: number | null;
     error?: string;
   }>;
   clearDepositOwed: (orderNumber: string) => void;
@@ -136,6 +139,32 @@ type AdminContextValue = {
 };
 
 const AdminContext = createContext<AdminContextValue | null>(null);
+
+/**
+ * The words in a rejection worth putting in front of Michelle. Next redacts
+ * anything a server action throws in production and hands the browser its own
+ * "An error occurred in the Server Components render…" line with a digest
+ * attached, so quoting that shows her React's message instead of ours. Only an
+ * error raised in the browser itself, like a dropped connection, still carries
+ * a message that means something.
+ */
+function readableError(e: unknown): string | null {
+  if (!(e instanceof Error) || "digest" in e) return null;
+  return e.message || null;
+}
+
+/**
+ * The reason an action gave for refusing, or null when it did the work. An
+ * action that answers with `{ ok: false, error }` is the only kind whose reason
+ * survives to the browser, so a returned refusal counts as a failure here even
+ * though the promise resolved. Actions that return nothing always read as null.
+ */
+function refusalMessage(result: unknown): string | null {
+  if (typeof result !== "object" || result === null || !("ok" in result)) return null;
+  const answer = result as { ok: unknown; error?: unknown };
+  if (answer.ok !== false) return null;
+  return typeof answer.error === "string" ? answer.error : "";
+}
 
 /**
  * Database-backed admin store. Loads on mount and re-pulls when the tab
@@ -162,7 +191,7 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
       setLastUpdated(new Date());
       setError(null);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to load admin data.");
+      setError(readableError(e) ?? "Failed to load admin data.");
     } finally {
       lastFetchAt.current = Date.now();
     }
@@ -190,14 +219,24 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
 
   /** Fire a server action for an optimistic update; roll back + surface on failure. */
   function persist(action: Promise<unknown>, rollback: () => void, what: string) {
-    action.catch((e: unknown) => {
+    function failed(detail: string | null) {
       rollback();
       setError(
-        e instanceof Error
-          ? `${what} didn't save (${e.message}). The change was undone, please try again.`
+        detail
+          ? `${what} didn't save (${detail}). The change was undone, please try again.`
           : `${what} didn't save. The change was undone, please try again.`,
       );
-    });
+    }
+    // An action can refuse two ways: by answering with its reason, which is the
+    // only way the reason reaches the browser, or by throwing, which production
+    // strips down to React's own wording. Both mean the change did not save.
+    action.then(
+      (result) => {
+        const refusal = refusalMessage(result);
+        if (refusal !== null) failed(refusal);
+      },
+      (e: unknown) => failed(readableError(e)),
+    );
   }
 
   function patchProductLocal(id: string, patch: Partial<Product>) {
@@ -282,9 +321,7 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
     // DB assigns the real id. Insert the returned row so later edits match.
     void createProductAction(product)
       .then((created) => setProducts((prev) => [created, ...prev]))
-      .catch((e: unknown) =>
-        setError(e instanceof Error ? e.message : "Failed to add product."),
-      );
+      .catch((e: unknown) => setError(readableError(e) ?? "Failed to add product."));
   }
 
   function deleteProduct(id: string) {
@@ -312,7 +349,12 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
         paymentStatus,
         paidAt: paymentStatus === "paid" ? new Date().toISOString() : null,
       },
-      updatePaymentStatusAction(orderNumber, paymentStatus),
+      // Reaching paid counts tracked stock down and can hide a treat that just
+      // sold out, and moving off paid puts both back, so pull the menu in again
+      // once the server has done it. Without this the product editor keeps the
+      // row it loaded before the sale and saves that count and that availability
+      // back over the change.
+      updatePaymentStatusAction(orderNumber, paymentStatus).then(refresh),
       `Payment status for ${orderNumber}`,
     );
   }
@@ -367,24 +409,26 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
                 ...o,
                 status: "cancelled",
                 paymentStatus: result.refunded ? "refunded" : o.paymentStatus,
-                // Same sum the server records: a deposit she is still holding
-                // becomes money owed back the moment the order is cancelled.
-                depositOutstandingCents:
-                  !depositReturned && o.depositCents != null && o.depositCents > 0
-                    ? o.depositCents
-                    : null,
+                // Whether a held deposit is owed back depends on how the order
+                // was settled, and the cancel has already decided that and
+                // written it down. Paint what it recorded, never a second
+                // opinion, or a paid order shows money owed the database never
+                // stored and she pays the customer twice.
+                depositOutstandingCents: result.depositOwedCents,
               }
             : o,
         ),
       );
       // manualRefundDue and amountCents carry the "no Stripe payment to reverse,
-      // send it back yourself" case, so pass them through instead of dropping
-      // them and leaving the panel unable to say how much is owed.
+      // send it back yourself" case, and depositOwedCents is what it actually
+      // recorded as owed, so pass them through instead of dropping them and
+      // leaving the panel unable to say how much is owed.
       return {
         ok: true,
         refunded: result.refunded,
         manualRefundDue: result.manualRefundDue,
         amountCents: result.amountCents,
+        depositOwedCents: result.depositOwedCents,
       };
     }
     return { ok: false, error: result.error };
@@ -456,9 +500,10 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
       return true;
     } catch (e: unknown) {
       setSettings(before);
+      const detail = readableError(e);
       setError(
-        e instanceof Error
-          ? `Settings didn't save (${e.message}). Your changes were undone.`
+        detail
+          ? `Settings didn't save (${detail}). Your changes were undone.`
           : "Settings didn't save. Your changes were undone, please try again.",
       );
       return false;

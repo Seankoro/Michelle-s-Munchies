@@ -276,7 +276,10 @@ export async function updatePaymentStatus(orderNumber: string, paymentStatus: Pa
   if (!order) throw new Error("Order not found.");
   // The paid-before-baking rule holds in both directions: once an order is in
   // a work status, its payment cannot be flipped back to unpaid, or the order
-  // would keep baking while unpaid with nothing restoring the invariant.
+  // would keep baking while unpaid with nothing restoring the invariant. This is
+  // the only rule about moving payment off paid, and it is the whole of it. A
+  // caller that decides for itself that paid is final never gets here, and the
+  // undo below stops being code anybody can run.
   if (statusRequiresPayment(order.status)) {
     throw new Error("Move this order back to confirmed before changing its payment.");
   }
@@ -295,7 +298,8 @@ export async function updatePaymentStatus(orderNumber: string, paymentStatus: Pa
   // Undoing a mistaken paid puts any decremented stock back and hands the
   // loyalty points back, mirroring what ran on the paid transition. Stamp
   // guarded, so an order that never went paid is a no-op, and marking it paid
-  // again applies the side effects again.
+  // again applies the side effects again, which the ledger only manages because
+  // applyOrderPoints writes the re-application row the unique indexes refuse.
   if (order.payment_status === "paid") {
     await reversePaidSideEffects(order.id);
   }
@@ -428,19 +432,28 @@ async function reverseOrderReferral(orderId: string) {
     .eq("order_id", orderId)
     .in("reason", ["referral_referrer", "referral_referee", "referral_reversed"]);
   const rows = (data as { user_id: string; delta: number; reason: string }[] | null) ?? [];
-  const bonuses = rows.filter((row) => row.reason !== "referral_reversed");
-  if (bonuses.length === 0) return; // no referral was rewarded against this order
-  // Already reversed by an earlier cancel, so stop rather than credit twice.
-  if (rows.some((row) => row.reason === "referral_reversed")) return;
-
-  const { error } = await supabase.from("points_ledger").insert(
-    bonuses.map((row) => ({
-      user_id: row.user_id,
+  if (rows.length === 0) return; // no referral was rewarded against this order
+  // Reverse what each person is still holding from this order, not every bonus
+  // row ever written against it. An order can be marked paid, undone and marked
+  // paid again, and the undo puts the referral back to pending so the second
+  // paid transition pays it out again. Stopping at the first reversal would
+  // leave that second payout standing, and reversing every row would take the
+  // same bonus back twice, so net the rows and reverse what is left.
+  const netByUser = new Map<string, number>();
+  for (const row of rows) {
+    netByUser.set(row.user_id, (netByUser.get(row.user_id) ?? 0) + row.delta);
+  }
+  const reversals = [...netByUser]
+    .filter(([, net]) => net !== 0)
+    .map(([userId, net]) => ({
+      user_id: userId,
       order_id: orderId,
-      delta: -row.delta,
+      delta: -net,
       reason: "referral_reversed",
-    })),
-  );
+    }));
+  if (reversals.length === 0) return; // already back where it started
+
+  const { error } = await supabase.from("points_ledger").insert(reversals);
   if (error) {
     console.error(`[referral] Failed to reverse for order ${orderId}:`, error.message);
     return;
@@ -464,12 +477,28 @@ async function reverseOrderReferral(orderId: string) {
 }
 
 /**
+ * The ledger reasons that make up an order's own points, in the two families the
+ * paid transition moves: what the customer earned on the order, and what they
+ * spent on it. Undoing and re-applying add rows instead of editing the first
+ * pair, because the ledger is append-only and the unique indexes allow exactly
+ * one 'earned' and one 'redeemed' row per order. So what an order is holding
+ * right now is the sum of its family, never the first row on its own.
+ */
+const EARNED_REASONS = ["earned", "earn_reversed", "earn_reapplied"];
+const REDEEMED_REASONS = ["redeemed", "redeem_reversed", "redeem_reapplied"];
+
+/**
  * Give back the loyalty points an order moved when it went paid. The ledger is
  * append-only, so undoing means writing the opposite row rather than deleting
  * one: the points the customer spent come back to them, and the points they
  * earned on money that is being returned come off again. Callers hold the
  * decrement-stamp claim, so this runs at most once per paid transition. Never
  * throws, since the cancel it belongs to has already gone through.
+ *
+ * What comes back is what the order is still holding, not what its first paid
+ * transition wrote. A mis-tapped paid can be undone and marked paid again, and
+ * each of those leaves its own row, so reversing the original 'earned' row every
+ * time would take the same points off the customer twice.
  */
 async function reverseOrderPoints(orderId: string) {
   const supabase = createAdminClient();
@@ -477,44 +506,117 @@ async function reverseOrderPoints(orderId: string) {
     .from("points_ledger")
     .select("user_id, delta, reason")
     .eq("order_id", orderId)
-    .in("reason", ["earned", "redeemed"]);
+    .in("reason", [...EARNED_REASONS, ...REDEEMED_REASONS]);
   const rows = (data as { user_id: string; delta: number; reason: string }[] | null) ?? [];
   if (rows.length === 0) return; // guest order, or rewards were off at the time
-  const { error } = await supabase.from("points_ledger").insert(
-    rows.map((row) => ({
-      user_id: row.user_id,
-      order_id: orderId,
-      delta: -row.delta,
-      reason: row.reason === "earned" ? "earn_reversed" : "redeem_reversed",
-    })),
-  );
+  const reversals = [
+    { reasons: EARNED_REASONS, reversal: "earn_reversed" },
+    { reasons: REDEEMED_REASONS, reversal: "redeem_reversed" },
+  ].flatMap(({ reasons, reversal }) => {
+    const family = rows.filter((row) => reasons.includes(row.reason));
+    const net = family.reduce((sum, row) => sum + row.delta, 0);
+    const userId = family[0]?.user_id;
+    if (net === 0 || !userId) return [];
+    return [{ user_id: userId, order_id: orderId, delta: -net, reason: reversal }];
+  });
+  if (reversals.length === 0) return; // already back where it started
+  const { error } = await supabase.from("points_ledger").insert(reversals);
   if (error) console.error(`[points] Failed to reverse for order ${orderId}:`, error.message);
 }
 
 /**
- * `manualRefundDue` says the customer paid but not through Stripe, so there is
- * no payment for the app to reverse and Michelle owes them `amountCents` by
- * PayNow herself. `amountCents` is the order total either way.
+ * Write one of the two points rows a paid transition owes, or its re-application
+ * when the order already carries that row. Only one 'earned' and one 'redeemed'
+ * row per order is allowed, so an order that was marked paid, had that undone,
+ * and was marked paid again cannot write the same row a second time and the
+ * customer would silently keep the points they spent and lose the points they
+ * earned. The re-application reason moves them again, and it only fires when the
+ * order's rows in that family net to zero, so a duplicate Stripe webhook stays
+ * the no-op the unique index already makes it. Never throws, since the payment
+ * it belongs to has already been taken.
+ */
+async function applyOrderPoints(
+  orderId: string,
+  userId: string,
+  delta: number,
+  reason: "earned" | "redeemed",
+) {
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from("points_ledger")
+    .insert({ user_id: userId, order_id: orderId, delta, reason });
+  if (!error) return;
+  // 23505 = unique_violation, so this order already carries the row.
+  if (error.code !== "23505") {
+    console.error(`[points] Failed to write ${reason} for order ${orderId}:`, error.message);
+    return;
+  }
+  const earned = reason === "earned";
+  const { data } = await supabase
+    .from("points_ledger")
+    .select("delta")
+    .eq("order_id", orderId)
+    .in("reason", earned ? EARNED_REASONS : REDEEMED_REASONS);
+  const net = ((data as { delta: number }[] | null) ?? []).reduce((sum, row) => sum + row.delta, 0);
+  if (net !== 0) return; // still applied, so this really is a duplicate
+  const { error: reapplyError } = await supabase.from("points_ledger").insert({
+    user_id: userId,
+    order_id: orderId,
+    delta,
+    reason: earned ? "earn_reapplied" : "redeem_reapplied",
+  });
+  if (reapplyError) {
+    console.error(`[points] Failed to re-apply ${reason} for order ${orderId}:`, reapplyError.message);
+  }
+}
+
+/**
+ * `manualRefundDue` says the customer paid but the app returned nothing, so
+ * Michelle owes them `amountCents` by PayNow herself. `amountCents` is the order
+ * total either way. `depositOwedCents` is the deposit this cancel recorded as
+ * still owed, null when nothing is owed, so the panel can word its instruction
+ * from the amount the server actually wrote instead of working the deposit rule
+ * out a second time and drifting from it.
+ *
+ * On the failure side, `refundFailed` marks the one refusal Michelle is allowed
+ * to override: Stripe would not return the money, so cancelling now would strand
+ * it. Everything else is a plain error she cannot argue with.
  */
 export type CancelResult =
-  | { ok: true; refunded: boolean; manualRefundDue: boolean; amountCents: number }
-  | { ok: false; error: string };
+  | {
+      ok: true;
+      refunded: boolean;
+      manualRefundDue: boolean;
+      amountCents: number;
+      depositOwedCents: number | null;
+    }
+  | { ok: false; error: string; refundFailed?: boolean };
 
 /**
  * Admin cancel and refund. Idempotent, so a cancelled order is a no-op. If the
  * order was paid through Stripe, refunds the PaymentIntent and restocks, then
  * marks the order cancelled, and refunded when money was returned. A PayNow or
  * hand-marked order has nothing to reverse, so it comes back manualRefundDue.
+ *
+ * `cancelWithoutRefund` is the way out of an order that can never be cancelled.
+ * A refused Stripe refund normally blocks the cancel so the customer's money is
+ * not stranded, but some refusals never come good: a charge too old to refund, a
+ * charge already refunded from the Stripe dashboard, a PaymentIntent that no
+ * longer exists. Retrying those forever leaves the order stuck in the bake list.
+ * With this set the cancel goes through, the payment status is left exactly as
+ * it is rather than being relabelled refunded, and the result comes back
+ * manualRefundDue so the panel tells her how much she still has to send back.
  */
 export async function cancelAndRefundOrder(
   orderNumber: string,
   depositReturned = false,
+  cancelWithoutRefund = false,
 ): Promise<CancelResult> {
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("orders")
     .select(
-      "id, status, payment_status, stripe_payment_intent_id, total_cents, deposit_cents, email, customer_name, tracking_token",
+      "id, status, payment_status, stripe_payment_intent_id, total_cents, deposit_cents, deposit_outstanding_cents, email, customer_name, tracking_token",
     )
     .eq("order_number", orderNumber)
     .maybeSingle();
@@ -526,6 +628,7 @@ export async function cancelAndRefundOrder(
     stripe_payment_intent_id: string | null;
     total_cents: number;
     deposit_cents: number | null;
+    deposit_outstanding_cents: number | null;
     email: string;
     customer_name: string;
     tracking_token: string;
@@ -533,29 +636,41 @@ export async function cancelAndRefundOrder(
   // PayNow and hand-marked orders never got a Stripe PaymentIntent, and there
   // is no way to reverse a bank transfer from here, so the money has to go back
   // by hand. Report that instead of letting a quiet skip read as "refunded".
-  const manualRefundDue = order.payment_status === "paid" && !order.stripe_payment_intent_id;
+  const paidOutsideStripe = order.payment_status === "paid" && !order.stripe_payment_intent_id;
   if (order.status === "cancelled") {
     return {
       ok: true,
       refunded: order.payment_status === "refunded",
-      manualRefundDue,
+      manualRefundDue: paidOutsideStripe,
       amountCents: order.total_cents,
+      // The earlier cancel already decided this. Hand back what it recorded so a
+      // repeated cancel says the same thing rather than a fresh guess.
+      depositOwedCents: order.deposit_outstanding_cents,
     };
   }
 
   let refunded = false;
+  let stripeRefundFailed = false;
   if (order.payment_status === "paid" && order.stripe_payment_intent_id) {
     refunded = await refundOrder(order.stripe_payment_intent_id);
-    if (!refunded) {
+    stripeRefundFailed = !refunded;
+    if (stripeRefundFailed && !cancelWithoutRefund) {
       // The card refund did not go through. Leave the order untouched rather than
       // cancelling it into a paid-but-unrefunded state, so the customer's money is
-      // not stranded and the admin can retry the cancel.
+      // not stranded and the admin can retry the cancel. refundFailed marks this
+      // as the refusal she can override once she has settled the money another
+      // way, so a refund that will never succeed cannot trap the order forever.
       return {
         ok: false,
+        refundFailed: true,
         error: "The Stripe refund did not go through, so the order was not cancelled. Please try again in a moment.",
       };
     }
   }
+  // Money still has to go back by hand whenever the order was paid and nothing
+  // went back through Stripe, whether there was no PaymentIntent to reverse or
+  // the refund was refused and she cancelled anyway.
+  const manualRefundDue = paidOutsideStripe || stripeRefundFailed;
   // Put stock and loyalty points back for any order that took them, however it
   // was paid (Stripe card OR a PayNow/manual order marked paid here). It self
   // guards on the decrement stamp, so an order that never went paid is a no-op.
@@ -604,7 +719,13 @@ export async function cancelAndRefundOrder(
   } catch (emailError) {
     console.error("[cancel] notification email failed:", emailError);
   }
-  return { ok: true, refunded, manualRefundDue, amountCents: order.total_cents };
+  return {
+    ok: true,
+    refunded,
+    manualRefundDue,
+    amountCents: order.total_cents,
+    depositOwedCents: depositOwed,
+  };
 }
 
 /** Michelle has sent a held deposit back, so stop showing it as outstanding. */
@@ -882,15 +1003,7 @@ export async function markOrderPaid(orderNumber: string, paymentIntentId: string
   if (order?.user_id) {
     // Deduct any points the customer redeemed on this order. Idempotent.
     if (order.points_redeemed > 0) {
-      const { error: redeemError } = await supabase.from("points_ledger").insert({
-        user_id: order.user_id,
-        order_id: order.id,
-        delta: -order.points_redeemed,
-        reason: "redeemed",
-      });
-      if (redeemError && redeemError.code !== "23505") {
-        console.error(`[points] Failed to deduct for ${orderNumber}:`, redeemError.message);
-      }
+      await applyOrderPoints(order.id, order.user_id, -order.points_redeemed, "redeemed");
     }
     // One read for the points and referral config and the relevant feature toggles.
     const { data: cfgRow } = await supabase
@@ -913,16 +1026,7 @@ export async function markOrderPaid(orderNumber: string, paymentIntentId: string
       const perDollar = cfg?.points_per_dollar ?? 1;
       const points = Math.floor(order.subtotal_cents / 100) * perDollar;
       if (points > 0) {
-        // The unique index on order_id where reason='earned' makes retries safe.
-        const { error: ledgerError } = await supabase.from("points_ledger").insert({
-          user_id: order.user_id,
-          order_id: order.id,
-          delta: points,
-          reason: "earned",
-        });
-        if (ledgerError && ledgerError.code !== "23505") {
-          console.error(`[points] Failed to award for ${orderNumber}:`, ledgerError.message);
-        }
+        await applyOrderPoints(order.id, order.user_id, points, "earned");
       }
     }
 

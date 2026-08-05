@@ -68,6 +68,14 @@ function nextStatus(order: AdminOrder): OrderStatus | null {
 }
 
 /**
+ * Statuses where a date that has gone by is still worth moving. Once an order
+ * is ready it is baked and boxed, and out for delivery it may already be with
+ * the customer, so asking for a new date there is asking her to fix something
+ * that is already done.
+ */
+const RESCHEDULABLE_STATUSES: OrderStatus[] = ["received", "confirmed", "baking"];
+
+/**
  * Paid, still to bake, and the date the customer picked at checkout has already
  * gone by. scheduledDate never moves when payment lands late, so without a
  * prompt these orders sit stranded in the past where nobody looks.
@@ -75,8 +83,7 @@ function nextStatus(order: AdminOrder): OrderStatus | null {
 function bakeDateHasPassed(order: AdminOrder, today: string): boolean {
   return (
     order.paymentStatus === "paid" &&
-    order.status !== "completed" &&
-    order.status !== "cancelled" &&
+    RESCHEDULABLE_STATUSES.includes(order.status) &&
     order.scheduledDate < today
   );
 }
@@ -349,6 +356,8 @@ function OrderDetailModal({
     /** Paid outside Stripe, so nothing was reversed and the money goes back by hand. */
     manualRefundDue?: boolean;
     amountCents?: number;
+    /** What the cancel recorded as a deposit still owed. Null means nothing owed. */
+    depositOwedCents?: number | null;
     error?: string;
   }>;
   onClearDepositOwed: () => void;
@@ -440,36 +449,46 @@ function OrderDetailModal({
   async function handleCancel() {
     const paid = order.paymentStatus === "paid";
     const depositCents = order.depositCents ?? 0;
+    // Money that has already gone back is not owed a second time, so what is
+    // quoted here is what she is still holding, never the order total.
     if (
       !confirm(
-        paid
-          ? `Cancel this order and return ${formatPrice(order.totalCents)} to the customer? A card payment goes back through Stripe. A PayNow or hand-marked payment has to be sent back by you.`
+        paid && netKeptCents > 0
+          ? `Cancel this order and return ${formatPrice(netKeptCents)} to the customer? A card payment goes back through Stripe. A PayNow or hand-marked payment has to be sent back by you.`
           : "Cancel this order?",
       )
     )
       return;
     // A deposit is money already sitting in her bank that the app cannot move,
     // so the one useful thing it can do is write down which way it went. Only
-    // "OK, I have sent it" counts as returned: dismissing this leaves the amount
-    // recorded as owed, so a mis-tap keeps the money on screen rather than
-    // quietly claiming the customer already has it back.
+    // "OK, I have sent it" counts as returned: dismissing this says she is still
+    // holding it, so a mis-tap keeps the money on screen rather than quietly
+    // claiming the customer already has it back. Whether that becomes money owed
+    // is the cancel's call, because on an order paid in full the deposit is
+    // already inside what goes back, so this prompt promises nothing.
     const depositReturned =
       depositCents > 0 &&
       confirm(
-        `Have you already sent the ${formatPrice(depositCents)} deposit back to the customer?\n\nOK if the money is back with them. Cancel if you are still holding it, and this order will show ${formatPrice(depositCents)} owed until you send it.`,
+        `Have you already sent the ${formatPrice(depositCents)} deposit back to the customer?\n\nOK if the money is back with them. Cancel if you are still holding it.`,
       );
     const result = await onCancel(depositReturned);
     if (!result.ok) {
       alert(result.error ?? "Could not cancel the order.");
       return;
     }
+    // What the cancel actually wrote down as owed, rather than a second opinion
+    // on the rule that decided it.
+    const owedCents = result.depositOwedCents ?? 0;
     const owed =
-      depositCents > 0 && !depositReturned
-        ? ` The ${formatPrice(depositCents)} deposit stays on this order as money owed until you send it back.`
+      owedCents > 0
+        ? ` The ${formatPrice(owedCents)} deposit stays on this order as money owed until you send it back.`
         : "";
+    const toSendBackCents = Math.max(0, (result.amountCents ?? order.totalCents) - refundedCents);
     if (result.manualRefundDue)
       alert(
-        `Order cancelled. This one was not paid through Stripe, so nothing was refunded. Send ${formatPrice(result.amountCents ?? order.totalCents)} back to the customer yourself.${owed}`,
+        toSendBackCents > 0
+          ? `Order cancelled. This one was not paid through Stripe, so nothing was refunded. Send ${formatPrice(toSendBackCents)} back to the customer yourself.${owed}`
+          : `Order cancelled. Everything paid on it has already gone back, so there is nothing more to send.${owed}`,
       );
     else if (result.refunded) alert(`Order cancelled and refunded through Stripe.${owed}`);
     else alert(`Order cancelled.${owed}`);

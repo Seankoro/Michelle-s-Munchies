@@ -404,6 +404,16 @@ function ProductFormModal({
     // against what was loaded rather than against blank, so a deliberate 0, or
     // clearing the field back to untracked, still saves.
     const { stockCount, ...withoutStock } = draft;
+    // Availability moves on its own for the same reason: the last one selling
+    // takes a treat off the menu while this form sits open. Send the toggle only
+    // when Michelle moved it herself, and otherwise send whatever the menu says
+    // now, so an edit to the description cannot put a sold-out treat back on
+    // sale. A product being added is not on the list yet, so it keeps its own.
+    const live = existingProducts.find((p) => p.id === draft.id);
+    const isAvailable =
+      draft.isAvailable === product.isAvailable && live
+        ? live.isAvailable
+        : draft.isAvailable;
     const saved: Product = {
       ...withoutStock,
       basePriceCents: cents,
@@ -411,6 +421,7 @@ function ProductFormModal({
       slug,
       ingredients,
       options,
+      isAvailable,
     };
     if (stockCount !== product.stockCount) saved.stockCount = stockCount;
     onSave(saved);

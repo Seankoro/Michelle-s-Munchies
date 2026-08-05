@@ -19,7 +19,7 @@ import { OrderChangePanel } from "@/components/track/OrderChangePanel";
 import { AddToOrderPanel } from "@/components/track/AddToOrderPanel";
 import { GiftShareLink } from "@/components/track/GiftShareLink";
 import { TrackReorderButton } from "@/components/track/TrackReorderButton";
-import { fetchProducts, toCardProduct } from "@/lib/products";
+import { fetchProducts, isUpcoming, toCardProduct } from "@/lib/products";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getShopWhatsAppNumber, buildOrderWhatsAppUrl, buildFulfillmentLabel } from "@/lib/whatsapp";
@@ -110,39 +110,48 @@ export default async function TrackOrderPage({
   const cancelled = order.status === "cancelled";
   const firstName = order.customer_name.split(" ")[0];
 
-  // Only unpaid orders still early in the flow can be topped up. Fetch the
-  // catalogue lazily and strip it to card shape so no admin-only field (cost,
-  // detail copy) crosses to the client picker.
-  const canAddItems =
-    settings.features.orderChanges &&
-    order.payment_status !== "paid" &&
-    isChangeable(order.status);
-  const addableProducts = canAddItems
-    ? (await fetchProducts()).map(toCardProduct)
-    : [];
-
-  // The same lead-time boundary the server action applies, worked out once for
-  // the date picker's minimum and for the two tests below.
+  // The same lead-time boundary both server actions apply, worked out once for
+  // the date picker's minimum and for the gates below.
   const earliest = earliestFulfillmentDate(
     settings.leadTimeDays,
     singaporeNow(),
     settings.dailyCutoffTime,
   );
-  // rescheduleOrderAction refuses a self-serve move once Michelle has confirmed
-  // the order, and once the date the order currently sits on is inside the lead
-  // time, because by then she has shopping and baking planned around that day.
-  // Showing the form under either condition offers a change that can only come
-  // back as an error, so it gives way to a plain line pointing at WhatsApp, which
-  // is where a change she has to agree to belongs anyway.
+  // Inside the lead time Michelle is already shopping or baking for this order,
+  // so rescheduleOrderAction and addItemsToOrderAction both refuse.
+  const tooCloseToChange = order.scheduled_date < earliest;
   const changesOpen = settings.features.orderChanges && isChangeable(order.status);
-  const canReschedule =
-    changesOpen && order.status === "received" && order.scheduled_date >= earliest;
-  const rescheduleNotice =
-    !changesOpen || canReschedule
-      ? null
-      : order.status !== "received"
-        ? "We’ve already confirmed this order, so the date is ours to move now."
-        : "This order is too close to its date to move here.";
+  // rescheduleOrderAction also refuses a self-serve move once Michelle has
+  // confirmed the order, because by then she has plans built around that day.
+  const canReschedule = changesOpen && order.status === "received" && !tooCloseToChange;
+  // addItemsToOrderAction also refuses once the order is paid, because the money
+  // for a fixed list has already changed hands.
+  const canAddItems = changesOpen && order.payment_status !== "paid" && !tooCloseToChange;
+
+  // Showing either panel when its action can only answer with an error offers a
+  // change that cannot happen, so a closed panel gives way to a plain line
+  // pointing at WhatsApp, which is where a change Michelle has to agree to
+  // belongs anyway. The lead time closes both panels, so it is said once rather
+  // than as two cards telling the customer the same thing.
+  const changeNotices: string[] = [];
+  if (changesOpen && tooCloseToChange) {
+    changeNotices.push("This order is too close to its date to change here.");
+  } else if (changesOpen) {
+    if (!canReschedule) {
+      changeNotices.push("We’ve already confirmed this order, so the date is ours to move now.");
+    }
+    if (!canAddItems) {
+      changeNotices.push("This order is already paid, so we’ll add anything extra by hand.");
+    }
+  }
+
+  // Fetch the catalogue lazily and strip it to card shape so no admin-only field
+  // (cost, detail copy) crosses to the client picker. A sold-out treat or a drop
+  // that hasn't opened yet is left out, because addItemsToOrderAction refuses
+  // those too and offering them would only produce an error.
+  const addableProducts = canAddItems
+    ? (await fetchProducts()).filter((p) => p.isAvailable && !isUpcoming(p)).map(toCardProduct)
+    : [];
 
   // WhatsApp handoff. While an order is unpaid, offer a pre-filled message to the
   // shop's WhatsApp so the customer can confirm and arrange PayNow. It disappears
@@ -425,11 +434,13 @@ export default async function TrackOrderPage({
         />
       )}
 
-      {rescheduleNotice && (
+      {canAddItems && <AddToOrderPanel token={token} products={addableProducts} />}
+
+      {changeNotices.length > 0 && (
         <div className="mt-6 rounded-2xl border border-line bg-white p-6">
           <h2 className="font-display text-xl font-semibold">Need to change something?</h2>
           <p className="mt-1 text-sm text-muted">
-            {rescheduleNotice} Message us and we&rsquo;ll sort it out, cancelling included.
+            {changeNotices.join(" ")} Message us and we&rsquo;ll sort it out, cancelling included.
           </p>
           {waNumber ? (
             <a
@@ -450,8 +461,6 @@ export default async function TrackOrderPage({
           )}
         </div>
       )}
-
-      {canAddItems && <AddToOrderPanel token={token} products={addableProducts} />}
 
       {order.is_gift && (
         <div className="mt-6 rounded-2xl bg-blush-soft/60 p-5 text-sm text-rose-deep">

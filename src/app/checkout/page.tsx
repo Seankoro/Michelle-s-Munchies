@@ -313,12 +313,29 @@ export default function CheckoutPage() {
       : 0;
   const totalCents = subtotalCents + deliveryFeeCents - promoDiscountCents - pointsDiscountCents;
 
+  // The per-customer cap is counted against the buyer's email, so send the one
+  // they have typed and let a code they have already used be refused here
+  // instead of at placement. While the field is empty or half-typed we send
+  // nothing rather than an empty address, and the cap stays with the placeOrder
+  // re-check, exactly as before.
+  const typedEmail = email.trim();
+  const promoEmail = EMAIL_RE.test(typedEmail) ? typedEmail : undefined;
+
   async function handleApplyPromo() {
     setPromoError("");
     if (!promoInput.trim()) return;
     setApplyingPromo(true);
-    const result = await applyPromo(promoInput, subtotalCents, deliveryFeeCents);
+    const result = await applyPromo(promoInput, subtotalCents, deliveryFeeCents, promoEmail).catch(
+      () => null,
+    );
     setApplyingPromo(false);
+    if (!result) {
+      // A rejected action carries no message of its own, so without this the
+      // button comes back enabled and nothing at all is said about the code.
+      setAppliedPromo(null);
+      setPromoError("We couldn’t check that code just now. Please try again.");
+      return;
+    }
     if (result.ok) {
       setAppliedPromo({
         code: result.code,
@@ -331,15 +348,28 @@ export default function CheckoutPage() {
     }
   }
 
-  // Re-validate the applied promo whenever the subtotal or delivery fee changes,
-  // so the preview stays correct, like a free-delivery code as fulfillment toggles.
+  // Re-validate the applied promo whenever the subtotal, delivery fee or typed
+  // email changes, so the preview stays correct, like a free-delivery code as
+  // fulfillment toggles, and so a code applied before the email was filled in
+  // is refused here once the address says it has already been used.
   const appliedCode = appliedPromo?.code;
   useEffect(() => {
     if (!appliedCode) return;
     let active = true;
-    void (async () => {
-      const result = await applyPromo(appliedCode, subtotalCents, deliveryFeeCents);
+    // Debounced, because the typed email is one of the inputs now and a re-check
+    // per keystroke would spend the promo action's rate limit, which comes back
+    // as "too many tries" and would drop a code that was perfectly fine.
+    const id = window.setTimeout(async () => {
+      const result = await applyPromo(
+        appliedCode,
+        subtotalCents,
+        deliveryFeeCents,
+        promoEmail,
+      ).catch(() => null);
       if (!active) return;
+      // A rejected re-check says nothing about the code, so leave the applied
+      // one alone. placeOrder recomputes it authoritatively anyway.
+      if (!result) return;
       if (result.ok) {
         setAppliedPromo({
           code: result.code,
@@ -350,11 +380,12 @@ export default function CheckoutPage() {
         setAppliedPromo(null);
         setPromoError(result.error);
       }
-    })();
+    }, 500);
     return () => {
       active = false;
+      window.clearTimeout(id);
     };
-  }, [appliedCode, subtotalCents, deliveryFeeCents]);
+  }, [appliedCode, subtotalCents, deliveryFeeCents, promoEmail]);
 
   // Live distance-zoned delivery fee, fetched once the shopper has picked
   // delivery and entered a valid 6-digit postal code. Debounced so we don't
@@ -527,7 +558,18 @@ export default function CheckoutPage() {
       },
       applyPoints,
       appliedPromo?.code ?? "",
-    );
+    ).catch(() => null);
+
+    if (!result) {
+      // A rejected action never returns a failure to show, so without this the
+      // button stays disabled with nothing said and no way to try again. We
+      // can't tell whether it reached us, so the wording doesn't claim either.
+      setErrors({
+        order: "We couldn’t send your order just now. Please check your connection and try again.",
+      });
+      setSubmitting(false);
+      return;
+    }
 
     if (!result.ok) {
       setErrors({ order: result.error });

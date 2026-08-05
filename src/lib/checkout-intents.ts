@@ -44,8 +44,8 @@ export async function markConverted(email: string): Promise<void> {
 }
 
 /**
- * Email customers who started checkout `afterHours` ago and haven't paid. Sends
- * one reminder per intent and stamps reminded_at. Best-effort.
+ * Email customers who started checkout `afterHours` ago and never went on to
+ * order. Sends one reminder per intent and stamps reminded_at. Best-effort.
  */
 export async function sendAbandonedReminders(afterHours: number): Promise<number> {
   const supabase = createAdminClient();
@@ -59,10 +59,36 @@ export async function sendAbandonedReminders(afterHours: number): Promise<number
   const intents =
     (data as { id: string; email: string; items: IntentItem[]; created_at: string }[] | null) ??
     [];
+  if (intents.length === 0) return 0;
 
   // This is marketing, so anyone who asked to stop is skipped. One query for the
   // whole run rather than a check per abandoned cart.
   const suppressed = await fetchSuppressedEmails(intents.map((i) => i.email));
+
+  // When each customer last ordered, so someone who did go on to buy is never
+  // nagged. Payment is not the test here: a PayNow transfer is marked paid by
+  // hand days after the order, so a real order sits at `pending` for most of its
+  // life and keying on paid mailed customers who had already bought. Anything not
+  // cancelled counts, which also covers the orders Michelle keys in from a
+  // WhatsApp chat, since those never run the checkout path that closes an intent.
+  // One query for the whole run, from the oldest cart in it, and the addresses
+  // are matched lowercased in JS because an order keeps the address as the
+  // customer typed it while an intent stores it normalized.
+  const oldestCartMs = intents.reduce(
+    (oldest, intent) => Math.min(oldest, new Date(intent.created_at).getTime()),
+    Infinity,
+  );
+  const { data: orderRows } = await supabase
+    .from("orders")
+    .select("email, created_at")
+    .neq("status", "cancelled")
+    .gte("created_at", new Date(oldestCartMs).toISOString());
+  const lastOrderedMs = new Map<string, number>();
+  for (const row of (orderRows as { email: string; created_at: string }[] | null) ?? []) {
+    const key = row.email.trim().toLowerCase();
+    const placedMs = new Date(row.created_at).getTime();
+    if (placedMs > (lastOrderedMs.get(key) ?? 0)) lastOrderedMs.set(key, placedMs);
+  }
 
   let sent = 0;
   for (const intent of intents) {
@@ -75,14 +101,9 @@ export async function sendAbandonedReminders(afterHours: number): Promise<number
         .eq("id", intent.id);
       continue;
     }
-    // Skip if a paid order arrived for this email since the cart was started.
-    const { count } = await supabase
-      .from("orders")
-      .select("id", { count: "exact", head: true })
-      .eq("email", intent.email)
-      .eq("payment_status", "paid")
-      .gte("created_at", intent.created_at);
-    if ((count ?? 0) > 0) {
+    // Skip if an order arrived for this email since the cart was started.
+    const orderedMs = lastOrderedMs.get(intent.email.trim().toLowerCase()) ?? 0;
+    if (orderedMs >= new Date(intent.created_at).getTime()) {
       await supabase
         .from("checkout_intents")
         .update({ reminded_at: new Date().toISOString() })

@@ -43,7 +43,7 @@ export async function sendOccasionReminders(): Promise<number> {
 
   // Which occasions are inside their reminder window today and not yet nudged
   // for this cycle? Occasions recur each year, so roll to next year once passed.
-  const due: { occ: OccasionRow; daysBefore: number }[] = [];
+  const due: { occ: OccasionRow; daysBefore: number; windowOpened: string }[] = [];
   for (const occ of occasions) {
     let nextOcc = Date.UTC(ty, occ.month - 1, occ.day);
     if (nextOcc < today) nextOcc = Date.UTC(ty + 1, occ.month - 1, occ.day);
@@ -52,7 +52,7 @@ export async function sendOccasionReminders(): Promise<number> {
     const windowOpened = isoDate(nextOcc - occ.remind_days_before * DAY_MS);
     // Already handled this cycle if the last stamp is on or after the window open.
     if (occ.last_reminded_on && occ.last_reminded_on >= windowOpened) continue;
-    due.push({ occ, daysBefore: daysUntil });
+    due.push({ occ, daysBefore: daysUntil, windowOpened });
   }
   if (due.length === 0) return 0;
 
@@ -70,7 +70,7 @@ export async function sendOccasionReminders(): Promise<number> {
   );
 
   let sent = 0;
-  for (const { occ, daysBefore } of due) {
+  for (const { occ, daysBefore, windowOpened } of due) {
     if (sent >= MAX_PER_RUN) break;
     const { data: userData } = await admin.auth.admin.getUserById(occ.user_id);
     const email = userData?.user?.email;
@@ -86,8 +86,20 @@ export async function sendOccasionReminders(): Promise<number> {
     const optOutToken = await fetchOptOutToken(email);
     if (!optOutToken) continue;
 
-    // Stamp before sending so a failed send never becomes a daily repeat.
-    await admin.from("occasions").update({ last_reminded_on: todayStr }).eq("id", occ.id);
+    // Stamp before sending so a failed send never becomes a daily repeat, and
+    // treat the stamp as the claim: it re-checks that nothing has been sent for
+    // this cycle since the read, so only one of two overlapping runs takes the
+    // occasion. A write that comes back with no row claimed nothing, and sending
+    // on it would turn a once-a-year reminder into an hourly one.
+    const { data: claimed } = await admin
+      .from("occasions")
+      .update({ last_reminded_on: todayStr })
+      .eq("id", occ.id)
+      .or(`last_reminded_on.is.null,last_reminded_on.lt.${windowOpened}`)
+      .select("id")
+      .maybeSingle();
+    if (!claimed) continue;
+
     await sendOccasionReminderEmail(
       email,
       nameById.get(occ.user_id) ?? "",

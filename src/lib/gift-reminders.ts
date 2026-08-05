@@ -8,6 +8,12 @@ import { singaporeDateString } from "@/lib/time";
 /** Cap per run so a first pass over a backlog can't fan out unbounded email. */
 const MAX_PER_RUN = 50;
 const DAY_MS = 24 * 60 * 60 * 1000;
+/**
+ * The furthest ahead a gift is ever chased. Past three days the buyer is still
+ * likely to pass the link on by themselves, and the one chase would be spent on
+ * someone who did not need it.
+ */
+const MAX_CHASE_DAYS = 3;
 
 
 /** The fields the chase needs. recipient_token is non-null by the query below. */
@@ -46,13 +52,22 @@ export async function remindUnscheduledGifts(): Promise<number> {
   const admin = createAdminClient();
   const settings = await fetchStoreSettings();
   const today = singaporeDateString();
-  // The lead time is the span Michelle shops and bakes in, so a date inside it is
-  // the last point where a nudge can still change the outcome. Today counts,
-  // because the packing slip prints that morning. Dates already gone do not: no
-  // address saves a bake that has happened, and the orders list flags those
-  // separately. Singapore never shifts its clocks, so stepping forward whole
-  // 24-hour spans and reading the date in SGT lands on the right day at any hour.
-  const horizon = singaporeDateString(Date.now() + settings.leadTimeDays * DAY_MS);
+  // How close the date has to be before the buyer is worth chasing. The lead
+  // time is also the shortest notice a customer may book with, so a horizon of
+  // the whole lead time matched almost every gift the moment it was placed and
+  // spent the single chase within the hour, before the buyer had any chance to
+  // pass the link on. Staying a day inside the lead time means a gift booked on
+  // the earliest date allowed can never be chased on the day it was bought, and
+  // by the time the chase does go out the recipient has had the link a day or
+  // more. A lead time of zero is the one setting where it can still fire the same
+  // day, and there the gift is for today and the hurry is real.
+  const chaseDays = Math.min(MAX_CHASE_DAYS, Math.max(settings.leadTimeDays - 1, 0));
+  // Today counts, because the packing slip prints that morning. Dates already
+  // gone do not: no address saves a bake that has happened, and the orders list
+  // flags those separately. Singapore never shifts its clocks, so stepping
+  // forward whole 24-hour spans and reading the date in SGT lands on the right
+  // day at any hour.
+  const horizon = singaporeDateString(Date.now() + chaseDays * DAY_MS);
 
   const { data, error } = await admin
     .from("orders")

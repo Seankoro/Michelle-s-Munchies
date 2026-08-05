@@ -39,10 +39,18 @@ export function mapsSearchUrl(query: string): string {
  * confirmation email tells customers to expect.
  */
 export function paymentReminderMessage(order: AdminOrder): string {
+  // Once a deposit is in, the money still owed is the balance, not the total.
+  // Quoting the total asks for the deposit a second time and contradicts the
+  // balance the panel shows right beside this button. Same sum as the panel,
+  // and recordDeposit caps a deposit at the total, so it can't go negative.
+  const depositCents = order.depositCents ?? 0;
+  const balanceCents = order.totalCents - depositCents;
   return [
     `Hi ${order.name.split(" ")[0]}! This is Michelle's Munchies 🧁`,
     "",
-    `Just a gentle reminder about your order ${order.orderNumber} (${formatPrice(order.totalCents)}).`,
+    depositCents > 0
+      ? `Just a gentle reminder about your order ${order.orderNumber}. Your ${formatPrice(depositCents)} deposit is in, so there's ${formatPrice(balanceCents)} left to go.`
+      : `Just a gentle reminder about your order ${order.orderNumber} (${formatPrice(order.totalCents)}).`,
     `Whenever you're ready, I'll send you the PayNow details so I can lock in your bake for ${formatLongDate(order.scheduledDate)}.`,
     "",
     "Thank you so much!",

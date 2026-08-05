@@ -82,15 +82,27 @@ export async function sendWinbackNudges(): Promise<number> {
     if (stamp && stamp >= user.lastOrder) continue;
     if (suppressed.has(user.email.trim().toLowerCase())) continue;
 
-    // Stamp before sending so a failed send is not retried into spam.
-    await admin
-      .from("profiles")
-      .update({ winback_sent_at: new Date().toISOString() })
-      .eq("id", id);
     // The footer link is what makes this a lawful marketing send, so a missing
     // token means we do not send at all rather than mail without an opt-out.
+    // Fetched before the stamp, or a transient fault here would spend the one
+    // nudge this lapse gets on a send that was never attempted.
     const optOutToken = await fetchOptOutToken(user.email);
     if (!optOutToken) continue;
+
+    // Stamp before sending so a failed send is not retried into spam, and treat
+    // the stamp as the claim: it re-checks that this lapse is still un-nudged, so
+    // only one of two overlapping runs takes the customer. A write that comes back
+    // with no row claimed nothing, and sending on it would turn a once-per-lapse
+    // nudge into one on every run.
+    const { data: claimed } = await admin
+      .from("profiles")
+      .update({ winback_sent_at: new Date().toISOString() })
+      .eq("id", id)
+      .or(`winback_sent_at.is.null,winback_sent_at.lt.${user.lastOrder.toISOString()}`)
+      .select("id")
+      .maybeSingle();
+    if (!claimed) continue;
+
     await sendWinbackEmail(user.email, user.name, optOutToken);
     sent += 1;
   }

@@ -91,6 +91,13 @@ export async function resolveCartLines(
   const trackedIds = products.filter((p) => p.stockCount != null).map((p) => p.id);
   const committed = await fetchCommittedUnits(trackedIds);
 
+  // Units this same cart has already taken, built up as we walk its lines. One
+  // cart can hold a treat on two lines, either with different options or as a
+  // plain duplicate, and each line is checked on its own, so without this the
+  // last batch is sold twice inside a single checkout. Only counted once a line
+  // is really kept, so a line dropped over its options frees what it never took.
+  const claimed = new Map<string, number>();
+
   // Bundles, build-a-box, and pick-your-flavours lines use a prefixed, non-uuid
   // id (bundle:/box:/fbox: or a "::" composite). Their full contents can't be
   // rebuilt from an order snapshot or a share link, so name them for re-adding
@@ -131,10 +138,13 @@ export async function resolveCartLines(
     }
     // A tracked treat can only be sold down to what is genuinely uncommitted:
     // what is on the shelf, minus what other unpaid orders have already promised
-    // away. Counting only the shelf let several unpaid PayNow orders each be
-    // sold the same batch. Untracked stock stays unlimited.
+    // away, minus what the earlier lines of this cart have taken. Counting only
+    // the shelf let several unpaid PayNow orders each be sold the same batch,
+    // and ignoring the cart's own lines let one order do it on its own.
+    // Untracked stock stays unlimited.
     if (product.stockCount != null) {
-      const uncommitted = product.stockCount - (committed.get(product.id) ?? 0);
+      const uncommitted =
+        product.stockCount - (committed.get(product.id) ?? 0) - (claimed.get(product.id) ?? 0);
       if (line.quantity > uncommitted) {
         skipped.push({ name: product.name, href: menuHref(product) });
         continue;
@@ -149,20 +159,22 @@ export async function resolveCartLines(
       const chosen =
         line.selections.find((s) => s.optionName === option.name) ??
         line.selections.find((s) => option.values.some((v) => v.label === s.valueLabel));
-      const chosenValue = chosen
+      const value = chosen
         ? option.values.find((v) => v.label === chosen.valueLabel)
         : undefined;
-      // A value Michelle has unticked counts as gone. The line lands in
-      // `skipped` with a link to its page, rather than reaching the bake list as
-      // a flavour she ran out of, and the required fallback below picks a value
-      // she can still make instead of blindly taking the first one.
-      if (chosenValue?.isAvailable === false) {
+      // A value Michelle has unticked counts as gone, and so does one she has
+      // renamed or deleted, which is why a chosen label we can no longer find is
+      // treated the same way. The line lands in `skipped` with a link to its
+      // page, rather than reaching the bake list as a flavour she ran out of.
+      // Quietly swapping in another value would check a 6 inch cake out as a 4
+      // inch one, at the 4 inch price, so the customer picks again instead.
+      if (chosen && (!value || value.isAvailable === false)) {
         mismatch = true;
         break;
       }
-      const value =
-        chosenValue ??
-        (option.required ? option.values.find((v) => v.isAvailable !== false) : undefined);
+      // Nothing chosen at all for a required option, which is how an order
+      // placed before Michelle added that option reads, needs a real pick too.
+      // An optional option nobody chose is left off the line as before.
       if (option.required && !value) {
         mismatch = true;
         break;
@@ -177,8 +189,8 @@ export async function resolveCartLines(
       }
     }
     if (mismatch) {
-      // Product still sold, but a chosen value sold out or a required option is
-      // gone; point at its page so they can choose again.
+      // Product still sold, but a chosen value sold out or is no longer offered,
+      // or a required option has no pick. Point at its page so they choose again.
       skipped.push({ name: product.name, href: menuHref(product) });
       continue;
     }
@@ -202,6 +214,9 @@ export async function resolveCartLines(
       selectedOptions,
       ...(personalisation ? { personalisation } : {}),
     });
+    // Count the units now that the line is really in the cart, so a later line
+    // of the same treat is measured against what this one already took.
+    claimed.set(product.id, (claimed.get(product.id) ?? 0) + line.quantity);
   }
 
   // A reordered bundle/box line stores only its name (product_id is null on the

@@ -48,12 +48,24 @@ export async function grantBirthdayRewards(): Promise<number> {
       .maybeSingle();
     if (!claimed) continue; // already claimed by another run
 
-    await supabase.from("points_ledger").insert({
+    const { error: pointsError } = await supabase.from("points_ledger").insert({
       user_id: profile.id,
       order_id: null,
       delta: settings.birthdayRewardPoints,
       reason: "birthday",
     });
+    // The year is claimed before the points are written, so a failed insert would
+    // leave the customer marked as rewarded with nothing in their balance, and the
+    // guard would skip them on every later run: the treat is lost for good. Hand
+    // the year back as we found it so the next hourly run tries again.
+    if (pointsError) {
+      console.error("[birthday] points insert failed, releasing the claim:", pointsError.message);
+      await supabase
+        .from("profiles")
+        .update({ birthday_rewarded_year: profile.birthday_rewarded_year })
+        .eq("id", profile.id);
+      continue;
+    }
 
     // Email the greeting on a best-effort basis, resolving the address from auth.
     // The points are granted either way: they are a reward the customer earned,

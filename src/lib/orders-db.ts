@@ -67,6 +67,41 @@ export type OrderCapacity = {
 };
 
 /**
+ * A first-order-only promo is a per-customer cap of one, so hand the insert that
+ * cap and its lock does the work.
+ *
+ * 0039 moved the global and per-customer promo caps and the points balance
+ * inside create_order_with_items, under an advisory lock keyed on the code, but
+ * first_order_only stayed behind in validatePromo, which counts the customer's
+ * existing orders and then returns. Two checkouts fired at once by a brand-new
+ * account both read a count of zero and both spend a code meant for one order.
+ *
+ * The insert function has no first-order rule of its own and the migration is
+ * not ours to change here, but "this customer may hold at most one non-cancelled
+ * order carrying this code" is exactly the per-customer cap it already enforces,
+ * against the same person, under the same lock. Any looser cap on the promo row
+ * is subsumed by it, since a first order is one order. So the tightened cap is
+ * the answer whenever the row says first_order_only, and the loser of the race
+ * comes back as promo_customer_cap, which the checkout action already turns into
+ * the used-up copy.
+ *
+ * Read from the promo row rather than passed in, so no caller can forget it.
+ */
+async function promoPerCustomerLimitFor(
+  supabase: ReturnType<typeof createAdminClient>,
+  promoCode: string,
+  callerLimit: number | null,
+): Promise<number | null> {
+  const { data } = await supabase
+    .from("promo_codes")
+    .select("first_order_only")
+    .eq("code", promoCode)
+    .maybeSingle();
+  const firstOrderOnly = (data as { first_order_only: boolean } | null)?.first_order_only ?? false;
+  return firstOrderOnly ? 1 : callerLimit;
+}
+
+/**
  * Creates an order and its items. Amounts are recomputed here, never trusted
  * from the client. `userId` is resolved server-side from the session, null for
  * guests. `redemption`, the points-to-discount conversion, is computed
@@ -81,6 +116,9 @@ export type OrderCapacity = {
  * `promo_customer_cap`, `points_unavailable`) which the checkout action turns
  * into the same copy its own pre-checks use. Counting in the action alone let
  * simultaneous checkouts all read the same state and each spend the limit.
+ *
+ * A first-order-only code is handed to that same function as a per-customer cap
+ * of one, which is what it means, so it races no more than the rest.
  */
 export async function createOrder(
   input: CreateOrderInput,
@@ -132,6 +170,13 @@ export async function createOrder(
     line_total_cents: item.unitPriceCents * item.quantity,
   }));
 
+  // A first-order-only code needs the per-customer cap tightened to one before
+  // the insert re-asserts it, since that is the only lock standing between two
+  // simultaneous checkouts and the same one-per-customer code.
+  const promoPerCustomerLimit = promoCode
+    ? await promoPerCustomerLimitFor(supabase, promoCode, capacity.promoPerCustomerLimit ?? null)
+    : null;
+
   // Retry a couple of times on an order-number collision, regenerating the
   // random suffix, so two orders drawing the same number on the same day never
   // surface as a hard failure to the customer.
@@ -169,7 +214,7 @@ export async function createOrder(
       p_daily_cap: capacity.dailyCap,
       p_window_cap: capacity.windowCap,
       p_promo_max_redemptions: capacity.promoMaxRedemptions ?? null,
-      p_promo_per_customer_limit: capacity.promoPerCustomerLimit ?? null,
+      p_promo_per_customer_limit: promoPerCustomerLimit,
     });
     if (!error) break;
     // Every limit the function re-asserts raises its own marker for the action
