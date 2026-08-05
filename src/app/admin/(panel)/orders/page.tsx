@@ -415,15 +415,27 @@ function OrderDetailModal({
     ? timeWindows
     : [order.timeWindow, ...timeWindows].filter(Boolean);
   // Safe payment transitions only. "Refunded" is reached through the cancel
-  // button below (which actually refunds and restocks), and a paid order is never
-  // reverted here, since its points and stock side effects can't be undone by
-  // relabelling.
+  // button below, which actually refunds and restocks.
+  //
+  // A hand-marked payment CAN be taken back, because marking paid is one tap on
+  // a phone against a list of similar names and the money never arrived. The
+  // server puts the stock and the points back when it happens. It mirrors the
+  // server's own two rules exactly rather than inventing a stricter one: not
+  // once the order is being baked, and not when Stripe is really holding the
+  // money, which has to go back through a refund instead.
+  const canUndoPaid =
+    order.paymentStatus === "paid" &&
+    !alreadyCancelled &&
+    !statusRequiresPayment(order.status) &&
+    !order.paidViaStripe;
   const paymentTransitions: PaymentStatus[] =
     order.paymentStatus === "pending"
       ? ["pending", "paid", "failed"]
       : order.paymentStatus === "failed"
         ? ["failed", "pending", "paid"]
-        : [order.paymentStatus];
+        : canUndoPaid
+          ? ["paid", "pending"]
+          : [order.paymentStatus];
   // A cancelled order can never be marked paid. The server rejects it outright,
   // and taking money for an order that holds no stock and gets no bake is a trap.
   // Its own current status still has to stay in the list, or a cancelled order
@@ -750,6 +762,15 @@ function OrderDetailModal({
               <dd className="text-right">{order.notes}</dd>
             </div>
           )}
+          {/* Answers to her own checkout questions. She can mark a prompt
+              required, so this is where an allergy or a name to pipe arrives,
+              and it belongs beside the notes rather than only in an email. */}
+          {(order.noteAnswers ?? []).map((answer) => (
+            <div key={answer.id} className="flex justify-between gap-3">
+              <dt className="text-muted">{answer.label}</dt>
+              <dd className="text-right font-semibold">{answer.answer}</dd>
+            </div>
+          ))}
         </dl>
 
         {/* One-tap ways to reach the customer */}
@@ -955,7 +976,19 @@ function OrderDetailModal({
               <div className="mt-2 flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => onPaymentChange("paid")}
+                  // Naming the customer and the amount, because this is tapped on
+                  // a phone against a list of similar names and it does a lot at
+                  // once: it takes stock off the shelf, moves the customer's
+                  // points, pays any referral, and books the money as today's
+                  // takings. It can be undone, but only before baking starts.
+                  onClick={() => {
+                    const amount = formatPrice(
+                      order.totalCents - (order.depositCents ?? 0) - (order.refundedCents ?? 0),
+                    );
+                    if (confirm(`Mark ${amount} received from ${order.name} for ${order.orderNumber}?`)) {
+                      onPaymentChange("paid");
+                    }
+                  }}
                   className="rounded-full bg-success px-4 py-1.5 text-sm font-semibold text-white transition hover:brightness-110 active:scale-95"
                 >
                   ✓ Mark {order.depositCents ? "balance " : ""}paid

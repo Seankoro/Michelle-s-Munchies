@@ -226,4 +226,16 @@ export type AdminOrder = PlacedOrder & {
   depositOutstandingCents?: number | null;
   /** Total already returned to the customer without cancelling the order. */
   refundedCents?: number;
+  /**
+   * Answers to the owner's own checkout questions. She can mark a prompt
+   * required, so an answer can carry an allergy or a name to pipe on a cake.
+   * Empty when the feature is unused.
+   */
+  noteAnswers?: { id: string; label: string; answer: string }[];
+  /**
+   * True when the money came through Stripe. A hand-marked payment can be
+   * un-marked as a correction; a card payment cannot, because Stripe really is
+   * holding the money and it has to go back through a refund.
+   */
+  paidViaStripe?: boolean;
 };

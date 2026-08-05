@@ -132,6 +132,14 @@ export default function AdminPackingSlipsPage() {
                         <span className="font-semibold">Notes:</span> {order.notes}
                       </p>
                     )}
+                    {/* Answers to the required checkout questions. A prompt can
+                        be marked required, so this is where an allergy lands,
+                        and the slip is what goes out with the box. */}
+                    {(order.noteAnswers ?? []).map((answer) => (
+                      <p key={answer.id} className="mt-1 text-sm">
+                        <span className="font-semibold">{answer.label}:</span> {answer.answer}
+                      </p>
+                    ))}
                   </article>
                 ))}
               </div>

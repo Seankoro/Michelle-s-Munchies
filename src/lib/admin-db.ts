@@ -53,9 +53,11 @@ type OrderRow = {
   recipient_name: string | null;
   recipient_phone: string | null;
   owner_note: string | null;
+  note_answers: { id: string; label: string; answer: string }[] | null;
   deposit_cents: number | null;
   paid_at: string | null;
   deposit_outstanding_cents: number | null;
+  stripe_payment_intent_id: string | null;
   subtotal_cents: number;
   delivery_fee_cents: number;
   total_cents: number;
@@ -94,6 +96,11 @@ function rowToAdminOrder(row: OrderRow): AdminOrder {
     recipientName: row.recipient_name ?? undefined,
     recipientPhone: row.recipient_phone ?? undefined,
     ownerNote: row.owner_note ?? undefined,
+    // Answers to the owner's own checkout questions. She can mark a prompt
+    // required, so these can carry an allergy or a piping name, and until now
+    // they reached only the order-alert email and no screen she works from.
+    noteAnswers: row.note_answers ?? [],
+    paidViaStripe: Boolean(row.stripe_payment_intent_id),
     depositCents: row.deposit_cents,
     paidAt: row.paid_at,
     depositOutstandingCents: row.deposit_outstanding_cents,
@@ -269,11 +276,25 @@ export async function updatePaymentStatus(orderNumber: string, paymentStatus: Pa
   }
   const { data } = await supabase
     .from("orders")
-    .select("id, status, payment_status")
+    .select("id, status, payment_status, stripe_payment_intent_id")
     .eq("order_number", orderNumber)
     .maybeSingle();
-  const order = data as { id: string; status: OrderStatus; payment_status: PaymentStatus } | null;
+  const order = data as {
+    id: string;
+    status: OrderStatus;
+    payment_status: PaymentStatus;
+    stripe_payment_intent_id: string | null;
+  } | null;
   if (!order) throw new Error("Order not found.");
+  // Undoing a hand-marked payment is just a correction, because the money never
+  // arrived. Undoing a card payment is not: Stripe really is holding it, and
+  // clearing the flag here would leave the order calling itself unpaid while the
+  // customer has been charged. That one has to go back through the refund.
+  if (order.payment_status === "paid" && order.stripe_payment_intent_id) {
+    throw new Error(
+      "This one was paid by card, so it cannot simply be marked unpaid. Use Cancel and refund to send the money back.",
+    );
+  }
   // The paid-before-baking rule holds in both directions: once an order is in
   // a work status, its payment cannot be flipped back to unpaid, or the order
   // would keep baking while unpaid with nothing restoring the invariant. This is
