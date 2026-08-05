@@ -845,7 +845,9 @@ export async function removeOrderItems(orderNumber: string, itemIds: string[]): 
   const supabase = createAdminClient();
   const { data } = await supabase
     .from("orders")
-    .select("id, status, payment_status, total_cents, deposit_cents")
+    .select(
+      "id, status, payment_status, total_cents, subtotal_cents, delivery_fee_cents, discount_cents, promo_code, deposit_cents",
+    )
     .eq("order_number", orderNumber)
     .maybeSingle();
   const order = data as {
@@ -853,6 +855,10 @@ export async function removeOrderItems(orderNumber: string, itemIds: string[]): 
     status: OrderStatus;
     payment_status: PaymentStatus;
     total_cents: number;
+    subtotal_cents: number;
+    delivery_fee_cents: number;
+    discount_cents: number;
+    promo_code: string | null;
     deposit_cents: number | null;
   } | null;
   if (!order) throw new Error("Order not found.");
@@ -867,23 +873,60 @@ export async function removeOrderItems(orderNumber: string, itemIds: string[]): 
     );
   }
 
+  // What the removal will take off, read once and reused by the guards below.
+  const { data: removingRows } = await supabase
+    .from("order_items")
+    .select("line_total_cents")
+    .eq("order_id", order.id)
+    .in("id", itemIds);
+  const removingCents = ((removingRows as { line_total_cents: number }[] | null) ?? []).reduce(
+    (sum, row) => sum + row.line_total_cents,
+    0,
+  );
+  const newSubtotal = order.subtotal_cents - removingCents;
+
   // A deposit is money already banked against this order. Letting the total fall
   // below it would show the customer a negative balance due and leave her
   // holding money the order no longer accounts for.
   const depositCents = order.deposit_cents ?? 0;
-  if (depositCents > 0) {
-    const { data: rows } = await supabase
-      .from("order_items")
-      .select("line_total_cents")
-      .eq("order_id", order.id)
-      .in("id", itemIds);
-    const removing = ((rows as { line_total_cents: number }[] | null) ?? []).reduce(
-      (sum, row) => sum + row.line_total_cents,
-      0,
+  if (depositCents > 0 && order.total_cents - removingCents < depositCents) {
+    throw new Error(
+      `That would take the order below the ${formatPrice(depositCents)} deposit already taken. Adjust the deposit first.`,
     );
-    if (order.total_cents - removing < depositCents) {
+  }
+
+  // The removal moves the subtotal and the total by the same amount and leaves
+  // the delivery fee and the discount exactly as they were. That is right only
+  // while the smaller order still earns them. Free delivery and a promo are both
+  // earned by spending enough, so quietly dropping under the threshold would
+  // hand the customer a waived fee or a discount the shrunken order no longer
+  // qualifies for, and Michelle absorbs the difference with nothing recording it.
+  // Neither can be re-derived safely from here (a distance-zoned fee needs the
+  // postal code and an external lookup, and re-pricing a promo needs its rules),
+  // so refuse and say exactly what is in the way rather than get it wrong.
+  const settings = await fetchStoreSettings();
+  const freeMin = settings.freeDeliveryMinCents;
+  if (
+    order.delivery_fee_cents === 0 &&
+    freeMin != null &&
+    freeMin > 0 &&
+    order.subtotal_cents >= freeMin &&
+    newSubtotal < freeMin
+  ) {
+    throw new Error(
+      `This order got free delivery for spending ${formatPrice(freeMin)}, and removing that much drops it under. Cancel and re-take the order, or message the customer about the delivery fee first.`,
+    );
+  }
+  if (order.promo_code && order.discount_cents > 0) {
+    const { data: promoRow } = await supabase
+      .from("promo_codes")
+      .select("min_order_cents")
+      .eq("code", order.promo_code)
+      .maybeSingle();
+    const minOrder = (promoRow as { min_order_cents: number } | null)?.min_order_cents ?? 0;
+    if (minOrder > 0 && order.subtotal_cents >= minOrder && newSubtotal < minOrder) {
       throw new Error(
-        `That would take the order below the ${formatPrice(depositCents)} deposit already taken. Adjust the deposit first.`,
+        `Code ${order.promo_code} needs ${formatPrice(minOrder)} and removing that much drops the order under it. Cancel and re-take the order instead.`,
       );
     }
   }
