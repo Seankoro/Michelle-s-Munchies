@@ -292,7 +292,9 @@ export default function CheckoutPage() {
     const id = window.setTimeout(() => {
       void recordCheckoutIntentAction(
         trimmed,
-        items.map((i) => ({ name: i.name, quantity: i.quantity })),
+        // Ids, not names. The server looks the names up in the catalogue, so no
+        // text a caller chose can reach the reminder email it later sends.
+        items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
         subtotalCents,
       );
     }, 1500);

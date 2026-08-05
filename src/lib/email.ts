@@ -267,7 +267,16 @@ export async function sendOrderEmails(order: OrderEmailData): Promise<void> {
     ${confirmBlock}
     <p style="margin:8px 0"><strong>Order ${order.orderNumber}</strong><br/>
       ${fulfilment} · ${formatLongDate(order.scheduledDate)} · ${escapeHtml(order.timeWindow)}</p>
-    ${giftBlock(order, false)}
+    ${
+      // Deliberately NOT the buyer's own gift message. This email goes to
+      // whatever address the order carried, and placing an order needs no
+      // account and no payment, so echoing the sender's own prose back to an
+      // unverified inbox turns checkout into a way to mail a stranger from our
+      // sending domain. The buyer wrote the message and does not need it read
+      // back; Michelle gets it in her copy below, in the panel, and on the
+      // packing slip, which is where it is actually used.
+      order.isGift ? `<p style="margin:8px 0">🎁 Sent as a gift.</p>` : ""
+    }
     ${itemRows(order)}`;
   await send(order.email, `We got your order, ${order.orderNumber}`, shell("Order received 🎀", customerBody, order.trackingToken));
 

@@ -17,6 +17,15 @@
 -- newly added column is NOT auto-granted to anon, which is the safe default: grant
 -- it explicitly in the migration that adds it if the storefront needs it.
 --
+-- KNOWN AND ACCEPTED: the re-grant covers products.ingredients, which the
+-- storefront genuinely needs, because the product page lists ingredient NAMES for
+-- allergen transparency. The column is jsonb and also holds each line's amount and
+-- unit, and those are never rendered anywhere, so applying this leaves the recipe
+-- QUANTITIES readable through the REST API with the public key. Low harm for a
+-- home bakery and better than breaking the ingredient list, but if the quantities
+-- ever matter, the fix is to split them into their own column (or read products
+-- through the service role) rather than to drop ingredients from this list.
+--
 -- NOTE: apply this against the live database (Supabase dashboard SQL editor or the
 -- MCP apply_migration) and confirm the storefront still loads afterwards.
 

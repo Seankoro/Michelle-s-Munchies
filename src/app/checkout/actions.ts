@@ -14,7 +14,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { validatePromo, type PromoValidation } from "@/lib/promos";
 import { fetchBundleBySlug, validateBundleForCheckout } from "@/lib/bundles";
 import { fetchBoxBySlug, validateBoxForCheckout, validateFlavourBoxForCheckout } from "@/lib/boxes";
-import { fetchProductById } from "@/lib/products";
+import { fetchProductById, fetchProducts } from "@/lib/products";
 import type { BoxTemplate, CartItem, SelectedOption } from "@/lib/types";
 import { recordIntent, markConverted } from "@/lib/checkout-intents";
 import { resolveCartLines } from "@/lib/cart-resolve";
@@ -24,6 +24,12 @@ import { normalizeSgPhone } from "@/lib/phone";
 export type PlaceOrderResult =
   | { ok: true; redirectUrl: string }
   | { ok: false; error: string };
+
+/** Distinct treats one order may carry. Far above a real cart, and only here to
+ *  stop a direct POST parking an unbounded list on the admin panel. */
+const MAX_ORDER_LINES = 50;
+/** Room for a real answer to one of Michelle's checkout questions, no more. */
+const MAX_NOTE_ANSWER_LENGTH = 500;
 
 /**
  * How full a chosen date is, so the checkout can show slots-left and grey out a
@@ -270,7 +276,7 @@ async function sanitizeSpecialLines(
  */
 export async function recordCheckoutIntentAction(
   email: string,
-  items: { name: string; quantity: number }[],
+  items: { productId: string; quantity: number }[],
   subtotalCents: number,
 ): Promise<void> {
   const normalizedEmail = email.trim().toLowerCase();
@@ -288,16 +294,23 @@ export async function recordCheckoutIntentAction(
     return;
   }
   if (!(await fetchStoreSettings()).features.abandonedCart) return;
+  // Names come from the catalogue, never from the caller. This endpoint needs no
+  // account and no payment, and the text it stores is rendered in a reminder
+  // email sent to the address given, so accepting caller-written names made it a
+  // way to mail a stranger arbitrary prose from our own sending domain. An id
+  // that matches no product simply drops out, and a bundle or box line carries a
+  // prefixed non-uuid id that the catalogue will not match, so it falls back to a
+  // neutral label rather than anything the caller chose.
+  const catalogue = await fetchProducts();
   const safeItems = (items ?? [])
     .slice(0, 15)
-    .map((item) => ({
-      name: String(item.name ?? "")
-        .replace(/https?:\/\/\S+|www\.\S+/gi, "")
-        .replace(/[<>]/g, "")
-        .trim()
-        .slice(0, 80),
-      quantity: Math.max(1, Math.min(99, Math.trunc(Number(item.quantity) || 1))),
-    }))
+    .map((item) => {
+      const product = catalogue.find((p) => p.id === item.productId);
+      return {
+        name: product?.name ?? "a treat",
+        quantity: Math.max(1, Math.min(99, Math.trunc(Number(item.quantity) || 1))),
+      };
+    })
     .filter((item) => item.name);
   if (safeItems.length === 0) return;
   await recordIntent(normalizedEmail, safeItems, Math.max(0, Math.trunc(subtotalCents) || 0));
@@ -400,6 +413,39 @@ export async function placeOrder(
       : null;
     if (giftingRecipientPhone && !normalizedRecipientPhone) {
       return { ok: false, error: "Enter a valid Singapore mobile number for the recipient." };
+    }
+
+    // Every free-text field the order carries, bounded here rather than only by
+    // the form's own maxLength. This is a public POST endpoint, so a direct
+    // request skips the form entirely, and these values go two places that make
+    // that matter: the confirmation email, sent to whatever address the request
+    // names, and the admin panel, which loads every order on every mount. Left
+    // unbounded, one request could mail a stranger arbitrary prose from our own
+    // sending domain, or park enough text on an order to make the panel unusable
+    // with no way to delete it from inside the app.
+    //
+    // Rejecting rather than trimming, so a real customer who overruns is told
+    // which field to shorten instead of silently losing the end of it.
+    const overLimit = (value: string | undefined, max: number) =>
+      (value ?? "").trim().length > max;
+    if (
+      overLimit(input.name, 80) ||
+      overLimit(input.notes, 500) ||
+      overLimit(input.giftMessage, 200) ||
+      overLimit(input.recipientName, 80) ||
+      overLimit(input.address?.line1, 120) ||
+      overLimit(input.address?.unit, 40)
+    ) {
+      return {
+        ok: false,
+        error: "One of those fields is too long. Please shorten it and try again.",
+      };
+    }
+    if (!(input.name ?? "").trim()) {
+      return { ok: false, error: "Enter your name." };
+    }
+    if (input.items.length > MAX_ORDER_LINES) {
+      return { ok: false, error: "That is too many different treats for one order." };
     }
 
     // Re-validate and re-price special lines like bundles and boxes on the server.
@@ -639,6 +685,11 @@ export async function placeOrder(
         const answer = (provided.get(prompt.id) ?? "").trim();
         if (prompt.required && !answer) {
           return { ok: false, error: `Please answer: ${prompt.label}` };
+        }
+        // Bounded like the rest of the free text, since these ride the same
+        // public endpoint and land on the same two surfaces.
+        if (answer.length > MAX_NOTE_ANSWER_LENGTH) {
+          return { ok: false, error: `That answer is too long: ${prompt.label}` };
         }
         if (answer) noteAnswers.push({ id: prompt.id, label: prompt.label, answer });
       }
