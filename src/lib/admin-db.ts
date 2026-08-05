@@ -14,6 +14,7 @@ import { notifySubscribers } from "@/lib/stock-notify";
 import { fetchStoreSettings, parseMascotMessages } from "@/lib/settings";
 import { rowToFeatureFlags } from "@/lib/feature-flags";
 import { refundOrder } from "@/lib/payments";
+import { resolveDeliveryFeeCents } from "@/lib/delivery-pricing";
 import type { PromoDiscountType } from "@/lib/promos";
 import type { AdminSettings } from "@/components/admin/AdminStore";
 import type { NotePrompt } from "@/lib/settings";
@@ -357,6 +358,114 @@ export async function rescheduleOrder(orderNumber: string, date: string, timeWin
 }
 
 /**
+ * Set or correct where a delivery order is going, and the window it goes in.
+ *
+ * This is the owner's way in, and the only one. The gift link answers the
+ * address question once and then closes itself, because it is meant to be
+ * forwarded and anyone holding it could otherwise redirect a paid gift. That
+ * left a mistyped postal code, an old unit number, or a recipient who never
+ * opened the link with nobody able to fix it, and the refusal the recipient
+ * reads promises a human who had no control to do it with. It does not reopen
+ * the customer-side path, it adds Michelle's.
+ *
+ * Refused once the order is baking or beyond, the same line removeOrderItems
+ * draws, and on a cancelled order: by then the food and the delivery run are
+ * decided, so a new address is a conversation rather than an edit.
+ *
+ * Returns the fee and total the order now carries, so the panel paints what was
+ * written rather than guessing at a zone it cannot see.
+ */
+export async function setDeliveryAddress(
+  orderNumber: string,
+  address: { line1: string; unit: string; postalCode: string },
+  timeWindow: string,
+): Promise<{ deliveryFeeCents: number; totalCents: number }> {
+  const supabase = createAdminClient();
+  const line1 = address.line1.trim();
+  const postal = address.postalCode.trim();
+  // The same two rules checkout enforces on its own address fields, so an
+  // address corrected from here can never be one checkout would have refused.
+  if (!line1 || !/^\d{6}$/.test(postal)) {
+    throw new Error("Enter the address and a 6-digit postal code.");
+  }
+
+  const { data } = await supabase
+    .from("orders")
+    .select(
+      "id, status, payment_status, fulfillment_type, subtotal_cents, delivery_fee_cents, discount_cents, total_cents, deposit_cents",
+    )
+    .eq("order_number", orderNumber)
+    .maybeSingle();
+  const order = data as {
+    id: string;
+    status: OrderStatus;
+    payment_status: PaymentStatus;
+    fulfillment_type: "pickup" | "delivery";
+    subtotal_cents: number;
+    delivery_fee_cents: number;
+    discount_cents: number;
+    total_cents: number;
+    deposit_cents: number | null;
+  } | null;
+  if (!order) throw new Error("Order not found.");
+  if (order.status === "cancelled") {
+    throw new Error("This order is cancelled, so there is nowhere left to send it.");
+  }
+  if (statusRequiresPayment(order.status)) {
+    throw new Error(
+      "This order is already being baked. Message the customer about the address instead of moving where it is going.",
+    );
+  }
+
+  const deliveryAddress: DeliveryAddress = {
+    line1,
+    unit: address.unit.trim() || undefined,
+    postalCode: postal,
+  };
+  const updates: Record<string, unknown> = {
+    delivery_address: deliveryAddress,
+    time_window: timeWindow,
+    updated_at: new Date().toISOString(),
+  };
+  let deliveryFeeCents = order.delivery_fee_cents;
+  let totalCents = order.total_cents;
+  // A corrected address can land across a zone boundary, so an unpaid delivery
+  // is re-priced exactly the way the recipient's own gift link prices it and
+  // Michelle collects the right amount. A PAID order is not: the customer was
+  // charged and the money is settled, so moving the total here would leave the
+  // order disagreeing with what was actually taken, and there is no honest way
+  // to collect or return the difference from a screen. The address moves, the
+  // money does not.
+  if (order.fulfillment_type === "delivery" && order.payment_status !== "paid") {
+    const settings = await fetchStoreSettings();
+    deliveryFeeCents = await resolveDeliveryFeeCents(
+      "delivery",
+      order.subtotal_cents,
+      postal,
+      settings,
+    );
+    totalCents = Math.max(0, order.subtotal_cents + deliveryFeeCents - order.discount_cents);
+    // A cheaper zone can take the total under a deposit already banked, which
+    // would show the customer a negative balance due and leave Michelle holding
+    // money the order no longer accounts for. Same guard the item removal uses,
+    // and the address itself is still worth saving, so only the re-price is held
+    // back and she is told which way it went.
+    const depositCents = order.deposit_cents ?? 0;
+    if (depositCents > 0 && totalCents < depositCents) {
+      throw new Error(
+        `That address prices the order below the ${formatPrice(depositCents)} deposit already taken. Adjust the deposit first, then set the address.`,
+      );
+    }
+    updates.delivery_fee_cents = deliveryFeeCents;
+    updates.total_cents = totalCents;
+  }
+
+  const { error } = await supabase.from("orders").update(updates).eq("id", order.id);
+  if (error) throw new Error(`Failed to save the address: ${error.message}`);
+  return { deliveryFeeCents, totalCents };
+}
+
+/**
  * Record a deposit already collected on an order. 0 clears it back to null.
  * Capped at the order total, since a deposit above it would show a nonsense
  * negative balance due in the panel.
@@ -672,10 +781,24 @@ export async function cancelAndRefundOrder(
     };
   }
 
+  // Money may already have gone back on this order without cancelling it, so
+  // only what is still outstanding may be refunded now. Stripe leaves the whole
+  // card payment refundable until it is told otherwise, so an unqualified refund
+  // would return the full total on top of anything already PayNowed back and the
+  // customer would end up ahead of what they paid. Correct whichever way the
+  // earlier money went: if it went through Stripe the remaining refundable
+  // already equals this, so naming it changes nothing.
+  const alreadyRefundedCents = await fetchRefundedCents(order.id);
+  const outstandingCents = Math.max(0, order.total_cents - alreadyRefundedCents);
+
   let refunded = false;
   let stripeRefundFailed = false;
-  if (order.payment_status === "paid" && order.stripe_payment_intent_id) {
-    refunded = await refundOrder(order.stripe_payment_intent_id);
+  if (order.payment_status === "paid" && order.stripe_payment_intent_id && outstandingCents === 0) {
+    // Everything is already back with the customer, so there is nothing to send
+    // and no Stripe call to make, but the order is still fully refunded.
+    refunded = true;
+  } else if (order.payment_status === "paid" && order.stripe_payment_intent_id) {
+    refunded = await refundOrder(order.stripe_payment_intent_id, outstandingCents);
     stripeRefundFailed = !refunded;
     if (stripeRefundFailed && !cancelWithoutRefund) {
       // The card refund did not go through. Leave the order untouched rather than
@@ -720,6 +843,21 @@ export async function cancelAndRefundOrder(
     })
     .eq("id", order.id);
   if (updErr) return { ok: false, error: updErr.message };
+
+  // Record what the cancel itself sent back, so the order's refund total covers
+  // every cent that left rather than only the ones she typed in by hand. Without
+  // this the detail would still read "-$25 refunded" after $80 had gone.
+  if (refunded && outstandingCents > 0) {
+    const { error: refundLogError } = await supabase.from("order_refunds").insert({
+      order_id: order.id,
+      amount_cents: outstandingCents,
+      reason: "Order cancelled",
+      via: "stripe",
+    });
+    if (refundLogError) {
+      console.error("[cancel] could not record the refund:", refundLogError.message);
+    }
+  }
 
   if (depositOwed != null) {
     try {

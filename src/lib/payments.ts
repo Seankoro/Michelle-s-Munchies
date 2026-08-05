@@ -83,11 +83,22 @@ export async function createCheckoutSession(
 }
 
 /** Refund a paid order's PaymentIntent in full. Returns false if Stripe isn't configured. */
-export async function refundOrder(paymentIntentId: string): Promise<boolean> {
+export async function refundOrder(
+  paymentIntentId: string,
+  amountCents?: number,
+): Promise<boolean> {
   const stripe = getStripe();
   if (!stripe) return false;
   try {
-    await stripe.refunds.create({ payment_intent: paymentIntentId });
+    // Refund the amount asked for, or everything still refundable when none is
+    // given. Naming the amount matters once money can also go back by hand: a
+    // partial refund PayNowed to the customer leaves the whole card payment
+    // still refundable at Stripe, so an unqualified refund here would send it
+    // all a second time and the customer would end up ahead of what they paid.
+    await stripe.refunds.create({
+      payment_intent: paymentIntentId,
+      ...(amountCents != null ? { amount: amountCents } : {}),
+    });
     return true;
   } catch (error) {
     console.error("[refund] failed:", error);

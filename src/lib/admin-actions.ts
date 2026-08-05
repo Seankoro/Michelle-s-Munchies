@@ -25,6 +25,7 @@ import {
   recordRefund,
   removeOrderItems,
   rescheduleOrder,
+  setDeliveryAddress,
   setPromoActive,
   updateOrderStatus,
   updateOwnerNote,
@@ -204,6 +205,54 @@ export async function rescheduleOrderAdminAction(
 ): Promise<void> {
   await requireAdmin();
   await rescheduleOrder(orderNumber, date, timeWindow);
+}
+
+export type SetDeliveryAddressResult =
+  | { ok: true; deliveryFeeCents: number; totalCents: number }
+  | { ok: false; error: string };
+
+/** Room for a block, a street and a building name, and no more. */
+const MAX_ADDRESS_LINE_LENGTH = 200;
+/** Room for "#12-34, Tower B". */
+const MAX_UNIT_LENGTH = 60;
+
+/**
+ * Set or correct where a delivery order is going. The gift recipient's link is
+ * single-use by design, so a mistyped postal code, or a recipient who never
+ * opened the link at all, has no other way back. This is what "message us on
+ * WhatsApp" resolves to.
+ */
+export async function setDeliveryAddressAction(
+  orderNumber: string,
+  address: { line1: string; unit: string; postalCode: string },
+  timeWindow: string,
+): Promise<SetDeliveryAddressResult> {
+  await requireAdmin();
+  const line1 = address.line1.trim();
+  const unit = address.unit.trim();
+  const postal = address.postalCode.trim();
+  const window = timeWindow.trim();
+  if (!line1) return { ok: false, error: "Add the delivery address." };
+  if (line1.length > MAX_ADDRESS_LINE_LENGTH) {
+    return { ok: false, error: `Address must be ${MAX_ADDRESS_LINE_LENGTH} characters or fewer.` };
+  }
+  if (unit.length > MAX_UNIT_LENGTH) {
+    return { ok: false, error: `Unit must be ${MAX_UNIT_LENGTH} characters or fewer.` };
+  }
+  if (!/^\d{6}$/.test(postal)) return { ok: false, error: "Postal code must be 6 digits." };
+  // The window is written alongside the address, so a blank one would wipe the
+  // slot off the order and print a slip with no time on it.
+  if (!window) return { ok: false, error: "Pick a time window." };
+  try {
+    const priced = await setDeliveryAddress(
+      orderNumber,
+      { line1, unit, postalCode: postal },
+      window,
+    );
+    return { ok: true, ...priced };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not save the address." };
+  }
 }
 
 export async function recordDepositAction(orderNumber: string, cents: number): Promise<void> {

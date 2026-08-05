@@ -24,6 +24,7 @@ import {
   recordRefundAction,
   removeOrderItemsAction,
   rescheduleOrderAdminAction,
+  setDeliveryAddressAction,
   updateOrderStatusAction,
   updateOwnerNoteAction,
   updatePaymentStatusAction,
@@ -109,6 +110,12 @@ type AdminContextValue = {
   updatePaymentStatus: (orderNumber: string, paymentStatus: PaymentStatus) => void;
   updateOwnerNote: (orderNumber: string, note: string) => void;
   rescheduleOrder: (orderNumber: string, date: string, timeWindow: string) => void;
+  /** Set or correct where a delivery order is going, and the window it goes in. */
+  setDeliveryAddress: (
+    orderNumber: string,
+    address: { line1: string; unit: string; postalCode: string },
+    timeWindow: string,
+  ) => void;
   recordDeposit: (orderNumber: string, cents: number) => void;
   addManualOrder: (input: ManualOrderInput) => Promise<ManualOrderResult>;
   /** `depositReturned` answers whether a deposit already went back to the
@@ -370,6 +377,41 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
     );
   }
 
+  /**
+   * Set or correct a delivery address. Optimistic like its neighbours, with one
+   * extra step: while the order is unpaid the server re-prices delivery for the
+   * new postal code, and the zone tiers are server-only, so the fee and total it
+   * hands back are painted from its answer instead of guessed at here. The
+   * result is passed straight on, so a refusal still rolls the whole patch back.
+   */
+  function setDeliveryAddress(
+    orderNumber: string,
+    address: { line1: string; unit: string; postalCode: string },
+    timeWindow: string,
+  ) {
+    persistOrderPatch(
+      orderNumber,
+      {
+        address: {
+          line1: address.line1.trim(),
+          unit: address.unit.trim() || undefined,
+          postalCode: address.postalCode.trim(),
+        },
+        timeWindow: timeWindow.trim(),
+      },
+      setDeliveryAddressAction(orderNumber, address, timeWindow).then((result) => {
+        if (result.ok) {
+          patchOrderLocal(orderNumber, {
+            deliveryFeeCents: result.deliveryFeeCents,
+            totalCents: result.totalCents,
+          });
+        }
+        return result;
+      }),
+      `Address for ${orderNumber}`,
+    );
+  }
+
   function recordDeposit(orderNumber: string, cents: number) {
     const depositCents = cents > 0 ? Math.round(cents) : null;
     persistOrderPatch(
@@ -528,6 +570,7 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
     updatePaymentStatus,
     updateOwnerNote,
     rescheduleOrder,
+    setDeliveryAddress,
     recordDeposit,
     addManualOrder,
     cancelOrder,

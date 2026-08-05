@@ -79,7 +79,8 @@ export default function AdminPackingSlipsPage() {
                     <div className="flex flex-wrap items-baseline justify-between gap-2">
                       <span className="font-semibold">{order.orderNumber}</span>
                       <span className="text-sm text-muted">
-                        {order.fulfillmentType === "pickup" ? "Pickup" : "Delivery"} · {order.timeWindow}
+                        {order.fulfillmentType === "pickup" ? "Pickup" : "Delivery"}
+                        {order.timeWindow ? ` · ${order.timeWindow}` : " · no time set"}
                       </span>
                     </div>
                     <p className="mt-1 text-sm text-muted">
@@ -93,6 +94,16 @@ export default function AdminPackingSlipsPage() {
                         </>
                       )}
                     </p>
+                    {/* A delivery with no address printed as a blank tail on the
+                        line above, which reads like an address that just did not
+                        fit. The slip is what goes out with the box, so say it in
+                        words that cannot be walked past. */}
+                    {order.fulfillmentType === "delivery" && !order.address && (
+                      <p className="mt-2 rounded-lg border-2 border-danger bg-danger-soft px-3 py-2 text-sm font-bold uppercase text-danger-ink">
+                        ⚠ No address yet, do not pack. Get it from the customer and add it to the
+                        order first.
+                      </p>
+                    )}
                     {order.isGift && (
                       <p className="mt-1 text-sm font-semibold text-rose-deep">
                         🎁 Gift{order.recipientName ? ` for ${order.recipientName}` : ""}. Include a card, no receipt
@@ -140,6 +151,15 @@ export default function AdminPackingSlipsPage() {
                         <span className="font-semibold">{answer.label}:</span> {answer.answer}
                       </p>
                     ))}
+                    {/* Deliberately NOT owner_note. This slip goes into the box,
+                        so the customer reads whatever is on it, and that note is
+                        Michelle's private line about them: "difficult customer",
+                        "allergy, mother called twice". Hiding it from the
+                        customer is the whole point of the column grants in
+                        migration 0035, and printing it here would hand it over
+                        by another route. The address correction that used to
+                        need somewhere to live now has its own control on the
+                        order instead. */}
                   </article>
                 ))}
               </div>

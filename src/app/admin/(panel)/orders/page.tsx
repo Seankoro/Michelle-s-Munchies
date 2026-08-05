@@ -97,6 +97,7 @@ export default function AdminOrdersPage() {
     updatePaymentStatus,
     updateOwnerNote,
     rescheduleOrder,
+    setDeliveryAddress,
     recordDeposit,
     cancelOrder,
     clearDepositOwed,
@@ -298,6 +299,9 @@ export default function AdminOrdersPage() {
           onReschedule={(date, window) =>
             rescheduleOrder(selectedOrder.orderNumber, date, window)
           }
+          onSetAddress={(address, window) =>
+            setDeliveryAddress(selectedOrder.orderNumber, address, window)
+          }
           timeWindows={settings.timeWindows}
           blackoutDates={settings.blackoutDates}
           dailyOrderCap={settings.dailyOrderCap}
@@ -327,6 +331,7 @@ function OrderDetailModal({
   onPaymentChange,
   onOwnerNoteSave,
   onReschedule,
+  onSetAddress,
   timeWindows,
   blackoutDates,
   dailyOrderCap,
@@ -344,6 +349,10 @@ function OrderDetailModal({
   onPaymentChange: (status: PaymentStatus) => void;
   onOwnerNoteSave: (note: string) => void;
   onReschedule: (date: string, timeWindow: string) => void;
+  onSetAddress: (
+    address: { line1: string; unit: string; postalCode: string },
+    timeWindow: string,
+  ) => void;
   timeWindows: string[];
   blackoutDates: string[];
   dailyOrderCap: number | null;
@@ -383,8 +392,20 @@ function OrderDetailModal({
     : flow.includes(order.status)
       ? flow
       : [order.status, ...flow];
+  // A delivery order with nowhere to go. The gift recipient's link answers the
+  // address question once and then closes, so one that was never opened leaves
+  // this blank and Michelle is the only one who can fill it in now.
+  const isDelivery = order.fulfillmentType === "delivery";
+  const missingAddress = isDelivery && !order.address && !alreadyCancelled;
   const [reDate, setReDate] = useState(order.scheduledDate);
   const [reWindow, setReWindow] = useState(order.timeWindow);
+  const [addrLine1, setAddrLine1] = useState(order.address?.line1 ?? "");
+  const [addrUnit, setAddrUnit] = useState(order.address?.unit ?? "");
+  const [addrPostal, setAddrPostal] = useState(order.address?.postalCode ?? "");
+  const [addrWindow, setAddrWindow] = useState(order.timeWindow || timeWindows[0] || "");
+  // Already open when there is nothing to deliver to, so the one thing worth
+  // doing on the order is in front of her rather than behind another tap.
+  const [showAddress, setShowAddress] = useState(missingAddress);
   const [depositInput, setDepositInput] = useState(
     order.depositCents != null && order.depositCents > 0
       ? (order.depositCents / 100).toFixed(2)
@@ -403,6 +424,8 @@ function OrderDetailModal({
   // So the stranded-order banner can put the cursor straight in the date field
   // instead of leaving Michelle to hunt down the reschedule block.
   const reDateRef = useRef<HTMLInputElement>(null);
+  // So the no-address banner can put the cursor straight in the address field.
+  const addrLine1Ref = useRef<HTMLInputElement>(null);
   // Removing items offers the matching refund next, so the amount field needs to
   // take focus with the figure already filled in.
   const refundAmountRef = useRef<HTMLInputElement>(null);
@@ -577,6 +600,25 @@ function OrderDetailModal({
       );
     }
   }
+  /**
+   * Save a corrected or first-time delivery address. Checked here for the two
+   * things she can see, so a typo is caught before a round trip. Everything
+   * else, including how late this is allowed and what the new postal code does
+   * to the delivery fee, is the server's call.
+   */
+  function handleSaveAddress() {
+    if (!addrLine1.trim()) {
+      alert("Type the block and street.");
+      return;
+    }
+    if (!/^\d{6}$/.test(addrPostal.trim())) {
+      alert("The postal code needs to be 6 digits.");
+      return;
+    }
+    onSetAddress({ line1: addrLine1, unit: addrUnit, postalCode: addrPostal }, addrWindow);
+    setShowAddress(false);
+  }
+
   const selectClass =
     "rounded-xl border border-line bg-white px-3 py-2 text-base focus:border-rose sm:text-sm";
 
@@ -647,6 +689,33 @@ function OrderDetailModal({
                 </a>
               )}
             </div>
+          </div>
+        )}
+
+        {/* A delivery with no address. On a gift it means the recipient never
+            opened their link, and that link only answers once, so nobody but
+            Michelle can fill this in. Left alone the packing slip goes out with
+            nowhere to send the box. */}
+        {missingAddress && (
+          <div className="mt-3 rounded-xl border border-danger/40 bg-danger-soft p-3">
+            <p className="text-sm font-semibold text-danger-ink">
+              No delivery address yet. This one cannot be packed.
+            </p>
+            <p className="mt-0.5 text-sm text-danger-ink">
+              {order.isGift
+                ? "The recipient never filled in their link, and it only answers once. Ask them or the buyer for the address, then type it in here."
+                : "Nothing was ever saved for this delivery. Ask the customer for the address, then type it in here."}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setShowAddress(true);
+                addrLine1Ref.current?.focus();
+              }}
+              className="mt-2 rounded-full bg-danger px-4 py-1.5 text-sm font-semibold text-white transition hover:brightness-110 active:scale-95"
+            >
+              Add the address
+            </button>
           </div>
         )}
 
@@ -970,6 +1039,100 @@ function OrderDetailModal({
               </p>
             )}
           </div>
+
+          {/* Where it is going. The gift recipient's link fills this in once and
+              then closes itself, so a mistyped postal code or an old unit number
+              can only be corrected from here. The rule about how late that is
+              allowed lives in the database, so a refusal comes back as words
+              rather than being second-guessed here. */}
+          {isDelivery && !alreadyCancelled && (
+            <div className="mt-4 border-t border-line pt-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold">Delivery address</p>
+                <button
+                  type="button"
+                  onClick={() => setShowAddress((open) => !open)}
+                  aria-expanded={showAddress}
+                  aria-controls={`address-${order.orderNumber}`}
+                  className="rounded-full border border-line bg-white px-3.5 py-1.5 text-xs font-semibold transition hover:border-rose active:scale-95"
+                >
+                  {showAddress ? "Close" : order.address ? "Edit address" : "Add address"}
+                </button>
+              </div>
+              <p className="mt-1 text-xs text-muted">
+                {order.address
+                  ? "For a wrong unit or postal code the customer has told you about. While the order is unpaid the delivery fee is re-priced for the new address."
+                  : "Nothing has been filled in yet. Type what the customer gives you over WhatsApp."}
+              </p>
+              {showAddress && (
+                <div
+                  id={`address-${order.orderNumber}`}
+                  className="mt-2 flex flex-col gap-2"
+                >
+                  <label className="flex flex-col gap-1 text-sm font-semibold">
+                    Address
+                    <input
+                      ref={addrLine1Ref}
+                      value={addrLine1}
+                      onChange={(e) => setAddrLine1(e.target.value)}
+                      maxLength={200}
+                      placeholder="Block and street"
+                      className={cn(selectClass, "w-full")}
+                    />
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="flex flex-col gap-1 text-sm font-semibold">
+                      Unit
+                      <input
+                        value={addrUnit}
+                        onChange={(e) => setAddrUnit(e.target.value)}
+                        maxLength={60}
+                        placeholder="#12-34 (optional)"
+                        className={cn(selectClass, "w-full")}
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1 text-sm font-semibold">
+                      Postal code
+                      <input
+                        value={addrPostal}
+                        onChange={(e) => setAddrPostal(e.target.value)}
+                        inputMode="numeric"
+                        maxLength={6}
+                        placeholder="123456"
+                        className={cn(selectClass, "w-full")}
+                      />
+                    </label>
+                  </div>
+                  <label className="flex flex-col gap-1 text-sm font-semibold">
+                    Time window
+                    <select
+                      value={addrWindow}
+                      onChange={(e) => setAddrWindow(e.target.value)}
+                      className={cn(selectClass, "w-full")}
+                    >
+                      {windowOptions.map((window) => (
+                        <option key={window} value={window}>
+                          {window}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleSaveAddress}
+                    className="self-start rounded-full bg-rose-deep px-4 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:brightness-110 active:scale-95"
+                  >
+                    Save address
+                  </button>
+                  <p className="text-xs text-muted">
+                    {order.paymentStatus === "paid"
+                      ? "This order is paid, so only the address moves. What was charged stays exactly as it is."
+                      : "A new postal code can fall in a different delivery zone, so the fee and the total may change."}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Chasing payment on a cancelled order would be asking for money the
               app has to hand straight back, so none of this shows once it is
