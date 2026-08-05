@@ -238,4 +238,10 @@ export type AdminOrder = PlacedOrder & {
    * holding the money and it has to go back through a refund.
    */
   paidViaStripe?: boolean;
+  /**
+   * When the customer asked to cancel from their tracking page. Kept in its own
+   * column rather than the owner note, because the stale-order sweep reads a
+   * note as proof a human was involved and would then never reclaim the order.
+   */
+  cancellationRequestedAt?: string | null;
 };

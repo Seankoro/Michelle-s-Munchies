@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { rateLimit } from "@/lib/rate-limit";
 import { fetchStoreSettings } from "@/lib/settings";
 import { earliestFulfillmentDate, isChangeable } from "@/lib/order";
-import { singaporeDateString, singaporeNow } from "@/lib/time";
+import { singaporeNow } from "@/lib/time";
 import {
   sendCancellationRequestEmail,
   sendCustomerRescheduledEmail,
@@ -34,13 +34,6 @@ const MAX_RESCHEDULES = 3;
 /** Lines and per-line quantity one top-up may carry, the panel's own limits. */
 const MAX_ADD_LINES = 20;
 const MAX_ADD_QUANTITY = 20;
-
-/**
- * Marker the cancellation request writes into the owner's note. Kept as a
- * constant so a repeat tap can spot its own earlier line instead of stacking
- * duplicates in a field Michelle also types into.
- */
-const CANCELLATION_NOTE_PREFIX = "Cancellation requested by the customer on";
 
 /**
  * Self-serve reschedule from the tracking link. Auth = possession of the 32-char
@@ -412,7 +405,7 @@ export async function requestCancellationAction(token: string): Promise<ChangeRe
   const admin = createAdminClient();
   const { data } = await admin
     .from("orders")
-    .select("id, status, order_number, customer_name, owner_note")
+    .select("id, status, order_number, customer_name, cancellation_requested_at")
     .eq("tracking_token", token)
     .maybeSingle();
   const order = data as {
@@ -420,7 +413,7 @@ export async function requestCancellationAction(token: string): Promise<ChangeRe
     status: string;
     order_number: string;
     customer_name: string;
-    owner_note: string | null;
+    cancellation_requested_at: string | null;
   } | null;
   if (!order) return { ok: false, error: "Order not found." };
   // The same window as reschedule and add-items, so all three token actions
@@ -429,19 +422,23 @@ export async function requestCancellationAction(token: string): Promise<ChangeRe
     return { ok: false, error: "This order is already being prepared and can’t be changed." };
   }
 
-  // The owner's note is the one field on an order the admin panel already puts
-  // in front of Michelle, so the request goes there. Written once, so a second
-  // tap can't fill her note with repeats.
-  const note = order.owner_note ?? "";
-  if (!note.includes(CANCELLATION_NOTE_PREFIX)) {
-    const line = `${CANCELLATION_NOTE_PREFIX} ${singaporeDateString()}.`;
+  // A stamp of its own rather than a line in owner_note. The stale-order sweep
+  // reads an owner_note as proof a human was involved and then leaves the order
+  // alone, so recording the request there made the order permanently
+  // un-sweepable and it held its promo redemption and reserved points for good.
+  // Anyone with a tracking link could do that, and a link is minted by placing a
+  // guest order with no payment. It is also backwards: an order the customer has
+  // ASKED to cancel is the last one that should be exempt from the sweep.
+  //
+  // Claimed only when unset, so a second tap cannot re-stamp it, and
+  // deliberately without touching updated_at, which the sweep also reads as a
+  // human having been here.
+  if (!order.cancellation_requested_at) {
     const { error } = await admin
       .from("orders")
-      .update({
-        owner_note: note ? `${note}\n${line}` : line,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", order.id);
+      .update({ cancellation_requested_at: new Date().toISOString() })
+      .eq("id", order.id)
+      .is("cancellation_requested_at", null);
     if (error) {
       return { ok: false, error: "Couldn’t send the request. Please message us on WhatsApp." };
     }

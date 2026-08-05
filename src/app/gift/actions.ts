@@ -42,7 +42,7 @@ export async function scheduleGiftAction(
   const { data } = await admin
     .from("orders")
     .select(
-      "id, status, payment_status, subtotal_cents, discount_cents, scheduled_date, order_number, recipient_name",
+      "id, status, payment_status, subtotal_cents, discount_cents, scheduled_date, order_number, recipient_name, recipient_scheduled_at",
     )
     .eq("recipient_token", token)
     .maybeSingle();
@@ -55,10 +55,24 @@ export async function scheduleGiftAction(
     scheduled_date: string;
     order_number: string;
     recipient_name: string | null;
+    recipient_scheduled_at: string | null;
   } | null;
   if (!order) return { ok: false, error: "This gift link is not valid." };
   if (!isChangeable(order.status)) {
     return { ok: false, error: "This gift is already being prepared and can’t be changed." };
+  }
+  // The link is a write credential for somebody else's paid order, and it is
+  // meant to be passed along, so it can easily end up in a group chat or a
+  // forwarded message. Left open it would let anyone who sees it redirect the
+  // delivery to their own address, quietly and repeatedly. It answers the
+  // question once; changing an answer afterwards goes through Michelle, the
+  // same rule the customer's own reschedule already follows.
+  if (order.recipient_scheduled_at) {
+    return {
+      ok: false,
+      error:
+        "These details have already been filled in. To change them, please message us on WhatsApp.",
+    };
   }
 
   // Per-window cap re-checked on the gift's date, excluding this order's own row.

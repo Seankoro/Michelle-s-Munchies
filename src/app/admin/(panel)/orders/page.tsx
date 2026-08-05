@@ -670,6 +670,22 @@ function OrderDetailModal({
           </div>
         )}
 
+        {/* The customer asked to cancel from their tracking page. It used to be
+            written into the note, which quietly exempted the order from the
+            sweep that reclaims abandoned ones, so it has its own stamp now and
+            needs its own place to be seen. */}
+        {order.cancellationRequestedAt && !alreadyCancelled && (
+          <div className="mt-3 rounded-xl bg-danger-soft p-3">
+            <p className="text-sm font-semibold text-danger-ink">
+              The customer asked to cancel this order.
+            </p>
+            <p className="mt-0.5 text-sm text-danger-ink">
+              Requested {formatLongDate(singaporeDateString(order.cancellationRequestedAt))}. Cancel
+              it below, or message them if it can still go ahead.
+            </p>
+          </div>
+        )}
+
         {/* Items */}
         <ul className="mt-4 flex flex-col gap-2 text-sm">
           {order.items.map((item) => (

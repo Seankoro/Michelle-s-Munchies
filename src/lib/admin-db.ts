@@ -54,6 +54,7 @@ type OrderRow = {
   recipient_phone: string | null;
   owner_note: string | null;
   note_answers: { id: string; label: string; answer: string }[] | null;
+  cancellation_requested_at: string | null;
   deposit_cents: number | null;
   paid_at: string | null;
   deposit_outstanding_cents: number | null;
@@ -101,6 +102,7 @@ function rowToAdminOrder(row: OrderRow): AdminOrder {
     // they reached only the order-alert email and no screen she works from.
     noteAnswers: row.note_answers ?? [],
     paidViaStripe: Boolean(row.stripe_payment_intent_id),
+    cancellationRequestedAt: row.cancellation_requested_at,
     depositCents: row.deposit_cents,
     paidAt: row.paid_at,
     depositOutstandingCents: row.deposit_outstanding_cents,

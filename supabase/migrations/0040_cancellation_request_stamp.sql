@@ -1,0 +1,17 @@
+-- A dedicated stamp for a customer's cancellation request.
+--
+-- requestCancellationAction appended a marker line to owner_note, which is the
+-- same mistake migration 0038 fixed for the gift reminder, in a different
+-- writer. The stale-order sweep treats an owner_note as proof a human was
+-- involved and then refuses to touch the order (order-cleanup.ts), so a
+-- customer asking to cancel made their own order permanently un-sweepable.
+--
+-- That is reachable by anyone holding a tracking link, and a link is minted by
+-- placing a guest order with no payment at all. So an attacker could place
+-- orders carrying a capped promo, request cancellation on each, and burn the
+-- code's redemptions for good with nothing ever reclaiming them.
+--
+-- It is also wrong in the ordinary case: a customer who has ASKED to cancel is
+-- the last order that should be exempt from the sweep that cancels abandoned
+-- orders. Its own column says what it means and interferes with nothing.
+alter table public.orders add column if not exists cancellation_requested_at timestamptz;
