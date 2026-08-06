@@ -137,6 +137,21 @@
       var(--color-rose-deep) var(--rail-progress, 0%),
       var(--color-line) var(--rail-progress, 0%)
     );
+  }
+  /* Safari draws its own focus ring on a form control as soon as it is clicked
+     or dragged, and -webkit-appearance: none does not remove it. Around a track
+     this wide and this thin the ring reads as a box drawn around the slider,
+     which is what you see after nudging the bow. Chrome only rings on keyboard
+     focus, so it never showed there.
+
+     The ring is suppressed for pointer focus and restored for :focus-visible,
+     so a keyboard user still gets it. That is also why the offset now lives on
+     the :focus-visible rule: on its own it styled a ring nothing had asked for. */
+  .rail-slider:focus {
+    outline: none;
+  }
+  .rail-slider:focus-visible {
+    outline: 2px solid var(--color-rose-deep);
     outline-offset: 4px;
   }
   /* The native thumb stays as the drag handle but is made invisible. The bow
