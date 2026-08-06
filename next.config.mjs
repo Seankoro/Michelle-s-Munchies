@@ -9,6 +9,12 @@ const supabaseHost = process.env.NEXT_PUBLIC_SUPABASE_URL
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // There is a stray package-lock.json and node_modules directly in the home
+  // folder, so Next guessed C:\Users\seani was the workspace root and warned
+  // about it on every build. Left alone, the step that works out which files to
+  // ship walks from there, which means the whole home folder rather than this
+  // project. Point it at the project and it only ever looks here.
+  outputFileTracingRoot: import.meta.dirname,
   images: {
     // Product images will be served from Supabase Storage.
     remotePatterns: [{ protocol: "https", hostname: supabaseHost }],
