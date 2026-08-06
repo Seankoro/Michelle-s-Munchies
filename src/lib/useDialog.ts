@@ -26,7 +26,16 @@ export function useDialog(
     const panel = panelRef.current;
     const previouslyFocused = document.activeElement as HTMLElement | null;
 
-    const prevOverflow = document.body.style.overflow;
+    // Lock the html element, not just body. The browser only hands body's
+    // overflow to the viewport while html is visible on BOTH axes, and
+    // globals.css sets overflow-x: clip on html to kill sideways scroll. That
+    // makes html the scroll container, so hiding body's overflow was doing
+    // nothing at all and the page carried on scrolling behind every sheet and
+    // drawer. Both are set, and both are put back.
+    const root = document.documentElement;
+    const prevRootOverflow = root.style.overflow;
+    const prevBodyOverflow = document.body.style.overflow;
+    root.style.overflow = "hidden";
     document.body.style.overflow = "hidden";
 
     // Focus the first focusable control, or the panel itself as a fallback.
@@ -59,7 +68,8 @@ export function useDialog(
     document.addEventListener("keydown", onKeyDown);
     return () => {
       document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = prevOverflow;
+      root.style.overflow = prevRootOverflow;
+      document.body.style.overflow = prevBodyOverflow;
       previouslyFocused?.focus?.();
     };
   }, [open, panelRef]);

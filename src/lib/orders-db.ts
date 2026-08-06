@@ -404,7 +404,6 @@ export type TrackedOrder = {
   discount_cents: number;
   promo_code: string | null;
   points_redeemed: number;
-  deposit_cents: number | null;
   total_cents: number;
   created_at: string;
   items: TrackedOrderItem[];

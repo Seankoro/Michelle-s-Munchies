@@ -98,9 +98,7 @@ export default function AdminOrdersPage() {
     updateOwnerNote,
     rescheduleOrder,
     setDeliveryAddress,
-    recordDeposit,
     cancelOrder,
-    clearDepositOwed,
     recordRefund,
     removeOrderItems,
   } = useAdmin();
@@ -246,13 +244,6 @@ export default function AdminOrdersPage() {
                 </td>
                 <td className="px-4 py-3">
                   {formatPrice(order.totalCents)}
-                  {/* Money of the customer's she is still holding. It has to be
-                      visible without opening the order, or it is forgotten. */}
-                  {order.depositOutstandingCents != null && order.depositOutstandingCents > 0 && (
-                    <span className="mt-0.5 block whitespace-nowrap text-xs font-semibold text-danger-ink">
-                      {formatPrice(order.depositOutstandingCents)} deposit owed
-                    </span>
-                  )}
                   {order.refundedCents != null && order.refundedCents > 0 && (
                     <span className="mt-0.5 block whitespace-nowrap text-xs text-muted">
                       -{formatPrice(order.refundedCents)} refunded
@@ -307,11 +298,9 @@ export default function AdminOrdersPage() {
           dailyOrderCap={settings.dailyOrderCap}
           dayCounts={dayCounts}
           today={today}
-          onRecordDeposit={(cents) => recordDeposit(selectedOrder.orderNumber, cents)}
-          onCancel={(depositReturned) =>
-            cancelOrder(selectedOrder.orderNumber, depositReturned)
+          onCancel={() =>
+            cancelOrder(selectedOrder.orderNumber)
           }
-          onClearDepositOwed={() => clearDepositOwed(selectedOrder.orderNumber)}
           onRecordRefund={(cents, reason, via) =>
             recordRefund(selectedOrder.orderNumber, cents, reason, via)
           }
@@ -337,9 +326,7 @@ function OrderDetailModal({
   dailyOrderCap,
   dayCounts,
   today,
-  onRecordDeposit,
   onCancel,
-  onClearDepositOwed,
   onRecordRefund,
   onRemoveItems,
 }: {
@@ -358,18 +345,14 @@ function OrderDetailModal({
   dailyOrderCap: number | null;
   dayCounts: Record<string, number>;
   today: string;
-  onRecordDeposit: (cents: number) => void;
-  onCancel: (depositReturned: boolean) => Promise<{
+  onCancel: () => Promise<{
     ok: boolean;
     refunded?: boolean;
     /** Paid outside Stripe, so nothing was reversed and the money goes back by hand. */
     manualRefundDue?: boolean;
     amountCents?: number;
-    /** What the cancel recorded as a deposit still owed. Null means nothing owed. */
-    depositOwedCents?: number | null;
     error?: string;
   }>;
-  onClearDepositOwed: () => void;
   onRecordRefund: (
     amountCents: number,
     reason: string,
@@ -409,11 +392,6 @@ function OrderDetailModal({
   // Already open when there is nothing to deliver to, so the one thing worth
   // doing on the order is in front of her rather than behind another tap.
   const [showAddress, setShowAddress] = useState(missingAddress);
-  const [depositInput, setDepositInput] = useState(
-    order.depositCents != null && order.depositCents > 0
-      ? (order.depositCents / 100).toFixed(2)
-      : "",
-  );
   // Money returned on an order that still stands, e.g. one squashed tin out of
   // six. Kept separate from cancelling, which un-bakes the whole order.
   const [refundAmount, setRefundAmount] = useState("");
@@ -433,7 +411,6 @@ function OrderDetailModal({
   // take focus with the figure already filled in.
   const refundAmountRef = useRef<HTMLInputElement>(null);
   const refundedCents = order.refundedCents ?? 0;
-  const depositOwedCents = order.depositOutstandingCents ?? 0;
   // What the shop actually kept, which is the figure Insights now reports.
   const netKeptCents = order.totalCents - refundedCents;
   const bakeDatePassed = bakeDateHasPassed(order, today);
@@ -486,7 +463,6 @@ function OrderDetailModal({
   // the cancel comes back, so never promise a refund it might not have made.
   async function handleCancel() {
     const paid = order.paymentStatus === "paid";
-    const depositCents = order.depositCents ?? 0;
     // Money that has already gone back is not owed a second time, so what is
     // quoted here is what she is still holding, never the order total.
     if (
@@ -497,49 +473,20 @@ function OrderDetailModal({
       )
     )
       return;
-    // A deposit is money already sitting in her bank that the app cannot move,
-    // so the one useful thing it can do is write down which way it went. Only
-    // "OK, I have sent it" counts as returned: dismissing this says she is still
-    // holding it, so a mis-tap keeps the money on screen rather than quietly
-    // claiming the customer already has it back. Whether that becomes money owed
-    // is the cancel's call, because on an order paid in full the deposit is
-    // already inside what goes back, so this prompt promises nothing.
-    const depositReturned =
-      depositCents > 0 &&
-      confirm(
-        `Have you already sent the ${formatPrice(depositCents)} deposit back to the customer?\n\nOK if the money is back with them. Cancel if you are still holding it.`,
-      );
-    const result = await onCancel(depositReturned);
+    const result = await onCancel();
     if (!result.ok) {
       alert(result.error ?? "Could not cancel the order.");
       return;
     }
-    // What the cancel actually wrote down as owed, rather than a second opinion
-    // on the rule that decided it.
-    const owedCents = result.depositOwedCents ?? 0;
-    const owed =
-      owedCents > 0
-        ? ` The ${formatPrice(owedCents)} deposit stays on this order as money owed until you send it back.`
-        : "";
     const toSendBackCents = Math.max(0, (result.amountCents ?? order.totalCents) - refundedCents);
     if (result.manualRefundDue)
       alert(
         toSendBackCents > 0
-          ? `Order cancelled. This one was not paid through Stripe, so nothing was refunded. Send ${formatPrice(toSendBackCents)} back to the customer yourself.${owed}`
-          : `Order cancelled. Everything paid on it has already gone back, so there is nothing more to send.${owed}`,
+          ? `Order cancelled. This one was not paid through Stripe, so nothing was refunded. Send ${formatPrice(toSendBackCents)} back to the customer yourself.`
+          : `Order cancelled. Everything paid on it has already gone back, so there is nothing more to send.`,
       );
-    else if (result.refunded) alert(`Order cancelled and refunded through Stripe.${owed}`);
-    else alert(`Order cancelled.${owed}`);
-  }
-
-  function handleClearDepositOwed() {
-    if (
-      !confirm(
-        `Confirm you have sent ${formatPrice(depositOwedCents)} back to the customer. This only clears the reminder, it does not move any money.`,
-      )
-    )
-      return;
-    onClearDepositOwed();
+    else if (result.refunded) alert(`Order cancelled and refunded through Stripe.`);
+    else alert("Order cancelled.");
   }
 
   /** Write down money that went back on an order that still stands. */
@@ -660,40 +607,6 @@ function OrderDetailModal({
             {order.fulfillmentType}
           </span>
         </div>
-
-        {/* A deposit she took and has not sent back. Real money of the customer's
-            that the app cannot transfer for her, so it sits at the top of the
-            order until she says it has gone. */}
-        {depositOwedCents > 0 && (
-          <div className="mt-3 rounded-xl border border-danger/40 bg-danger-soft p-3">
-            <p className="text-sm font-semibold text-danger-ink">
-              You owe the customer {formatPrice(depositOwedCents)}
-            </p>
-            <p className="mt-0.5 text-sm text-danger-ink">
-              This is the deposit they paid on a cancelled order. Send it back by PayNow, then
-              clear this.
-            </p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={handleClearDepositOwed}
-                className="rounded-full bg-danger px-4 py-1.5 text-sm font-semibold text-white transition hover:brightness-110 active:scale-95"
-              >
-                ✓ I have sent it back
-              </button>
-              {waUrl && (
-                <a
-                  href={waUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-full border border-danger/40 bg-white px-4 py-1.5 text-sm font-semibold text-danger-ink transition hover:border-danger active:scale-95"
-                >
-                  💬 WhatsApp them
-                </a>
-              )}
-            </div>
-          </div>
-        )}
 
         {/* A delivery with no address. On a gift it means the recipient never
             opened their link, and that link only answers once, so nobody but
@@ -1153,18 +1066,8 @@ function OrderDetailModal({
           {order.paymentStatus === "pending" && !alreadyCancelled && (
             <div className="mt-3 rounded-xl bg-warning-soft p-3">
               <p className="text-sm font-semibold text-warning-ink">
-                {order.depositCents != null && order.depositCents > 0
-                  ? "Deposit paid, balance due"
-                  : "Awaiting payment"}
+                Awaiting payment
               </p>
-              {order.depositCents != null && order.depositCents > 0 && (
-                <p className="mt-0.5 text-sm text-warning-ink">
-                  {formatPrice(order.depositCents)} deposit ·{" "}
-                  <span className="font-semibold">
-                    {formatPrice(order.totalCents - order.depositCents)} balance
-                  </span>
-                </p>
-              )}
               <div className="mt-2 flex flex-wrap gap-2">
                 <button
                   type="button"
@@ -1175,7 +1078,7 @@ function OrderDetailModal({
                   // takings. It can be undone, but only before baking starts.
                   onClick={() => {
                     const amount = formatPrice(
-                      order.totalCents - (order.depositCents ?? 0) - (order.refundedCents ?? 0),
+                      order.totalCents - (order.refundedCents ?? 0),
                     );
                     if (confirm(`Mark ${amount} received from ${order.name} for ${order.orderNumber}?`)) {
                       onPaymentChange("paid");
@@ -1183,7 +1086,7 @@ function OrderDetailModal({
                   }}
                   className="rounded-full bg-success px-4 py-1.5 text-sm font-semibold text-white transition hover:brightness-110 active:scale-95"
                 >
-                  ✓ Mark {order.depositCents ? "balance " : ""}paid
+                  ✓ Mark paid
                 </button>
                 {payNudgeUrl && (
                   <a
@@ -1194,43 +1097,6 @@ function OrderDetailModal({
                   >
                     💬 Send PayNow reminder
                   </a>
-                )}
-              </div>
-              {/* Deposit for custom-cake orders, secure the slot with part-payment. */}
-              <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-warning-ink/20 pt-2">
-                <span className="text-xs font-semibold text-warning-ink">Deposit S$</span>
-                <input
-                  inputMode="decimal"
-                  value={depositInput}
-                  onChange={(e) => setDepositInput(e.target.value)}
-                  placeholder="0.00"
-                  className="w-20 rounded-lg border border-warning-ink/30 bg-white px-2 py-1 text-sm"
-                />
-                <button
-                  type="button"
-                  onClick={() =>
-                    onRecordDeposit(
-                      Math.min(
-                        order.totalCents,
-                        Math.max(0, Math.round(parseFloat(depositInput || "0") * 100)),
-                      ),
-                    )
-                  }
-                  className="rounded-full border border-warning-ink/40 bg-white px-3 py-1 text-xs font-semibold text-warning-ink transition hover:border-warning-ink active:scale-95"
-                >
-                  Record
-                </button>
-                {order.depositCents != null && order.depositCents > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDepositInput("");
-                      onRecordDeposit(0);
-                    }}
-                    className="text-xs font-semibold text-warning-ink underline"
-                  >
-                    Clear
-                  </button>
                 )}
               </div>
             </div>
@@ -1396,9 +1262,6 @@ function OrderDetailModal({
                 {order.paymentStatus === "paid"
                   ? "A card payment is refunded through Stripe. A PayNow or hand-marked payment cannot be refunded from here, so you send the money back yourself. Tracked stock goes back either way."
                   : "Marks the order cancelled."}
-                {order.depositCents != null &&
-                  order.depositCents > 0 &&
-                  ` You will be asked whether the ${formatPrice(order.depositCents)} deposit has gone back yet.`}
               </p>
             </div>
           )}

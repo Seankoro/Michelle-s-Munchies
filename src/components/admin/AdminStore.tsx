@@ -15,12 +15,10 @@ import type { FeatureFlags, NotePrompt } from "@/lib/settings";
 import { ALL_FEATURES_ON } from "@/lib/feature-flags";
 import {
   cancelOrderAction,
-  clearDepositOwedAction,
   createManualOrderAction,
   createProductAction,
   deleteProductAction,
   loadAdminData,
-  recordDepositAction,
   recordRefundAction,
   removeOrderItemsAction,
   rescheduleOrderAdminAction,
@@ -116,25 +114,15 @@ type AdminContextValue = {
     address: { line1: string; unit: string; postalCode: string },
     timeWindow: string,
   ) => void;
-  recordDeposit: (orderNumber: string, cents: number) => void;
   addManualOrder: (input: ManualOrderInput) => Promise<ManualOrderResult>;
-  /** `depositReturned` answers whether a deposit already went back to the
-   *  customer. Left off it means she is still holding it, and the cancel is
-   *  what decides whether that gets recorded as owed. */
-  cancelOrder: (
-    orderNumber: string,
-    depositReturned?: boolean,
-  ) => Promise<{
+  cancelOrder: (orderNumber: string) => Promise<{
     ok: boolean;
     refunded?: boolean;
     /** Paid outside Stripe, so nothing was reversed and the money goes back by hand. */
     manualRefundDue?: boolean;
     amountCents?: number;
-    /** What the cancel recorded as a deposit still owed. Null means nothing owed. */
-    depositOwedCents?: number | null;
     error?: string;
   }>;
-  clearDepositOwed: (orderNumber: string) => void;
   recordRefund: (
     orderNumber: string,
     amountCents: number,
@@ -197,6 +185,18 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
       setSettings(data.settings);
       setLastUpdated(new Date());
       setError(null);
+      // Only a load that actually returned counts as hydrated. Every admin page
+      // reads this flag as "the real data is here now", and the settings form
+      // mounts on it so its fields start from saved values. Setting it after a
+      // failure handed all of them the empty arrays and the built-in default
+      // settings and let them present that as fact, so the packing list said
+      // there was nothing to pack and the settings form offered to save default
+      // delivery zones over her own.
+      //
+      // Once true it stays true. A later refresh that fails keeps the last good
+      // data on screen and raises the banner, rather than blanking a working
+      // page.
+      setHydrated(true);
     } catch (e: unknown) {
       setError(readableError(e) ?? "Failed to load admin data.");
     } finally {
@@ -205,7 +205,7 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    void refresh().finally(() => setHydrated(true));
+    void refresh();
   }, [refresh]);
 
   // Re-pull when the tab comes back to the foreground, throttled so quick
@@ -412,16 +412,6 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
     );
   }
 
-  function recordDeposit(orderNumber: string, cents: number) {
-    const depositCents = cents > 0 ? Math.round(cents) : null;
-    persistOrderPatch(
-      orderNumber,
-      { depositCents },
-      recordDepositAction(orderNumber, cents),
-      `Deposit for ${orderNumber}`,
-    );
-  }
-
   function updateOwnerNote(orderNumber: string, note: string) {
     const trimmed = note.trim();
     const before = orders.find((o) => o.orderNumber === orderNumber);
@@ -441,8 +431,8 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
     return result;
   }
 
-  async function cancelOrder(orderNumber: string, depositReturned = false) {
-    const result = await cancelOrderAction(orderNumber, depositReturned);
+  async function cancelOrder(orderNumber: string) {
+    const result = await cancelOrderAction(orderNumber);
     if (result.ok) {
       setOrders((prev) =>
         prev.map((o) =>
@@ -451,38 +441,21 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
                 ...o,
                 status: "cancelled",
                 paymentStatus: result.refunded ? "refunded" : o.paymentStatus,
-                // Whether a held deposit is owed back depends on how the order
-                // was settled, and the cancel has already decided that and
-                // written it down. Paint what it recorded, never a second
-                // opinion, or a paid order shows money owed the database never
-                // stored and she pays the customer twice.
-                depositOutstandingCents: result.depositOwedCents,
               }
             : o,
         ),
       );
       // manualRefundDue and amountCents carry the "no Stripe payment to reverse,
-      // send it back yourself" case, and depositOwedCents is what it actually
-      // recorded as owed, so pass them through instead of dropping them and
-      // leaving the panel unable to say how much is owed.
+      // send it back yourself" case, so pass them through instead of dropping
+      // them and leaving the panel unable to say how much is owed.
       return {
         ok: true,
         refunded: result.refunded,
         manualRefundDue: result.manualRefundDue,
         amountCents: result.amountCents,
-        depositOwedCents: result.depositOwedCents,
       };
     }
     return { ok: false, error: result.error };
-  }
-
-  function clearDepositOwed(orderNumber: string) {
-    persistOrderPatch(
-      orderNumber,
-      { depositOutstandingCents: null },
-      clearDepositOwedAction(orderNumber),
-      `Deposit owed on ${orderNumber}`,
-    );
   }
 
   /** Not optimistic: the server refuses a refund that would take back more than
@@ -571,10 +544,8 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
     updateOwnerNote,
     rescheduleOrder,
     setDeliveryAddress,
-    recordDeposit,
     addManualOrder,
     cancelOrder,
-    clearDepositOwed,
     recordRefund,
     removeOrderItems,
     updateSettings,

@@ -7,7 +7,6 @@ import {
   sendReviewRequestEmail,
   sendRescheduleEmail,
   sendOrderCancelledEmail,
-  sendDepositOwedEmail,
 } from "@/lib/email";
 import { formatPrice } from "@/lib/catalog";
 import { notifySubscribers } from "@/lib/stock-notify";
@@ -56,9 +55,7 @@ type OrderRow = {
   owner_note: string | null;
   note_answers: { id: string; label: string; answer: string }[] | null;
   cancellation_requested_at: string | null;
-  deposit_cents: number | null;
   paid_at: string | null;
-  deposit_outstanding_cents: number | null;
   stripe_payment_intent_id: string | null;
   subtotal_cents: number;
   delivery_fee_cents: number;
@@ -104,9 +101,7 @@ function rowToAdminOrder(row: OrderRow): AdminOrder {
     noteAnswers: row.note_answers ?? [],
     paidViaStripe: Boolean(row.stripe_payment_intent_id),
     cancellationRequestedAt: row.cancellation_requested_at,
-    depositCents: row.deposit_cents,
     paidAt: row.paid_at,
-    depositOutstandingCents: row.deposit_outstanding_cents,
     refundedCents: (row.order_refunds ?? []).reduce((sum, r) => sum + r.amount_cents, 0),
     subtotalCents: row.subtotal_cents,
     deliveryFeeCents: row.delivery_fee_cents,
@@ -392,7 +387,7 @@ export async function setDeliveryAddress(
   const { data } = await supabase
     .from("orders")
     .select(
-      "id, status, payment_status, fulfillment_type, subtotal_cents, delivery_fee_cents, discount_cents, total_cents, deposit_cents, is_gift, recipient_token, recipient_scheduled_at",
+      "id, status, payment_status, fulfillment_type, subtotal_cents, delivery_fee_cents, discount_cents, total_cents, is_gift, recipient_token, recipient_scheduled_at",
     )
     .eq("order_number", orderNumber)
     .maybeSingle();
@@ -405,7 +400,6 @@ export async function setDeliveryAddress(
     delivery_fee_cents: number;
     discount_cents: number;
     total_cents: number;
-    deposit_cents: number | null;
     is_gift: boolean | null;
     recipient_token: string | null;
     recipient_scheduled_at: string | null;
@@ -466,17 +460,6 @@ export async function setDeliveryAddress(
       settings,
     );
     totalCents = Math.max(0, order.subtotal_cents + deliveryFeeCents - order.discount_cents);
-    // A cheaper zone can take the total under a deposit already banked, which
-    // would show the customer a negative balance due and leave Michelle holding
-    // money the order no longer accounts for. Same guard the item removal uses,
-    // and the address itself is still worth saving, so only the re-price is held
-    // back and she is told which way it went.
-    const depositCents = order.deposit_cents ?? 0;
-    if (depositCents > 0 && totalCents < depositCents) {
-      throw new Error(
-        `That address prices the order below the ${formatPrice(depositCents)} deposit already taken. Adjust the deposit first, then set the address.`,
-      );
-    }
     updates.delivery_fee_cents = deliveryFeeCents;
     updates.total_cents = totalCents;
   }
@@ -484,30 +467,6 @@ export async function setDeliveryAddress(
   const { error } = await supabase.from("orders").update(updates).eq("id", order.id);
   if (error) throw new Error(`Failed to save the address: ${error.message}`);
   return { deliveryFeeCents, totalCents };
-}
-
-/**
- * Record a deposit already collected on an order. 0 clears it back to null.
- * Capped at the order total, since a deposit above it would show a nonsense
- * negative balance due in the panel.
- */
-export async function recordDeposit(orderNumber: string, cents: number) {
-  const supabase = createAdminClient();
-  let value = cents > 0 ? Math.round(cents) : null;
-  if (value != null) {
-    const { data } = await supabase
-      .from("orders")
-      .select("total_cents")
-      .eq("order_number", orderNumber)
-      .maybeSingle();
-    const total = (data as { total_cents: number } | null)?.total_cents;
-    if (total != null) value = Math.min(value, total);
-  }
-  const { error } = await supabase
-    .from("orders")
-    .update({ deposit_cents: value, updated_at: new Date().toISOString() })
-    .eq("order_number", orderNumber);
-  if (error) throw new Error(`Failed to record deposit: ${error.message}`);
 }
 
 /** Save Michelle's private note on an order. An empty string clears it back to null. */
@@ -726,10 +685,7 @@ async function applyOrderPoints(
 /**
  * `manualRefundDue` says the customer paid but the app returned nothing, so
  * Michelle owes them `amountCents` by PayNow herself. `amountCents` is the order
- * total either way. `depositOwedCents` is the deposit this cancel recorded as
- * still owed, null when nothing is owed, so the panel can word its instruction
- * from the amount the server actually wrote instead of working the deposit rule
- * out a second time and drifting from it.
+ * total either way.
  *
  * On the failure side, `refundFailed` marks the one refusal Michelle is allowed
  * to override: Stripe would not return the money, so cancelling now would strand
@@ -741,7 +697,6 @@ export type CancelResult =
       refunded: boolean;
       manualRefundDue: boolean;
       amountCents: number;
-      depositOwedCents: number | null;
     }
   | { ok: false; error: string; refundFailed?: boolean };
 
@@ -762,14 +717,13 @@ export type CancelResult =
  */
 export async function cancelAndRefundOrder(
   orderNumber: string,
-  depositReturned = false,
   cancelWithoutRefund = false,
 ): Promise<CancelResult> {
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("orders")
     .select(
-      "id, status, payment_status, stripe_payment_intent_id, total_cents, deposit_cents, deposit_outstanding_cents, email, customer_name, tracking_token",
+      "id, status, payment_status, stripe_payment_intent_id, total_cents, email, customer_name, tracking_token",
     )
     .eq("order_number", orderNumber)
     .maybeSingle();
@@ -780,8 +734,6 @@ export async function cancelAndRefundOrder(
     payment_status: string;
     stripe_payment_intent_id: string | null;
     total_cents: number;
-    deposit_cents: number | null;
-    deposit_outstanding_cents: number | null;
     email: string;
     customer_name: string;
     tracking_token: string;
@@ -796,9 +748,6 @@ export async function cancelAndRefundOrder(
       refunded: order.payment_status === "refunded",
       manualRefundDue: paidOutsideStripe,
       amountCents: order.total_cents,
-      // The earlier cancel already decided this. Hand back what it recorded so a
-      // repeated cancel says the same thing rather than a fresh guess.
-      depositOwedCents: order.deposit_outstanding_cents,
     };
   }
 
@@ -809,7 +758,19 @@ export async function cancelAndRefundOrder(
   // customer would end up ahead of what they paid. Correct whichever way the
   // earlier money went: if it went through Stripe the remaining refundable
   // already equals this, so naming it changes nothing.
-  const alreadyRefundedCents = await fetchRefundedCents(order.id);
+  // Refusing the cancel is the right answer if this cannot be read. Guessing
+  // would mean refunding against an unknown, and the guess that costs money is
+  // the cheerful one.
+  let alreadyRefundedCents: number;
+  try {
+    alreadyRefundedCents = await fetchRefundedCents(order.id);
+  } catch {
+    return {
+      ok: false,
+      error:
+        "Could not check what has already gone back on this order, so nothing was cancelled or refunded. Please try again in a moment.",
+    };
+  }
   const outstandingCents = Math.max(0, order.total_cents - alreadyRefundedCents);
 
   let refunded = false;
@@ -842,32 +803,16 @@ export async function cancelAndRefundOrder(
   // was paid (Stripe card OR a PayNow/manual order marked paid here). It self
   // guards on the decrement stamp, so an order that never went paid is a no-op.
   await reversePaidSideEffects(order.id);
-  // A deposit is money already sitting in Michelle's bank that the app cannot
-  // send back for her. If she has not returned it yet, record what is owed so it
-  // stays in front of her instead of vanishing with the cancelled order.
+  // Record what the cancel sent back BEFORE marking the order, because the money
+  // has already left Stripe by this point and this row is the only record that
+  // it did. Written after the order update, a failed update ended the function
+  // early and this row was never written, so the money was gone with nothing to
+  // show it. The retry she would reasonably then make read the refund total as
+  // zero and sent the whole amount a second time.
   //
-  // Only on an order that was NOT settled in full. Once an order is paid, the
-  // deposit is part of the total that was received, and the refund (Stripe, or
-  // the manualRefundDue amount she sends by hand) already covers the whole of
-  // it. Recording the deposit again on top would tell her to return the total
-  // AND the deposit, paying the customer twice for the same cancelled order.
-  const depositCents = order.deposit_cents ?? 0;
-  const settledInFull = order.payment_status === "paid" || order.payment_status === "refunded";
-  const depositOwed = depositCents > 0 && !depositReturned && !settledInFull ? depositCents : null;
-  const { error: updErr } = await supabase
-    .from("orders")
-    .update({
-      status: "cancelled",
-      payment_status: refunded ? "refunded" : order.payment_status,
-      deposit_outstanding_cents: depositOwed,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", order.id);
-  if (updErr) return { ok: false, error: updErr.message };
-
-  // Record what the cancel itself sent back, so the order's refund total covers
-  // every cent that left rather than only the ones she typed in by hand. Without
-  // this the detail would still read "-$25 refunded" after $80 had gone.
+  // A refusal here has to stop the cancel and say so plainly. Carrying on would
+  // leave the same silent hole, and there is no honest way to describe an order
+  // whose refund cannot be accounted for.
   if (refunded && outstandingCents > 0) {
     const { error: refundLogError } = await supabase.from("order_refunds").insert({
       order_id: order.id,
@@ -877,16 +822,22 @@ export async function cancelAndRefundOrder(
     });
     if (refundLogError) {
       console.error("[cancel] could not record the refund:", refundLogError.message);
+      return {
+        ok: false,
+        error: `${formatPrice(outstandingCents)} was refunded to the customer, but it could not be saved against the order and the order is still open. Do not cancel it again, that would send the money twice. Send this to Sean.`,
+      };
     }
   }
 
-  if (depositOwed != null) {
-    try {
-      await sendDepositOwedEmail(orderNumber, order.customer_name, depositOwed);
-    } catch (emailError) {
-      console.error("[cancel] deposit owed email failed:", emailError);
-    }
-  }
+  const { error: updErr } = await supabase
+    .from("orders")
+    .update({
+      status: "cancelled",
+      payment_status: refunded ? "refunded" : order.payment_status,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", order.id);
+  if (updErr) return { ok: false, error: updErr.message };
 
   // Tell the customer, like every other status change does. Best-effort, so a
   // mail hiccup never makes a completed cancel look failed.
@@ -906,18 +857,7 @@ export async function cancelAndRefundOrder(
     refunded,
     manualRefundDue,
     amountCents: order.total_cents,
-    depositOwedCents: depositOwed,
   };
-}
-
-/** Michelle has sent a held deposit back, so stop showing it as outstanding. */
-export async function clearDepositOwed(orderNumber: string) {
-  const supabase = createAdminClient();
-  const { error } = await supabase
-    .from("orders")
-    .update({ deposit_outstanding_cents: null, updated_at: new Date().toISOString() })
-    .eq("order_number", orderNumber);
-  if (error) throw new Error(`Failed to clear the deposit owed: ${error.message}`);
 }
 
 /**
@@ -993,13 +933,24 @@ export async function fetchOrderRefunds(orderId: string): Promise<OrderRefund[]>
   }));
 }
 
-/** Total returned on one order, so revenue can subtract it. */
+/**
+ * Total returned on one order, so revenue can subtract it.
+ *
+ * Refuses rather than answering zero when the read fails. Both callers use this
+ * to decide how much more money may go back, and a swallowed error reads as
+ * "nothing has been refunded yet", which sends the customer the whole total a
+ * second time. A cancel that stops and asks her to retry costs a minute. A
+ * duplicate refund costs the order.
+ */
 export async function fetchRefundedCents(orderId: string): Promise<number> {
   const supabase = createAdminClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("order_refunds")
     .select("amount_cents")
     .eq("order_id", orderId);
+  if (error) {
+    throw new Error(`Could not check what has already been refunded: ${error.message}`);
+  }
   return ((data as { amount_cents: number }[] | null) ?? []).reduce(
     (sum, row) => sum + row.amount_cents,
     0,
@@ -1028,7 +979,7 @@ export async function removeOrderItems(orderNumber: string, itemIds: string[]): 
   const { data } = await supabase
     .from("orders")
     .select(
-      "id, status, payment_status, total_cents, subtotal_cents, delivery_fee_cents, discount_cents, promo_code, deposit_cents",
+      "id, status, payment_status, total_cents, subtotal_cents, delivery_fee_cents, discount_cents, promo_code",
     )
     .eq("order_number", orderNumber)
     .maybeSingle();
@@ -1041,7 +992,6 @@ export async function removeOrderItems(orderNumber: string, itemIds: string[]): 
     delivery_fee_cents: number;
     discount_cents: number;
     promo_code: string | null;
-    deposit_cents: number | null;
   } | null;
   if (!order) throw new Error("Order not found.");
   if (statusRequiresPayment(order.status)) {
@@ -1066,16 +1016,6 @@ export async function removeOrderItems(orderNumber: string, itemIds: string[]): 
     0,
   );
   const newSubtotal = order.subtotal_cents - removingCents;
-
-  // A deposit is money already banked against this order. Letting the total fall
-  // below it would show the customer a negative balance due and leave her
-  // holding money the order no longer accounts for.
-  const depositCents = order.deposit_cents ?? 0;
-  if (depositCents > 0 && order.total_cents - removingCents < depositCents) {
-    throw new Error(
-      `That would take the order below the ${formatPrice(depositCents)} deposit already taken. Adjust the deposit first.`,
-    );
-  }
 
   // The removal moves the subtotal and the total by the same amount and leaves
   // the delivery fee and the discount exactly as they were. That is right only

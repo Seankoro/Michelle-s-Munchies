@@ -72,12 +72,7 @@ export default function AdminAnalyticsPage() {
     const outstanding = orders.filter(
       (o) => o.paymentStatus === "pending" && o.status !== "cancelled",
     );
-    // What is genuinely still owed, so a deposit already banked is not counted
-    // as money yet to come in.
-    const toCollectCents = outstanding.reduce(
-      (s, o) => s + Math.max(0, o.totalCents - (o.depositCents ?? 0)),
-      0,
-    );
+    const toCollectCents = outstanding.reduce((s, o) => s + o.totalCents, 0);
 
     const in14 = addDays(today, 14);
     const upcoming = orders.filter(

@@ -13,7 +13,6 @@ import { geocodePostal } from "@/lib/onemap";
 import type { DistanceTier } from "@/lib/delivery-fee";
 import {
   cancelAndRefundOrder,
-  clearDepositOwed,
   createProduct,
   createPromo,
   deletePromo,
@@ -21,7 +20,6 @@ import {
   fetchAdminOrders,
   fetchAdminSettings,
   fetchPromos,
-  recordDeposit,
   recordRefund,
   removeOrderItems,
   rescheduleOrder,
@@ -255,29 +253,9 @@ export async function setDeliveryAddressAction(
   }
 }
 
-export async function recordDepositAction(orderNumber: string, cents: number): Promise<void> {
+export async function cancelOrderAction(orderNumber: string): Promise<CancelResult> {
   await requireAdmin();
-  await recordDeposit(orderNumber, cents);
-}
-
-/**
- * `depositReturned` answers the question the cancel dialog asks when the order
- * took a deposit, did the money go back or is it still owed. It defaults to
- * still owed, the safe direction, because an unanswered prompt should leave the
- * amount recorded and visible rather than quietly claim it was returned.
- */
-export async function cancelOrderAction(
-  orderNumber: string,
-  depositReturned = false,
-): Promise<CancelResult> {
-  await requireAdmin();
-  return cancelAndRefundOrder(orderNumber, depositReturned);
-}
-
-/** Michelle has settled a deposit she was still holding, so stop showing it. */
-export async function clearDepositOwedAction(orderNumber: string): Promise<void> {
-  await requireAdmin();
-  await clearDepositOwed(orderNumber);
+  return cancelAndRefundOrder(orderNumber);
 }
 
 export type RecordRefundResult = { ok: true } | { ok: false; error: string };

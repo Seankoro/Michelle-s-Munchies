@@ -577,26 +577,6 @@ export async function sendCancellationRequestEmail(
   return send(owner, `Cancellation request: ${orderNumber}`, shell("Cancellation request", body));
 }
 
-/**
- * Owner reminder that a cancelled order is still sitting on the customer's
- * deposit. The deposit came in by bank transfer, so the app cannot send it back
- * for her, and without this nothing tells her the money is still owed.
- */
-export async function sendDepositOwedEmail(
-  orderNumber: string,
-  customerName: string,
-  amountCents: number,
-): Promise<boolean> {
-  const owner = process.env.OWNER_NOTIFICATION_EMAIL;
-  if (!owner) return false;
-  const body = `
-    <p>Order <strong>${escapeHtml(orderNumber)}</strong> is cancelled, but you are still holding
-      <strong>${formatPrice(amountCents)}</strong> of
-      <strong>${escapeHtml(customerName)}</strong>&rsquo;s deposit.</p>
-    <p style="margin:8px 0">Send it back by PayNow from your banking app, then clear the outstanding deposit in Admin so it stops showing as owed.</p>`;
-  return send(owner, `Deposit still owed: ${orderNumber}`, shell("Deposit still owed", body));
-}
-
 /** Owner alert when a tracked product runs low on stock. */
 export async function sendLowStockEmail(
   to: string,

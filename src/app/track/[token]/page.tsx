@@ -21,7 +21,6 @@ import { GiftShareLink } from "@/components/track/GiftShareLink";
 import { TrackReorderButton } from "@/components/track/TrackReorderButton";
 import { fetchProducts, isUpcoming, toCardProduct } from "@/lib/products";
 import { createServerSupabase } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { getShopWhatsAppNumber, buildOrderWhatsAppUrl, buildFulfillmentLabel } from "@/lib/whatsapp";
 import { singaporeNow } from "@/lib/time";
 import { cn } from "@/lib/cn";
@@ -41,34 +40,6 @@ const deliveryFlow: OrderStatus[] = [
   "completed",
 ];
 
-/**
- * How much of a deposit Michelle has recorded as still owed back to this
- * customer, or null when nothing is owed.
- *
- * Every other field on this page arrives through get_order_by_token, whose
- * returned JSON is a deliberate allow-list of columns, and
- * deposit_outstanding_cents is newer than that function. Widening the allow-list
- * needs a migration, so the one column is read here instead, scoped to the same
- * token that already authorises the whole page. Best-effort, because a customer
- * whose order was cancelled should not meet an error page over one money line.
- */
-async function fetchDepositOwedCents(token: string): Promise<number | null> {
-  try {
-    const { data, error } = await createAdminClient()
-      .from("orders")
-      .select("deposit_outstanding_cents")
-      .eq("tracking_token", token)
-      .maybeSingle();
-    if (error) throw new Error(error.message);
-    const row = data as { deposit_outstanding_cents: number | null } | null;
-    return row?.deposit_outstanding_cents ?? null;
-  } catch (error) {
-    console.error("[track] could not read the outstanding deposit:", error);
-    Sentry.captureException(error);
-    return null;
-  }
-}
-
 export default async function TrackOrderPage({
   params,
 }: {
@@ -80,11 +51,10 @@ export default async function TrackOrderPage({
   // independent, so run them together instead of a serial waterfall.
   const [order, settings, {
     data: { user },
-  }, depositOwedCents] = await Promise.all([
+  }] = await Promise.all([
     getOrderByToken(token),
     fetchStoreSettings(),
     (await createServerSupabase()).auth.getUser(),
-    fetchDepositOwedCents(token),
   ]);
   const signedIn = Boolean(user);
 
@@ -384,33 +354,6 @@ export default async function TrackOrderPage({
             <dt>Total</dt>
             <dd>{formatPrice(order.total_cents)}</dd>
           </div>
-          {/* A cancelled order is not waiting on a balance, so these rows would be
-              asking for money nobody owes any more. The one money line a cancelled
-              order can still carry runs the other way, and it is the row below. */}
-          {order.deposit_cents != null &&
-            order.deposit_cents > 0 &&
-            !cancelled &&
-            order.payment_status !== "paid" && (
-              <>
-                <div className="flex justify-between text-rose-deep">
-                  <dt>Deposit paid</dt>
-                  <dd>−{formatPrice(order.deposit_cents)}</dd>
-                </div>
-                <div className="flex justify-between text-base font-semibold text-rose-deep">
-                  <dt>Balance due on collection</dt>
-                  <dd>{formatPrice(order.total_cents - order.deposit_cents)}</dd>
-                </div>
-              </>
-            )}
-          {/* Michelle sends a held deposit back from her banking app, so this is
-              the customer's side of the amount she is still holding, and it stays
-              until she marks it returned. */}
-          {depositOwedCents != null && depositOwedCents > 0 && (
-            <div className="flex justify-between text-base font-semibold text-rose-deep">
-              <dt>Deposit we&rsquo;re sending back</dt>
-              <dd>{formatPrice(depositOwedCents)}</dd>
-            </div>
-          )}
         </dl>
       </div>
 

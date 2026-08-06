@@ -27,7 +27,7 @@ type StaleOrderRow = {
  * time. An order is only abandoned if every one of these holds: still
  * `received`, so Michelle never even accepted it; still unpaid; no Stripe
  * PaymentIntent recorded against it, since that column means real money exists
- * for a human to reconcile; no deposit taken; no note written on it; never
+ * for a human to reconcile; no note written on it; never
  * rescheduled; nothing added to it; and its date came and went at least
  * GRACE_DAYS full days ago. Anything else means a human was involved, and a
  * human should decide.
@@ -53,7 +53,6 @@ export async function expireStaleUnpaidOrders(): Promise<number> {
     .in("payment_status", ["pending", "failed"])
     .eq("status", "received")
     .lt("scheduled_date", cutoff)
-    .or("deposit_cents.is.null,deposit_cents.eq.0")
     .is("owner_note", null)
     .eq("reschedule_count", 0)
     // A PaymentIntent on the row means real money exists against this order,

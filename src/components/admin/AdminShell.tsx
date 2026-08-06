@@ -77,7 +77,7 @@ const settingsItem: NavItem = { href: "/admin/settings", label: "Settings" };
 
 export function AdminShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { error, settings } = useAdmin();
+  const { error, settings, hydrated, refresh } = useAdmin();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawerRef = useRef<HTMLDivElement>(null);
   useDialog(drawerOpen, () => setDrawerOpen(false), drawerRef);
@@ -236,9 +236,23 @@ export function AdminShell({ children }: { children: ReactNode }) {
         {error && (
           <div
             role="alert"
-            className="border-b border-danger/30 bg-danger-soft px-5 py-2 text-center text-sm font-semibold text-danger-ink"
+            className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-danger/30 bg-danger-soft px-5 py-2 text-center text-sm font-semibold text-danger-ink"
           >
-            <span aria-hidden="true">⚠</span> {error}
+            <span>
+              <span aria-hidden="true">⚠</span> {error}
+            </span>
+            {/* Nothing below has loaded yet, so the banner has to carry the way
+                out. Without it the page sits on its loading state for good and
+                the only fix she can find is closing the tab. */}
+            {!hydrated && (
+              <button
+                type="button"
+                onClick={() => void refresh()}
+                className="rounded-full bg-danger px-3 py-1 text-xs font-semibold text-white transition hover:brightness-110 active:scale-95"
+              >
+                Try again
+              </button>
+            )}
           </div>
         )}
         {/* Keyed on the path so each page gently fades in on navigation. */}
