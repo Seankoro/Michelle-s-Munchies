@@ -392,7 +392,7 @@ export async function setDeliveryAddress(
   const { data } = await supabase
     .from("orders")
     .select(
-      "id, status, payment_status, fulfillment_type, subtotal_cents, delivery_fee_cents, discount_cents, total_cents, deposit_cents",
+      "id, status, payment_status, fulfillment_type, subtotal_cents, delivery_fee_cents, discount_cents, total_cents, deposit_cents, is_gift, recipient_token, recipient_scheduled_at",
     )
     .eq("order_number", orderNumber)
     .maybeSingle();
@@ -406,6 +406,9 @@ export async function setDeliveryAddress(
     discount_cents: number;
     total_cents: number;
     deposit_cents: number | null;
+    is_gift: boolean | null;
+    recipient_token: string | null;
+    recipient_scheduled_at: string | null;
   } | null;
   if (!order) throw new Error("Order not found.");
   if (order.status === "cancelled") {
@@ -424,9 +427,27 @@ export async function setDeliveryAddress(
   };
   const updates: Record<string, unknown> = {
     delivery_address: deliveryAddress,
-    time_window: timeWindow,
     updated_at: new Date().toISOString(),
   };
+  // Only when one was actually chosen. An order can reach here with no window,
+  // and writing a blank over the customer's own choice, or recording a window
+  // nobody picked, both send the box out at a time nobody agreed to.
+  const window = timeWindow.trim();
+  if (window) updates.time_window = window;
+  // Michelle typing the address IS the answer to the question the recipient's
+  // link asks, so record it as answered. That stamp is the one thing four other
+  // places read: unstamped, the hourly chase keeps emailing the buyer that we
+  // have no address for a gift he phoned in yesterday, his tracking page keeps
+  // offering the link to forward, the recipient's page still shows an empty
+  // form, and the link itself stays armed to overwrite what she just wrote.
+  // Stamping closes all four, and changing it afterwards goes through her,
+  // which is the rule that link already states.
+  //
+  // Only when it was never answered, so a later typo correction does not move
+  // the moment the recipient actually replied.
+  if (order.is_gift && order.recipient_token && !order.recipient_scheduled_at) {
+    updates.recipient_scheduled_at = new Date().toISOString();
+  }
   let deliveryFeeCents = order.delivery_fee_cents;
   let totalCents = order.total_cents;
   // A corrected address can land across a zone boundary, so an unpaid delivery

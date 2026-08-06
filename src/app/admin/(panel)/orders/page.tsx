@@ -402,7 +402,10 @@ function OrderDetailModal({
   const [addrLine1, setAddrLine1] = useState(order.address?.line1 ?? "");
   const [addrUnit, setAddrUnit] = useState(order.address?.unit ?? "");
   const [addrPostal, setAddrPostal] = useState(order.address?.postalCode ?? "");
-  const [addrWindow, setAddrWindow] = useState(order.timeWindow || timeWindows[0] || "");
+  // Blank, not the first window, when the order carries none. Preselecting
+  // Morning meant saving an address also recorded a delivery time nobody chose,
+  // and the box would then go out against it.
+  const [addrWindow, setAddrWindow] = useState(order.timeWindow ?? "");
   // Already open when there is nothing to deliver to, so the one thing worth
   // doing on the order is in front of her rather than behind another tap.
   const [showAddress, setShowAddress] = useState(missingAddress);
@@ -1110,6 +1113,7 @@ function OrderDetailModal({
                       onChange={(e) => setAddrWindow(e.target.value)}
                       className={cn(selectClass, "w-full")}
                     >
+                      <option value="">Not set</option>
                       {windowOptions.map((window) => (
                         <option key={window} value={window}>
                           {window}
@@ -1129,6 +1133,15 @@ function OrderDetailModal({
                       ? "This order is paid, so only the address moves. What was charged stays exactly as it is."
                       : "A new postal code can fall in a different delivery zone, so the fee and the total may change."}
                   </p>
+                  {/* Saving here counts as the recipient's answer, which is what
+                      stops the reminders and closes their link. Say so, because
+                      it is a door shutting and she is the one shutting it. */}
+                  {order.isGift && missingAddress && (
+                    <p className="text-xs text-muted">
+                      This counts as the recipient&rsquo;s answer. We stop asking them, and their
+                      link can no longer change the address. Corrections come back here.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
