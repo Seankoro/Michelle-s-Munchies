@@ -310,7 +310,7 @@ export function MenuBrowser({
         >
           {sections.map((section) => (
             <section key={section.cat} aria-label={section.cat}>
-              <h2 className="font-display text-2xl font-semibold">{section.cat}</h2>
+              <h2 className="font-display text-3xl font-semibold">{section.cat}</h2>
               <div className="mt-4">
                 <ProductRail label={section.cat} products={section.items} ratings={ratings} />
               </div>

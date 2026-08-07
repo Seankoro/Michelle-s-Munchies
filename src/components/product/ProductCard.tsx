@@ -106,7 +106,7 @@ export function ProductCard({
 
         <div className="flex flex-1 flex-col gap-3 p-4">
           <div className="flex items-start justify-between gap-2">
-            <h3 className="font-display text-lg font-semibold leading-snug">
+            <h3 className="font-display text-2xl font-semibold leading-snug">
               <Link href={detailHref} className="transition hover:text-rose-ink">
                 {product.name}
               </Link>

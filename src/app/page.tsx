@@ -203,7 +203,7 @@ export default async function HomePage() {
       <section className="bg-marble/40">
         <div className="mx-auto max-w-none px-6 py-16 lg:px-10">
           <Reveal>
-            <h2 className="text-center font-display text-3xl font-semibold sm:text-4xl">
+            <h2 className="text-center font-display text-4xl font-semibold sm:text-5xl">
               How it works
             </h2>
           </Reveal>

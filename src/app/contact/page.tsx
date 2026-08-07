@@ -89,7 +89,7 @@ export default async function ContactPage() {
             key={faq.q}
             className="group rounded-2xl border border-line bg-white p-4"
           >
-            <summary className="cursor-pointer list-none font-display text-lg font-semibold marker:hidden">
+            <summary className="cursor-pointer list-none font-display text-2xl font-semibold marker:hidden">
               <span className="flex items-center justify-between gap-3">
                 {faq.q}
                 <span className="text-rose-ink transition group-open:rotate-45" aria-hidden="true">
@@ -103,7 +103,7 @@ export default async function ContactPage() {
       </section>
 
       <section className="mt-12">
-        <h2 className="font-display text-2xl font-semibold">Get in touch</h2>
+        <h2 className="font-display text-3xl font-semibold">Get in touch</h2>
         <ul className="mt-5 grid gap-4 sm:grid-cols-3">
           {contactMethods.map((method) => {
             const card = (
