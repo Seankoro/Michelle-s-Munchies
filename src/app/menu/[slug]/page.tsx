@@ -43,7 +43,12 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
       title: product.name,
       description: product.shortDescription,
       type: "website",
-      images: product.imageUrls?.length ? [product.imageUrls[0]] : undefined,
+      // Falls back to the shop card rather than nothing. Next replaces the
+      // root openGraph wholesale once a route defines its own, so leaving this
+      // undefined strips the image from the preview entirely, which is worse
+      // than the generic card it was meant to improve on. No treat carries a
+      // photo yet, so today every one of these uses the fallback.
+      images: product.imageUrls?.length ? [product.imageUrls[0]] : ["/og.png"],
     },
   };
 }
