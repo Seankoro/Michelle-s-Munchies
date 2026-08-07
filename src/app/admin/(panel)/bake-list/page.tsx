@@ -3,7 +3,8 @@
 import { useMemo } from "react";
 import { useAdmin } from "@/components/admin/AdminStore";
 import { PanelLoading } from "@/components/admin/PanelLoading";
-import { formatLongDate, toISODate, windowRank } from "@/lib/order";
+import { formatLongDate, windowRank } from "@/lib/order";
+import { singaporeDateString } from "@/lib/time";
 import { buildOrdersIcs } from "@/lib/ics";
 import { useTickList } from "@/lib/useTickList";
 import { cn } from "@/lib/cn";
@@ -51,8 +52,18 @@ export default function AdminBakeListPage() {
 
     // Order each day's windows by the owner's own list, so the sequence reads
     // earliest-slot-first: what has to come out of the oven soonest.
+    const today = singaporeDateString();
     return [...byDate.entries()]
-      .sort((a, b) => a[0].localeCompare(b[0])) // soonest first
+      .sort((a, b) => {
+        // Overdue days drop below the live ones rather than being hidden. A
+        // paid order whose date slipped still has to be baked, so filtering it
+        // out the way the packing and shopping screens do would quietly lose
+        // work she has already been paid for.
+        const aPast = a[0] < today;
+        const bPast = b[0] < today;
+        if (aPast !== bPast) return aPast ? 1 : -1;
+        return a[0].localeCompare(b[0]);
+      })
       .map(([date, day]) => ({
         date,
         orderCount: day.orderCount,
@@ -64,7 +75,9 @@ export default function AdminBakeListPage() {
   }, [orders, settings.timeWindows]);
 
   function exportCalendar() {
-    const today = toISODate(new Date());
+    // Singapore time, like every other date decision here. The browser clock
+    // could be anywhere, and this one picks which day is highlighted.
+    const today = singaporeDateString();
     const upcoming = orders
       .filter((o) => o.status !== "cancelled" && o.scheduledDate >= today)
       .map((o) => ({
@@ -132,7 +145,14 @@ export default function AdminBakeListPage() {
                 className="rounded-2xl border border-line bg-white p-5"
               >
                 <div className="flex flex-wrap items-baseline justify-between gap-3">
-                  <h2 className="font-display text-lg font-semibold">{formatLongDate(day.date)}</h2>
+                  <h2 className="font-display text-lg font-semibold">
+                    {formatLongDate(day.date)}
+                    {day.date < singaporeDateString() && (
+                      <span className="ml-2 rounded-full bg-warning-soft px-2 py-0.5 align-middle text-xs font-semibold text-warning-ink">
+                        Overdue
+                      </span>
+                    )}
+                  </h2>
                   <span className="text-sm text-muted">
                     {day.orderCount} {day.orderCount === 1 ? "order" : "orders"}
                     {doneCount > 0 && ` · ${doneCount}/${day.items.length} done`}

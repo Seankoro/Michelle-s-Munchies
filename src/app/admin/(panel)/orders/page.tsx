@@ -196,13 +196,13 @@ export default function AdminOrdersPage() {
       </div>
 
       <div className="mt-4 overflow-x-auto rounded-2xl border border-line bg-white">
-        <table className="w-full min-w-[760px] text-left text-sm">
+        <table className="w-full min-w-[560px] text-left text-sm">
           <thead className="border-b border-line bg-marble/40 text-muted">
             <tr>
               <th className="px-4 py-3 font-semibold">Order</th>
               <th className="px-4 py-3 font-semibold">Customer</th>
-              <th className="px-4 py-3 font-semibold">Fulfilment</th>
-              <th className="px-4 py-3 font-semibold">Ordered</th>
+              <th className="hidden px-4 py-3 font-semibold sm:table-cell">Fulfilment</th>
+              <th className="hidden px-4 py-3 font-semibold sm:table-cell">Ordered</th>
               <th className="px-4 py-3 font-semibold text-rose-ink">Bake for</th>
               <th className="px-4 py-3 font-semibold">Total</th>
               <th className="px-4 py-3 font-semibold">Status</th>
@@ -230,8 +230,13 @@ export default function AdminOrdersPage() {
                   {order.orderNumber}
                 </td>
                 <td className="px-4 py-3">{order.name}</td>
-                <td className="px-4 py-3 capitalize text-muted">{order.fulfillmentType}</td>
-                <td className="whitespace-nowrap px-4 py-3 text-muted">
+                {/* Dropped below sm so Status and Payment, the two she actually
+                    acts on, fit without a sideways swipe. Both are still on the
+                    order itself. */}
+                <td className="hidden px-4 py-3 capitalize text-muted sm:table-cell">
+                  {order.fulfillmentType}
+                </td>
+                <td className="hidden whitespace-nowrap px-4 py-3 text-muted sm:table-cell">
                   {orderedOn(order.createdAt)}
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 font-semibold text-rose-ink">

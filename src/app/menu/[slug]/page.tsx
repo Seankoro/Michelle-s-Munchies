@@ -93,15 +93,40 @@ export default async function ProductDetailPage({ params }: Params) {
     description: product.shortDescription,
     url: `${siteUrl}/menu/${product.slug}`,
     ...(product.imageUrls && product.imageUrls.length > 0 ? { image: product.imageUrls } : {}),
-    offers: {
-      "@type": "Offer",
-      priceCurrency: "SGD",
-      price: (product.basePriceCents / 100).toFixed(2),
-      availability: product.isAvailable
+    // A product with options has no single price, and the page says so by
+    // showing a "from" price. Declaring one exact figure to Google invites a
+    // rich result quoting a price the customer cannot actually buy at.
+    offers: (() => {
+      const availability = product.isAvailable
         ? "https://schema.org/InStock"
-        : "https://schema.org/OutOfStock",
-      url: `${siteUrl}/menu/${product.slug}`,
-    },
+        : "https://schema.org/OutOfStock";
+      const url = `${siteUrl}/menu/${product.slug}`;
+      const low = product.basePriceCents;
+      // The dearest reachable combination, taking the priciest value in each
+      // group that has one.
+      const high = (product.options ?? []).reduce(
+        (total, option) =>
+          total + Math.max(0, ...(option.values ?? []).map((v) => v.priceDeltaCents ?? 0)),
+        low,
+      );
+      if (high <= low) {
+        return {
+          "@type": "Offer",
+          priceCurrency: "SGD",
+          price: (low / 100).toFixed(2),
+          availability,
+          url,
+        };
+      }
+      return {
+        "@type": "AggregateOffer",
+        priceCurrency: "SGD",
+        lowPrice: (low / 100).toFixed(2),
+        highPrice: (high / 100).toFixed(2),
+        availability,
+        url,
+      };
+    })(),
     ...(reviews.length > 0
       ? {
           aggregateRating: {

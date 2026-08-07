@@ -351,10 +351,11 @@
   body:has(.print-only-target) .print-only-target * {
     visibility: visible;
   }
+  /* Deliberately NOT position: absolute. Taking the target out of normal flow
+     is what stops WebKit paginating it, so Safari printed page one of a bake
+     sheet and dropped the rest. Left in flow it paginates properly, and the
+     visibility rules above still blank everything around it. */
   body:has(.print-only-target) .print-only-target {
-    position: absolute;
-    left: 0;
-    top: 0;
     width: 100%;
   }
   .print-hide {

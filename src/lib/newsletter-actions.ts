@@ -12,6 +12,7 @@ import {
   countActiveSubscribers,
 } from "@/lib/newsletter";
 import { EMAIL_RE, escapeHtml } from "@/lib/text";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 /** Plain text to email HTML: blank lines split paragraphs, single newlines break lines. */
 function renderNewsletterHtml(body: string): string {
@@ -61,7 +62,9 @@ export async function newsletterAudienceAction(): Promise<{ count: number }> {
   return { count: await countActiveSubscribers() };
 }
 
-export type SendResult = { ok: true; sent: number } | { ok: false; error: string };
+export type SendResult =
+  | { ok: true; sent: number; skipped: number }
+  | { ok: false; error: string };
 
 /** Admin send, composes the body from plain text and emails every subscriber. */
 export async function sendNewsletterAction(subject: string, body: string): Promise<SendResult> {
@@ -80,17 +83,49 @@ export async function sendNewsletterAction(subject: string, body: string): Promi
   // Count what actually reached the provider, not what we attempted, so the
   // "sent to N people" confirmation is not quietly wrong when sends fail.
   let sent = 0;
+  let skipped = 0;
+  const trimmedSubject = subject.trim();
+  // A run that dies partway used to leave nothing behind, so finishing it meant
+  // mailing everyone at the top of the list a second time. Each subscriber is
+  // stamped as their mail goes, and anyone already carrying this same subject
+  // within the last day is stepped over, so sending again finishes the job
+  // instead of repeating it.
+  const resumeCutoff = Date.now() - 24 * 60 * 60_000;
+  const admin = createAdminClient();
   for (const sub of subscribers) {
     if (suppressed.has(sub.email.trim().toLowerCase())) continue;
+    if (
+      sub.lastNewsletterSubject === trimmedSubject &&
+      sub.lastNewsletterAt != null &&
+      new Date(sub.lastNewsletterAt).getTime() > resumeCutoff
+    ) {
+      skipped += 1;
+      continue;
+    }
     const delivered = await sendNewsletterEmail(
       sub.email,
-      subject.trim(),
+      trimmedSubject,
       bodyHtml,
       sub.unsubscribeToken,
     );
-    if (delivered) sent += 1;
+    if (!delivered) continue;
+    sent += 1;
+    // Stamped only after the provider accepted it, so a failure is retried
+    // rather than silently counted as delivered.
+    const { error: stampError } = await admin
+      .from("newsletter_subscribers")
+      .update({
+        last_newsletter_at: new Date().toISOString(),
+        last_newsletter_subject: trimmedSubject,
+      })
+      .eq("id", sub.id);
+    if (stampError) {
+      // Worth knowing, but not worth stopping a send over. The cost is that this
+      // one person could receive it twice if the run is resumed.
+      console.error("[newsletter] could not record the send for", sub.email, stampError.message);
+    }
   }
-  return { ok: true, sent };
+  return { ok: true, sent, skipped };
 }
 
 export type TestResult = { ok: true; email: string } | { ok: false; error: string };

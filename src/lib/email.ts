@@ -142,6 +142,11 @@ function itemRows(order: OrderEmailData): string {
  * token is optional so callers that have no suppression token still compile,
  * and with none there is nothing to link to.
  */
+/** The one-click opt-out URL for a marketing send, matching the footer link. */
+function marketingOptOutUrl(optOutToken?: string): string | undefined {
+  return optOutToken ? `${SITE_URL}/unsubscribe/marketing/${encodeURIComponent(optOutToken)}` : undefined;
+}
+
 function marketingFooter(optOutToken?: string): string {
   if (!optOutToken) return "";
   return `<p style="margin:24px 0 0;font-size:12px;color:#8b746d;text-align:center">
@@ -195,7 +200,20 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
  * "already sent" state must only do so when this returns true, or a rejected
  * send silently marks the recipient as mailed and they never hear from us.
  */
-async function send(to: string, subject: string, html: string): Promise<boolean> {
+async function send(
+  to: string,
+  subject: string,
+  html: string,
+  /**
+   * Absolute opt-out URL for a marketing send. When present, the mail carries
+   * List-Unsubscribe so Gmail and Apple Mail show their own unsubscribe control
+   * beside the sender, instead of leaving Report Spam as the easier tap. That
+   * matters here because these go out from the same address as the order
+   * confirmations, so a spam complaint costs delivery of mail people are
+   * waiting for. Left off for transactional mail, which must not carry it.
+   */
+  optOutUrl?: string,
+): Promise<boolean> {
   const resend = getResend();
   if (!resend) {
     console.warn(`[email] RESEND_API_KEY not set, skipping "${subject}" to ${to}`);
@@ -204,7 +222,20 @@ async function send(to: string, subject: string, html: string): Promise<boolean>
   try {
     const { error } = await queueSend(() =>
       withTimeout(
-        resend.emails.send({ from: FROM, to, subject, html }),
+        resend.emails.send({
+          from: FROM,
+          to,
+          subject,
+          html,
+          ...(optOutUrl
+            ? {
+                headers: {
+                  "List-Unsubscribe": `<${optOutUrl}>`,
+                  "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+                },
+              }
+            : {}),
+        }),
         SEND_TIMEOUT_MS,
         `Resend send of "${subject}"`,
       ),
@@ -317,7 +348,7 @@ export async function sendStatusEmail(params: {
     <p>Hi ${escapeHtml(params.name.split(" ")[0])}, ${line}</p>
     <p style="margin:8px 0"><strong>Order ${params.orderNumber}</strong> is now
       <strong style="color:#bc4a6a">${label}</strong>.</p>`;
-  return send(params.email, `Order ${params.orderNumber}: ${label}`, shell("Order update", body, params.trackingToken));
+  return send(params.email, `${label} · ${params.orderNumber}`, shell("Order update", body, params.trackingToken));
 }
 
 /** Customer notification when an order is cancelled, with the refund status. */
@@ -358,7 +389,7 @@ export async function sendRescheduleEmail(params: {
     <p style="margin:8px 0"><strong>Order ${params.orderNumber}</strong> is now set for
       <strong style="color:#bc4a6a">${when}</strong>.</p>
     <p style="margin:8px 0;font-size:13px;color:#8b746d">If this doesn&rsquo;t work for you, just reply or reach out on WhatsApp and we&rsquo;ll sort it out.</p>`;
-  return send(params.email, `Order ${params.orderNumber}: new date`, shell("Order rescheduled", body, params.trackingToken));
+  return send(params.email, `New date confirmed · ${params.orderNumber}`, shell("Order rescheduled", body, params.trackingToken));
 }
 
 /**
@@ -500,7 +531,7 @@ export async function sendWinbackEmail(
       <a href="${SITE_URL}/menu" style="display:inline-block;background:#bc4a6a;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:999px">See what&rsquo;s fresh</a>
     </p>
     ${marketingFooter(optOutToken)}`;
-  return send(to, "We miss you at Michelle's Munchies 🎀", shell("Come back for a treat", body));
+  return send(to, "We miss you at Michelle's Munchies 🎀", shell("Come back for a treat", body), marketingOptOutUrl(optOutToken));
 }
 
 /** Reminder that a saved occasion is coming up, with a nudge to reorder in time. */
@@ -525,7 +556,7 @@ export async function sendOccasionReminderEmail(
       <a href="${SITE_URL}/menu" style="display:inline-block;background:#bc4a6a;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:999px">Order a treat</a>
     </p>
     ${marketingFooter(optOutToken)}`;
-  return send(to, `${label} is coming up 🎀`, shell("A treat-worthy date is near", body));
+  return send(to, `${label} is coming up 🎀`, shell("A treat-worthy date is near", body), marketingOptOutUrl(optOutToken));
 }
 
 /** Gentle nudge for a cart that was started but not checked out. */
@@ -544,7 +575,7 @@ export async function sendAbandonedCartEmail(
       <a href="${SITE_URL}/cart" style="display:inline-block;background:#bc4a6a;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:999px">Finish your order</a>
     </p>
     ${marketingFooter(optOutToken)}`;
-  return send(to, "Still thinking it over? 🎀", shell("Your cart is waiting", body));
+  return send(to, "Still thinking it over? 🎀", shell("Your cart is waiting", body), marketingOptOutUrl(optOutToken));
 }
 
 /** Send one newsletter email with an unsubscribe link in the footer. */
@@ -560,7 +591,7 @@ export async function sendNewsletterEmail(
       You're getting this because you signed up at Michelle's Munchies.
       <a href="${unsubUrl}" style="color:#8b746d">Unsubscribe</a>.
     </p>`;
-  return send(to, subject, shell(subject, body));
+  return send(to, subject, shell(subject, body), `${SITE_URL}/unsubscribe?token=${encodeURIComponent(unsubscribeToken)}`);
 }
 
 /** Owner alert, a customer has asked to cancel an order. */
@@ -604,7 +635,7 @@ export async function sendBirthdayEmail(
       <a href="${SITE_URL}/menu" style="display:inline-block;background:#bc4a6a;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:999px">Treat yourself</a>
     </p>
     ${marketingFooter(optOutToken)}`;
-  return send(to, "Happy birthday! 🎂 A treat from us", shell("Happy birthday!", body));
+  return send(to, "Happy birthday! 🎂 A treat from us", shell("Happy birthday!", body), marketingOptOutUrl(optOutToken));
 }
 
 /** "It's back!" email when a previously sold-out product is available again. */

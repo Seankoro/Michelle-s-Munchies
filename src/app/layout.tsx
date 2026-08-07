@@ -10,6 +10,7 @@ import "./globals.css";
 // leaving the page unhydrated, so static prerendering must stay off site-wide.
 export const dynamic = "force-dynamic";
 import { SiteChrome } from "@/components/layout/SiteChrome";
+import { getStripe } from "@/lib/stripe";
 import type { FooterChannel } from "@/components/layout/SiteFooter";
 import { CartProvider } from "@/components/cart/CartContext";
 import { fetchFeatureFlags } from "@/lib/settings";
@@ -77,6 +78,10 @@ export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const features = await fetchFeatureFlags();
+  // Whether checkout actually ends on a Stripe page. Read here on the server,
+  // because getStripe is server-only and the checkout page is a client
+  // component that was previously guessing.
+  const paymentsEnabled = getStripe() !== null;
 
   // Contact channels light up as footer links once their env values are set.
   // Computed here because the footer renders inside the client SiteChrome and
@@ -98,7 +103,7 @@ export default async function RootLayout({
     <html lang="en" className={`${fraunces.variable} ${nunito.variable} ${handwriting.variable}`}>
       <body>
         <CartProvider>
-          <SiteChrome features={features} footerChannels={footerChannels}>
+          <SiteChrome features={features} footerChannels={footerChannels} paymentsEnabled={paymentsEnabled}>
             {children}
           </SiteChrome>
         </CartProvider>

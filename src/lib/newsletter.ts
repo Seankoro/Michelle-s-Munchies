@@ -79,7 +79,15 @@ export async function unsubscribeByToken(token: string): Promise<boolean> {
   return Boolean(data);
 }
 
-export type Subscriber = { email: string; unsubscribeToken: string };
+export type Subscriber = {
+  id: string;
+  email: string;
+  unsubscribeToken: string;
+  /** When this subscriber was last sent a broadcast, so a broken run can resume. */
+  lastNewsletterAt: string | null;
+  /** The subject they were last sent, which is what identifies the run. */
+  lastNewsletterSubject: string | null;
+};
 
 /** How many contacts an admin send would reach right now. Confirmed only. */
 export async function countActiveSubscribers(): Promise<number> {
@@ -97,11 +105,24 @@ export async function listActiveSubscribers(): Promise<Subscriber[]> {
   const supabase = createAdminClient();
   const { data } = await supabase
     .from("newsletter_subscribers")
-    .select("email, unsubscribe_token")
+    .select("id, email, unsubscribe_token, last_newsletter_at, last_newsletter_subject")
     .is("unsubscribed_at", null)
     .not("confirmed_at", "is", null);
-  return ((data as { email: string; unsubscribe_token: string }[] | null) ?? []).map((r) => ({
+  return (
+    (data as
+      | {
+          id: string;
+          email: string;
+          unsubscribe_token: string;
+          last_newsletter_at: string | null;
+          last_newsletter_subject: string | null;
+        }[]
+      | null) ?? []
+  ).map((r) => ({
+    id: r.id,
     email: r.email,
     unsubscribeToken: r.unsubscribe_token,
+    lastNewsletterAt: r.last_newsletter_at,
+    lastNewsletterSubject: r.last_newsletter_subject,
   }));
 }

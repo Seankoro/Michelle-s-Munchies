@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { SiteHeader } from "./SiteHeader";
 import { SiteFooter, type FooterChannel } from "./SiteFooter";
 import { WishlistProvider } from "@/components/wishlist/WishlistContext";
-import { FeaturesProvider } from "@/components/features/FeaturesProvider";
+import { FeaturesProvider, PaymentsProvider } from "@/components/features/FeaturesProvider";
 import type { FeatureFlags } from "@/lib/settings";
 
 /**
@@ -18,10 +18,13 @@ export function SiteChrome({
   children,
   features,
   footerChannels,
+  paymentsEnabled,
 }: {
   children: ReactNode;
   features: FeatureFlags;
   footerChannels: FooterChannel[];
+  /** True when checkout ends on a Stripe payment page rather than WhatsApp. */
+  paymentsEnabled: boolean;
 }) {
   const pathname = usePathname();
   const isAdmin = pathname?.startsWith("/admin");
@@ -30,6 +33,7 @@ export function SiteChrome({
 
   return (
     <FeaturesProvider value={features}>
+      <PaymentsProvider value={paymentsEnabled}>
       <WishlistProvider>
         {/* Skip link: keyboard/screen-reader users bypass the header nav. */}
         <a
@@ -44,6 +48,7 @@ export function SiteChrome({
         </div>
         <SiteFooter channels={footerChannels} />
       </WishlistProvider>
+      </PaymentsProvider>
     </FeaturesProvider>
   );
 }

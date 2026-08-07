@@ -36,7 +36,10 @@ export default function AdminNewsletterPage() {
       if (result.ok) {
         setMessage({
           kind: "ok",
-          text: `Sent to ${result.sent} subscriber${result.sent === 1 ? "" : "s"}.`,
+          text:
+            result.skipped > 0
+              ? `Sent to ${result.sent} subscriber${result.sent === 1 ? "" : "s"}. ${result.skipped} already had this one, so they were skipped.`
+              : `Sent to ${result.sent} subscriber${result.sent === 1 ? "" : "s"}.`,
         });
         setSubject("");
         setBody("");
@@ -49,7 +52,7 @@ export default function AdminNewsletterPage() {
       // so warn her before she sends the same thing again.
       setMessage({
         kind: "error",
-        text: "Couldn’t finish sending. Some subscribers may already have it, so check before you send again.",
+        text: "Sending stopped partway. Send again to finish it, nobody gets this one twice.",
       });
     } finally {
       setBusy(null);

@@ -34,7 +34,7 @@ import { fetchClientSettingsRow } from "@/lib/client-settings";
 import { singaporeNow } from "@/lib/time";
 import { isValidSgPhone, normalizeSgPhone } from "@/lib/phone";
 import { EMAIL_RE } from "@/lib/text";
-import { useFeatures } from "@/components/features/FeaturesProvider";
+import { useFeatures, usePaymentsEnabled } from "@/components/features/FeaturesProvider";
 import { CutoffBanner } from "@/components/checkout/CutoffBanner";
 import { buttonClasses } from "@/components/ui/Button";
 import { MascotSays } from "@/components/ui/MascotSays";
@@ -117,6 +117,8 @@ export default function CheckoutPage() {
   const [newsletterOptIn, setNewsletterOptIn] = useState(false);
   const [dietaryConflicts, setDietaryConflicts] = useState<string[]>([]);
   const features = useFeatures();
+  // Drives every line on this page that says when money changes hands.
+  const paymentsEnabled = usePaymentsEnabled();
   const earliest = useMemo(
     () => earliestFulfillmentDate(settings.leadTimeDays, singaporeNow(), settings.dailyCutoffTime),
     [settings.leadTimeDays, settings.dailyCutoffTime],
@@ -603,7 +605,10 @@ export default function CheckoutPage() {
       <p className="mt-2 text-muted">No account needed. Just a few details and you&rsquo;re set.</p>
       {/* Answer "when do I pay?" before the form starts, not in a footnote. */}
       <ol className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm font-semibold">
-        {["Your details", "Confirm on WhatsApp", "Pay by PayNow"].map((step, index) => (
+        {(paymentsEnabled
+          ? ["Your details", "Pay securely", "We start baking"]
+          : ["Your details", "Confirm on WhatsApp", "Pay by PayNow"]
+        ).map((step, index) => (
           <li key={step} className="flex items-center gap-2">
             {index > 0 && (
               <span aria-hidden="true" className="text-muted">
@@ -1115,9 +1120,9 @@ export default function CheckoutPage() {
             </dl>
 
             <p className="mt-4 rounded-xl bg-marble/60 px-3 py-2 text-sm text-muted">
-              No payment is taken here. Place your order, then send it to us on WhatsApp from the
-              next page. We&rsquo;ll confirm it and reply with PayNow details so you can pay by
-              transfer.
+              {paymentsEnabled
+                ? "You'll pay on the next page. Card and PayNow both work, and we start baking once it goes through."
+                : "No payment is taken here. Place your order, then send it to us on WhatsApp from the next page. We'll confirm it and reply with PayNow details so you can pay by transfer."}
             </p>
 
             {dietaryConflicts.length > 0 && (
@@ -1148,7 +1153,9 @@ export default function CheckoutPage() {
                   : `Place order · ${formatPrice(totalCents)}`}
             </button>
             <p className="mt-2 text-center text-xs text-muted">
-              You&rsquo;ll pay by PayNow after confirming on WhatsApp.
+              {paymentsEnabled
+                ? "You'll pay securely on the next page."
+                : "You'll pay by PayNow after confirming on WhatsApp."}
             </p>
             <Link
               href="/cart"

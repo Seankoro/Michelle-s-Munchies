@@ -72,7 +72,11 @@ export async function createCheckoutSession(
     line_items: lineItems,
     discounts,
     success_url: `${siteUrl}/track/${input.trackingToken}`,
-    cancel_url: `${siteUrl}/checkout`,
+    // Back to the order, not to an empty checkout form. The order already
+    // exists by the time Stripe is reached, so sending them to /checkout invited
+    // a second one, and the tracking page is where the WhatsApp and PayNow
+    // handoff already lives for an order that has not been paid.
+    cancel_url: `${siteUrl}/track/${input.trackingToken}`,
     metadata: {
       order_number: input.orderNumber,
       tracking_token: input.trackingToken,

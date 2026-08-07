@@ -15,7 +15,29 @@ export function ShareWishlistButton() {
 
   async function share() {
     setStatus("loading");
-    const result = await getWishlistShareLinkAction();
+    // Safari only allows a clipboard write while the tap that triggered it is
+    // still being handled, and awaiting the server first spends that. Handing it
+    // a ClipboardItem wrapping the pending promise keeps the write attached to
+    // the original tap, which is the one case Safari supports for exactly this.
+    const pending = getWishlistShareLinkAction();
+    if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+      try {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/plain": pending.then((r) =>
+              r.ok ? new Blob([r.url], { type: "text/plain" }) : Promise.reject(new Error(r.error)),
+            ),
+          }),
+        ]);
+        setStatus("copied");
+        window.setTimeout(() => setStatus("idle"), 2000);
+        return;
+      } catch {
+        // Fall through to the plain path below, which still works everywhere
+        // else and ends in a prompt the customer can copy from by hand.
+      }
+    }
+    const result = await pending;
     if (!result.ok) {
       setStatus("error");
       setMessage(result.error);
