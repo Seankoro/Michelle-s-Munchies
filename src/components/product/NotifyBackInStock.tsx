@@ -63,7 +63,7 @@ export function NotifyBackInStock({
         role="status"
         aria-live="polite"
         tabIndex={-1}
-        className="mt-4 rounded-xl bg-blush-soft/60 px-4 py-3 text-sm text-rose-deep"
+        className="mt-4 rounded-xl bg-blush-soft/60 px-4 py-3 text-sm text-rose-ink"
       >
         {message}
       </div>
@@ -80,7 +80,7 @@ export function NotifyBackInStock({
           onChange={(e) => setEmail(e.target.value)}
           placeholder="you@email.com"
           aria-label="Email address"
-          className="flex-1 rounded-xl border border-line bg-white px-3 py-2 text-sm focus:border-rose"
+          className="flex-1 rounded-xl border border-line bg-white px-3 py-2 text-base focus:border-rose sm:text-sm"
         />
         <button
           type="submit"
@@ -92,7 +92,7 @@ export function NotifyBackInStock({
       </div>
       {status === "error" && (
         <div ref={statusRef} role="status" aria-live="polite" tabIndex={-1}>
-          <p className="mt-2 text-sm text-rose-deep">{message}</p>
+          <p className="mt-2 text-sm text-rose-ink">{message}</p>
         </div>
       )}
     </form>

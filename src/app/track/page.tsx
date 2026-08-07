@@ -72,7 +72,7 @@ export default function TrackLookupPage() {
             <p className="mt-1 text-xs text-muted">It&rsquo;s in your confirmation email.</p>
           </div>
 
-          {error && <p className="text-sm text-rose-deep">{error}</p>}
+          {error && <p className="text-sm text-rose-ink">{error}</p>}
 
           <Button type="submit" size="lg" disabled={loading} className="w-full">
             {loading ? "Finding…" : "Find my order"}
@@ -81,7 +81,7 @@ export default function TrackLookupPage() {
 
         <p className="mt-6 text-center text-sm text-muted">
           Have an account?{" "}
-          <Link href="/account" className="font-semibold text-rose-deep hover:text-rose">
+          <Link href="/account" className="font-semibold text-rose-ink hover:text-rose">
             See all your orders
           </Link>
         </p>

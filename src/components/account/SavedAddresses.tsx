@@ -86,7 +86,7 @@ export function SavedAddresses() {
               <button
                 type="button"
                 onClick={() => remove(address.id)}
-                className="shrink-0 text-xs font-semibold text-muted transition hover:text-rose-deep"
+                className="shrink-0 text-xs font-semibold text-muted transition hover:text-rose-ink"
               >
                 Remove
               </button>
@@ -129,7 +129,7 @@ export function SavedAddresses() {
           Add address
         </Button>
       </div>
-      {error && <p className="mt-2 text-sm text-rose-deep">{error}</p>}
+      {error && <p className="mt-2 text-sm text-rose-ink">{error}</p>}
     </div>
   );
 }

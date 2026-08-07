@@ -84,14 +84,24 @@ export function WishlistProvider({ children }: { children: ReactNode }) {
       // The Supabase query builder is lazy, it only runs when awaited, so we
       // execute it inside a fire-and-forget async IIFE to keep toggle synchronous.
       void (async () => {
-        if (wasFavourite) {
-          await supabase
-            .from("wishlists")
-            .delete()
-            .eq("user_id", userId)
-            .eq("product_id", productId);
-        } else {
-          await supabase.from("wishlists").insert({ user_id: userId, product_id: productId });
+        const { error } = wasFavourite
+          ? await supabase
+              .from("wishlists")
+              .delete()
+              .eq("user_id", userId)
+              .eq("product_id", productId)
+          : await supabase.from("wishlists").insert({ user_id: userId, product_id: productId });
+        // Put just this one back if it did not save, so the bow on screen always
+        // matches what is actually stored. Only this id, and through a
+        // functional update, so a tap on another treat meanwhile is not undone.
+        if (error) {
+          console.error("[wishlist] could not save the change:", error.message);
+          setIds((prev) => {
+            const next = new Set(prev);
+            if (wasFavourite) next.add(productId);
+            else next.delete(productId);
+            return next;
+          });
         }
       })();
     },

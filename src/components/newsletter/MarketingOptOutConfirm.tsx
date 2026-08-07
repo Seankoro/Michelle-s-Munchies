@@ -29,7 +29,7 @@ export function MarketingOptOutConfirm({ token }: { token: string }) {
           You&rsquo;ll still get updates about any order you place, so you always know when your
           treats are ready.
         </p>
-        <Link href="/" className="mt-4 block text-sm font-semibold text-rose-deep hover:text-rose">
+        <Link href="/" className="mt-4 block text-sm font-semibold text-rose-ink hover:text-rose">
           Back to the bakery
         </Link>
       </div>
@@ -46,8 +46,8 @@ export function MarketingOptOutConfirm({ token }: { token: string }) {
       >
         {state === "busy" ? "Saving…" : "Stop sending these"}
       </button>
-      {state === "error" && <p className="mt-3 text-sm text-rose-deep">{error}</p>}
-      <Link href="/" className="mt-4 block text-sm font-semibold text-rose-deep hover:text-rose">
+      {state === "error" && <p className="mt-3 text-sm text-rose-ink">{error}</p>}
+      <Link href="/" className="mt-4 block text-sm font-semibold text-rose-ink hover:text-rose">
         Back to the bakery
       </Link>
     </div>

@@ -125,7 +125,7 @@ export function AddToOrderPanel({ token, products }: { token: string; products: 
           <button
             type="button"
             onClick={() => setOpen(true)}
-            className="shrink-0 rounded-full border border-line px-4 py-2 text-sm font-semibold text-rose-deep transition hover:border-rose active:scale-95"
+            className="shrink-0 rounded-full border border-line px-4 py-2 text-sm font-semibold text-rose-ink transition hover:border-rose active:scale-95"
           >
             Add treats
           </button>
@@ -189,7 +189,7 @@ export function AddToOrderPanel({ token, products }: { token: string; products: 
                       <fieldset key={option.id}>
                         <legend className="mb-1.5 text-xs font-semibold text-ink">
                           {option.name}
-                          {option.required && <span className="ml-1 text-rose-deep">*</span>}
+                          {option.required && <span className="ml-1 text-rose-ink">*</span>}
                           {/* Several lines can each show a "Size" group, so name
                               the treat for screen readers without repeating it
                               on screen. */}
@@ -261,7 +261,7 @@ export function AddToOrderPanel({ token, products }: { token: string; products: 
       {message && (
         <p
           role="status"
-          className={cn("mt-3 text-sm", message.kind === "ok" ? "text-success" : "text-rose-deep")}
+          className={cn("mt-3 text-sm", message.kind === "ok" ? "text-success" : "text-rose-ink")}
         >
           {message.text}
         </p>

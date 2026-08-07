@@ -59,7 +59,7 @@ function ForgotPasswordForm() {
           </div>
 
           {error && (
-            <p role="alert" className="text-sm text-rose-deep">
+            <p role="alert" className="text-sm text-rose-ink">
               {error}
             </p>
           )}
@@ -67,7 +67,7 @@ function ForgotPasswordForm() {
             <p
               role="status"
               aria-live="polite"
-              className="rounded-xl bg-blush-soft/60 px-3 py-2 text-sm text-rose-deep"
+              className="rounded-xl bg-blush-soft/60 px-3 py-2 text-sm text-rose-ink"
             >
               {pending}
             </p>
@@ -80,7 +80,7 @@ function ForgotPasswordForm() {
 
         <p className="mt-6 text-center text-sm text-muted">
           Remembered it?{" "}
-          <Link href="/account/sign-in" className="font-semibold text-rose-deep hover:text-rose">
+          <Link href="/account/sign-in" className="font-semibold text-rose-ink hover:text-rose">
             Back to sign in
           </Link>
         </p>

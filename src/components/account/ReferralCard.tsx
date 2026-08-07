@@ -27,14 +27,14 @@ export function ReferralCard({
 
   return (
     <div className="rounded-2xl bg-blush-soft/70 p-5">
-      <p className="text-sm font-semibold text-rose-deep">🎁 Invite friends</p>
+      <p className="text-sm font-semibold text-rose-ink">🎁 Invite friends</p>
       <p className="mt-1 text-sm text-ink">
         Share your code. When a friend places their first order, you earn{" "}
         <span className="font-semibold">{referrerPoints} points</span> and they get{" "}
         <span className="font-semibold">{refereePoints}</span>.
       </p>
       <div className="mt-3 flex flex-wrap items-center gap-3">
-        <span className="rounded-xl border border-line bg-white px-4 py-2 font-display text-lg font-semibold tracking-[0.2em] text-ink">
+        <span className="rounded-xl border border-line bg-white px-4 py-2 text-lg font-semibold tracking-[0.2em] text-ink">
           {code}
         </span>
         <Button type="button" size="sm" onClick={copyLink}>

@@ -82,10 +82,14 @@ export function ReviewForm({
             onMouseLeave={() => setHover(0)}
             className={cn(
               "text-2xl leading-none transition",
-              (hover || rating) >= star ? "text-rose-deep" : "text-line",
+              (hover || rating) >= star ? "text-rose-ink" : "text-muted",
             )}
           >
-            ★
+            {/* An outline for the ones not chosen, so the control is visible
+                before anyone has rated. Filled-and-pale against
+                filled-and-pink read as one faint shape on a bright phone, and
+                colour was the only thing telling them apart. */}
+            {(hover || rating) >= star ? "★" : "☆"}
           </button>
         ))}
       </div>
@@ -94,7 +98,7 @@ export function ReviewForm({
         onChange={(e) => setBody(e.target.value)}
         placeholder="How was it? (optional)"
         aria-label="Your review"
-        className="mt-3 min-h-20 w-full resize-y rounded-xl border border-line bg-white px-3 py-2 text-sm transition focus:border-rose"
+        className="mt-3 min-h-20 w-full resize-y rounded-xl border border-line bg-white px-3 py-2 text-base transition focus:border-rose sm:text-sm"
       />
       {features.photoReviews && (
         <div className="mt-3">
@@ -106,7 +110,7 @@ export function ReviewForm({
                   type="button"
                   aria-label="Remove photo"
                   onClick={() => setImageUrls((prev) => prev.filter((u) => u !== url))}
-                  className="absolute right-0 top-0 bg-white/90 px-1 text-xs text-rose-deep"
+                  className="absolute right-0 top-0 bg-white/90 px-1 text-xs text-rose-ink"
                 >
                   ✕
                 </button>
@@ -130,7 +134,7 @@ export function ReviewForm({
         </div>
       )}
       {error && (
-        <p role="alert" className="mt-2 text-sm text-rose-deep">
+        <p role="alert" className="mt-2 text-sm text-rose-ink">
           {error}
         </p>
       )}

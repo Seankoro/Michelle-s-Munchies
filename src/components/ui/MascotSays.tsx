@@ -51,8 +51,11 @@ export function MascotSays({
         // bubble text, so a descriptive alt would bloat and re-announce the
         // button's accessible name on every tap.
         alt={cycles ? "" : MASCOT_ALT}
-        width={512}
-        height={512}
+        // The real display size, so next/image emits a srcset around it
+        // instead of shipping the full 512 upload into a 96 pixel box. On the
+        // hero this one is preloaded, so the saving lands on first paint.
+        width={size === "hero" ? 96 : 64}
+        height={size === "hero" ? 96 : 64}
         priority={priority}
         className={cn(size === "hero" ? "h-24 w-24 animate-float" : "h-16 w-16")}
       />

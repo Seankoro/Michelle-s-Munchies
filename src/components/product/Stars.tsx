@@ -10,7 +10,7 @@ export function Stars({ value, className }: { value: number; className?: string 
       aria-label={`${value.toFixed(1)} out of 5 stars`}
     >
       {[1, 2, 3, 4, 5].map((i) => (
-        <span key={i} aria-hidden="true" className={i <= rounded ? "text-rose-deep" : "text-line"}>
+        <span key={i} aria-hidden="true" className={i <= rounded ? "text-rose-ink" : "text-line"}>
           ★
         </span>
       ))}

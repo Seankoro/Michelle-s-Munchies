@@ -59,6 +59,7 @@ type OrderRow = {
   stripe_payment_intent_id: string | null;
   subtotal_cents: number;
   delivery_fee_cents: number;
+  discount_cents: number;
   total_cents: number;
   created_at: string;
   order_items: OrderItemRow[] | null;
@@ -105,6 +106,7 @@ function rowToAdminOrder(row: OrderRow): AdminOrder {
     refundedCents: (row.order_refunds ?? []).reduce((sum, r) => sum + r.amount_cents, 0),
     subtotalCents: row.subtotal_cents,
     deliveryFeeCents: row.delivery_fee_cents,
+    discountCents: row.discount_cents ?? 0,
     totalCents: row.total_cents,
     createdAt: row.created_at,
     items,
@@ -239,7 +241,20 @@ async function maybeSendReviewRequest(orderNumber: string) {
   const products = (prodRows as { name: string; slug: string }[] | null) ?? [];
   if (products.length === 0) return;
 
-  await sendReviewRequestEmail({ to: order.email, name: order.customer_name, orderNumber, products });
+  // The claim above is what stops this being asked twice, so a send that never
+  // landed has to give it back. Every other claim-then-send in this file does
+  // the same. Deliberately below the two early returns, because an order with
+  // nothing reviewable should stay claimed rather than being re-checked forever.
+  const delivered = await sendReviewRequestEmail({
+    to: order.email,
+    name: order.customer_name,
+    orderNumber,
+    products,
+  });
+  if (!delivered) {
+    console.error(`[review-request] send failed for ${orderNumber}, releasing the claim`);
+    await supabase.from("orders").update({ review_request_sent_at: null }).eq("id", order.id);
+  }
 }
 
 export async function updatePaymentStatus(orderNumber: string, paymentStatus: PaymentStatus) {
@@ -837,7 +852,19 @@ export async function cancelAndRefundOrder(
       updated_at: new Date().toISOString(),
     })
     .eq("id", order.id);
-  if (updErr) return { ok: false, error: updErr.message };
+  if (updErr) {
+    // By this line the money may already be back with the customer and the
+    // refund is written down, so handing her the raw Postgres sentence tells her
+    // nothing about the thing she actually needs to know, which is whether to
+    // try again. Keep the database text for us and tell her what happened.
+    console.error("[cancel] order update failed:", updErr.message);
+    return {
+      ok: false,
+      error: refunded
+        ? `${formatPrice(outstandingCents)} went back to the customer, but the order could not be marked cancelled. Cancel it once more. No money will move a second time.`
+        : "The order could not be cancelled. Please try again in a moment.",
+    };
+  }
 
   // Tell the customer, like every other status change does. Best-effort, so a
   // mail hiccup never makes a completed cancel look failed.

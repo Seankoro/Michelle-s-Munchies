@@ -457,8 +457,14 @@ export async function placeOrder(
     // negative, fractional, or absurd quantity that corrupts the subtotal, the
     // bake list, and analytics. The UI only ever sends whole numbers from 1, so
     // reject anything outside that range server-side.
-    if (items.some((i) => !Number.isInteger(i.quantity) || i.quantity < 1 || i.quantity > 99)) {
-      return { ok: false, error: "Please check the quantities in your cart and try again." };
+    const badQuantity = items.find(
+      (i) => !Number.isInteger(i.quantity) || i.quantity < 1 || i.quantity > 99,
+    );
+    if (badQuantity) {
+      return {
+        ok: false,
+        error: `We can only take 99 of ${badQuantity.name} on one order. Please lower that line, or message us for a bigger batch.`,
+      };
     }
 
     // Block items that haven't launched yet, the seasonal drops. Server-enforced.

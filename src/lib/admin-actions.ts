@@ -253,9 +253,19 @@ export async function setDeliveryAddressAction(
   }
 }
 
-export async function cancelOrderAction(orderNumber: string): Promise<CancelResult> {
+/**
+ * `cancelWithoutRefund` is the way out of an order Stripe will never refund, a
+ * charge too old, one already refunded from the Stripe dashboard, a
+ * PaymentIntent that no longer exists. The first attempt always comes through
+ * with it off, so the refusal has to happen before she can override it, and the
+ * panel only offers the override once the server has actually refused.
+ */
+export async function cancelOrderAction(
+  orderNumber: string,
+  cancelWithoutRefund = false,
+): Promise<CancelResult> {
   await requireAdmin();
-  return cancelAndRefundOrder(orderNumber);
+  return cancelAndRefundOrder(orderNumber, cancelWithoutRefund);
 }
 
 export type RecordRefundResult = { ok: true } | { ok: false; error: string };

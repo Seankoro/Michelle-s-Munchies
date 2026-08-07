@@ -18,7 +18,7 @@ export function BackToMenuLink() {
           // Storage blocked; the link still navigates, just without the restore.
         }
       }}
-      className="text-sm font-semibold text-rose-deep transition hover:text-rose"
+      className="text-sm font-semibold text-rose-ink transition hover:text-rose"
     >
       ← Back to menu
     </Link>

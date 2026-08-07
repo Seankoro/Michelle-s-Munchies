@@ -33,6 +33,9 @@ export default function AdminPromosPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Scoped to the row, because a refusal here is about one code and the page
+  // has no shared banner to put it in.
+  const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
 
   useEffect(() => {
     loadPromosAction()
@@ -80,21 +83,43 @@ export default function AdminPromosPage() {
     setFirstOrderOnly(false);
   }
 
+  // This page keeps its own list rather than going through AdminStore, so it
+  // gets none of the rollback and banner the rest of admin has. Without the
+  // catch, a refusal skipped the local update AND left busyId set, so the row
+  // kept the state it had failed to save and both its buttons stayed dead until
+  // a reload.
   async function toggleActive(promo: PromoCode) {
     setBusyId(promo.id);
-    await setPromoActiveAction(promo.id, !promo.active);
-    setPromos((prev) =>
-      prev.map((p) => (p.id === promo.id ? { ...p, active: !p.active } : p)),
-    );
-    setBusyId(null);
+    setRowError(null);
+    try {
+      await setPromoActiveAction(promo.id, !promo.active);
+      setPromos((prev) =>
+        prev.map((p) => (p.id === promo.id ? { ...p, active: !p.active } : p)),
+      );
+    } catch {
+      setRowError({
+        id: promo.id,
+        message: promo.active
+          ? "That did not save. The code is still active. Please try again."
+          : "That did not save. The code is still paused. Please try again.",
+      });
+    } finally {
+      setBusyId(null);
+    }
   }
 
   async function remove(promo: PromoCode) {
     if (!window.confirm(`Delete code ${promo.code}? This can’t be undone.`)) return;
     setBusyId(promo.id);
-    await deletePromoAction(promo.id);
-    setPromos((prev) => prev.filter((p) => p.id !== promo.id));
-    setBusyId(null);
+    setRowError(null);
+    try {
+      await deletePromoAction(promo.id);
+      setPromos((prev) => prev.filter((p) => p.id !== promo.id));
+    } catch {
+      setRowError({ id: promo.id, message: "That code is still there. Please try again." });
+    } finally {
+      setBusyId(null);
+    }
   }
 
   function describe(promo: PromoCode) {
@@ -274,6 +299,11 @@ export default function AdminPromosPage() {
                       Delete
                     </button>
                   </div>
+                  {rowError?.id === promo.id && (
+                    <p role="alert" className="mt-2 text-sm font-semibold text-danger-ink">
+                      {rowError.message}
+                    </p>
+                  )}
                 </li>
               );
             })}

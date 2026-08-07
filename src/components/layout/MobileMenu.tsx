@@ -52,7 +52,7 @@ export function MobileMenu() {
         className="group flex flex-col items-center rounded-2xl p-1 transition-transform active:translate-y-0.5"
       >
         <RibbonBow className="h-10 w-12" />
-        <span className="-mt-1 text-[0.7rem] font-semibold uppercase tracking-wide text-rose-deep">
+        <span className="-mt-1 text-[0.7rem] font-semibold uppercase tracking-wide text-rose-ink">
           Menu
         </span>
       </button>

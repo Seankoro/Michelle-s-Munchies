@@ -31,8 +31,15 @@ export function OrderChangePanel({
   async function reschedule() {
     setBusy(true);
     setMessage(null);
-    const result = await rescheduleOrderAction(token, date, window);
+    const result = await rescheduleOrderAction(token, date, window).catch(() => null);
     setBusy(false);
+    if (!result) {
+      setMessage({
+        kind: "error",
+        text: "We couldn't send that just now. Check your connection, then open this page again to see if it went through.",
+      });
+      return;
+    }
     if (result.ok) {
       setMessage({ kind: "ok", text: "Your order has been moved. Thank you!" });
       router.refresh();
@@ -45,8 +52,15 @@ export function OrderChangePanel({
     if (!confirm("Ask us to cancel this order?")) return;
     setBusy(true);
     setMessage(null);
-    const result = await requestCancellationAction(token);
+    const result = await requestCancellationAction(token).catch(() => null);
     setBusy(false);
+    if (!result) {
+      setMessage({
+        kind: "error",
+        text: "We couldn't send that just now. Check your connection and try again.",
+      });
+      return;
+    }
     setMessage(
       result.ok
         ? { kind: "ok", text: "We've got your cancellation request. Michelle will be in touch to confirm." }
@@ -86,7 +100,7 @@ export function OrderChangePanel({
         <p
           role="status"
           aria-live="polite"
-          className={`mt-3 text-sm ${message.kind === "ok" ? "text-success" : "text-rose-deep"}`}
+          className={`mt-3 text-sm ${message.kind === "ok" ? "text-success" : "text-rose-ink"}`}
         >
           {message.text}
         </p>
@@ -104,7 +118,7 @@ export function OrderChangePanel({
           type="button"
           onClick={requestCancel}
           disabled={busy}
-          className="rounded-full border border-line px-5 py-2 text-sm font-semibold text-rose-deep transition hover:border-rose disabled:opacity-50"
+          className="rounded-full border border-line px-5 py-2 text-sm font-semibold text-rose-ink transition hover:border-rose disabled:opacity-50"
         >
           Request cancellation
         </button>

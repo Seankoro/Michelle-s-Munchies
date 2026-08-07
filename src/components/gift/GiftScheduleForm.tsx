@@ -79,7 +79,7 @@ export function GiftScheduleForm({
         </select>
       </div>
       {error && (
-        <p role="alert" className="text-sm text-rose-deep">
+        <p role="alert" className="text-sm text-rose-ink">
           {error}
         </p>
       )}

@@ -15,7 +15,7 @@ export function SkippedItems({ items }: { items: SkippedLine[] }) {
           {item.href ? (
             <Link
               href={item.href}
-              className="font-semibold text-rose-deep underline hover:text-rose"
+              className="font-semibold text-rose-ink underline hover:text-rose"
             >
               {item.name}
             </Link>

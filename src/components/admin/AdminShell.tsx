@@ -29,7 +29,7 @@ function RefreshRow() {
           setBusy(true);
           void refresh().finally(() => setBusy(false));
         }}
-        className="font-semibold text-rose-deep transition hover:text-rose active:scale-95 disabled:opacity-50"
+        className="font-semibold text-rose-ink transition hover:text-rose active:scale-95 disabled:opacity-50"
       >
         {busy ? "Refreshing…" : "Refresh"}
       </button>
@@ -77,7 +77,7 @@ const settingsItem: NavItem = { href: "/admin/settings", label: "Settings" };
 
 export function AdminShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { error, settings, hydrated, refresh } = useAdmin();
+  const { error, settings, hydrated, refresh, loading } = useAdmin();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawerRef = useRef<HTMLDivElement>(null);
   useDialog(drawerOpen, () => setDrawerOpen(false), drawerRef);
@@ -109,7 +109,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
   function navLinkClass(href: string) {
     return cn(
       "block rounded-xl px-3 py-2 text-sm font-semibold transition active:scale-[0.98]",
-      isActive(href) ? "bg-blush-soft text-rose-deep" : "text-ink hover:bg-marble/60",
+      isActive(href) ? "bg-blush-soft text-rose-ink" : "text-ink hover:bg-marble/60",
     );
   }
 
@@ -244,13 +244,17 @@ export function AdminShell({ children }: { children: ReactNode }) {
             {/* Nothing below has loaded yet, so the banner has to carry the way
                 out. Without it the page sits on its loading state for good and
                 the only fix she can find is closing the tab. */}
+            {/* The tap has to visibly do something. refresh only clears the
+                error when it works, so on a second failure the screen was byte
+                for byte identical and the button read as dead. */}
             {!hydrated && (
               <button
                 type="button"
                 onClick={() => void refresh()}
-                className="rounded-full bg-danger px-3 py-1 text-xs font-semibold text-white transition hover:brightness-110 active:scale-95"
+                disabled={loading}
+                className="rounded-full bg-danger px-3 py-1 text-xs font-semibold text-white transition hover:brightness-110 active:scale-95 disabled:opacity-60"
               >
-                Try again
+                {loading ? "Trying…" : "Try again"}
               </button>
             )}
           </div>

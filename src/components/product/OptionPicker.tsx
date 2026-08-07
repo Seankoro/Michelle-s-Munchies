@@ -136,7 +136,7 @@ export function OptionPicker({
         <fieldset key={option.id}>
           <legend className="mb-2 text-sm font-semibold text-ink">
             {option.name}
-            {option.required && <span className="ml-1 text-rose-deep">*</span>}
+            {option.required && <span className="ml-1 text-rose-ink">*</span>}
           </legend>
           <div className="flex flex-wrap gap-2">
             {option.values.map((value) => {
@@ -199,7 +199,7 @@ export function OptionPicker({
                     <button
                       type="button"
                       onClick={() => setPhotoUrl("")}
-                      className="text-xs font-semibold text-muted transition hover:text-rose-deep"
+                      className="text-xs font-semibold text-muted transition hover:text-rose-ink"
                     >
                       Remove
                     </button>
@@ -222,7 +222,7 @@ export function OptionPicker({
                   </label>
                 )}
               </div>
-              {photoError && <p className="mt-1 text-xs text-rose-deep">{photoError}</p>}
+              {photoError && <p className="mt-1 text-xs text-rose-ink">{photoError}</p>}
             </div>
           )}
         </div>

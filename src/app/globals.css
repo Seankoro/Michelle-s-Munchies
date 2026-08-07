@@ -38,6 +38,12 @@
   --color-blush-soft: #ffe3e8; /* pale blush wash for backgrounds/hovers */
   --color-rose: #d2648a; /* mid rose for links/accents (legible on light) */
   --color-rose-deep: #bc4a6a; /* CTA buttons, deepened candy rose (white text passes AA) */
+  /* Rose for TEXT sitting on a tinted panel. rose-deep is tuned so white sits on
+     top of it (4.85:1), which is the opposite job, and as text it only reaches
+     4.02:1 on blush-soft and 4.30:1 on marble, both under AA. This clears it
+     everywhere: 5.28 on blush-soft, 6.37 on white, 6.04 on cream, 5.64 on
+     marble. Same hue family, so the notices still read as candy rose. */
+  --color-rose-ink: #a33a56;
 
   /* --- Ink & neutrals (deep cocoa #3D2823) --- */
   --color-ink: #3d2823; /* deep cocoa, body text + headings */

@@ -15,7 +15,7 @@ export default function AboutPage() {
     <main className="mx-auto max-w-4xl px-6 py-12">
       <Reveal>
         <header className="text-center">
-          <p className="mb-3 text-sm font-semibold uppercase tracking-[0.2em] text-rose-deep">
+          <p className="mb-3 text-sm font-semibold uppercase tracking-[0.2em] text-rose-ink">
             Our story
           </p>
           <h1 className="font-display text-4xl font-semibold sm:text-5xl">
@@ -41,7 +41,7 @@ export default function AboutPage() {
               Every order is baked fresh in small batches, never mass-produced and never sitting
               on a shelf. Just good ingredients, a careful hand, and a ribbon on top.
             </p>
-            <p className="rounded-xl bg-blush-soft/60 px-4 py-3 text-sm text-rose-deep">
+            <p className="rounded-xl bg-blush-soft/60 px-4 py-3 text-sm text-rose-ink">
               🏠 We&rsquo;re a home-based business operating under Singapore&rsquo;s Home-Based
               Small Scale Business scheme.
             </p>

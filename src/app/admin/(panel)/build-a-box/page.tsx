@@ -169,7 +169,7 @@ export default function AdminBoxesPage() {
               <button
                 type="button"
                 onClick={() => remove(b.id)}
-                className="rounded-full border border-line px-3 py-1.5 text-sm font-semibold text-rose-deep transition hover:border-rose active:scale-95"
+                className="rounded-full border border-line px-3 py-1.5 text-sm font-semibold text-rose-ink transition hover:border-rose active:scale-95"
               >
                 Delete
               </button>
@@ -266,7 +266,7 @@ export default function AdminBoxesPage() {
             />
           </label>
 
-          {error && <p className="mt-3 text-sm text-rose-deep">{error}</p>}
+          {error && <p className="mt-3 text-sm text-rose-ink">{error}</p>}
           <div className="mt-5 flex gap-3">
             <button
               type="button"

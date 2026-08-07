@@ -27,6 +27,8 @@ type PlacedOrder = {
   recipientPhone?: string;
   subtotalCents: number;
   deliveryFeeCents: number;
+  /** Promo code and loyalty points taken off. Already inside totalCents. */
+  discountCents: number;
   totalCents: number;
   createdAt: string; // ISO timestamp
 };

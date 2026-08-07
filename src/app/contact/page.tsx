@@ -40,7 +40,7 @@ export default async function ContactPage() {
     },
     {
       q: "Can I cancel or change my order?",
-      a: "You can reschedule your date and time yourself from your order tracking page while the order is still being prepared. For anything else, message us as early as possible and we'll do our best to help.",
+      a: "You can move your date and time yourself on your order tracking page, right up until we confirm the order. After that, or if your date is close, message us and we will sort it out.",
     },
   ];
 
@@ -92,7 +92,7 @@ export default async function ContactPage() {
             <summary className="cursor-pointer list-none font-display text-lg font-semibold marker:hidden">
               <span className="flex items-center justify-between gap-3">
                 {faq.q}
-                <span className="text-rose-deep transition group-open:rotate-45" aria-hidden="true">
+                <span className="text-rose-ink transition group-open:rotate-45" aria-hidden="true">
                   +
                 </span>
               </span>
@@ -111,7 +111,7 @@ export default async function ContactPage() {
                 <p className="text-3xl" aria-hidden="true">
                   {method.icon}
                 </p>
-                <p className="mt-2 text-sm font-semibold uppercase tracking-wide text-rose-deep">
+                <p className="mt-2 text-sm font-semibold uppercase tracking-wide text-rose-ink">
                   {method.label}
                 </p>
                 <p className="mt-1 text-sm text-muted">{method.value}</p>

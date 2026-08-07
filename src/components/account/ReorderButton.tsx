@@ -44,7 +44,7 @@ export function ReorderButton({ orderNumber }: { orderNumber: string }) {
       {added ? (
         <Link
           href="/cart"
-          className="text-sm font-semibold text-rose-deep transition hover:text-rose"
+          className="text-sm font-semibold text-rose-ink transition hover:text-rose"
         >
           Go to cart →
         </Link>
@@ -53,7 +53,7 @@ export function ReorderButton({ orderNumber }: { orderNumber: string }) {
           type="button"
           onClick={handleReorder}
           disabled={busy}
-          className="text-sm font-semibold text-rose-deep transition hover:text-rose disabled:opacity-60"
+          className="text-sm font-semibold text-rose-ink transition hover:text-rose disabled:opacity-60"
         >
           {busy ? "Adding…" : "Order again"}
         </button>

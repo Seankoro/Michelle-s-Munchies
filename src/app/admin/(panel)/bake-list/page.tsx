@@ -12,12 +12,17 @@ export default function AdminBakeListPage() {
   const { orders, hydrated, settings } = useAdmin();
   const { has, toggle, clear } = useTickList("mm-bake-ticks");
 
-  // What still needs baking, grouped by fulfillment date. Completed and
-  // cancelled orders drop off. Sizes and options are kept separate, since a box
-  // of 6 and a box of 12 are different bakes.
+  // What still needs baking, grouped by fulfillment date. Sizes and options are
+  // kept separate, since a box of 6 and a box of 12 are different bakes.
+  //
+  // Only the statuses that still need an oven. Ready means baked and boxed, and
+  // out for delivery means it has already left, so counting either told her to
+  // bake a second one. Two orders for the same treat collapse into one line
+  // here, and the tick is all or nothing, so she could not even tick off the
+  // half that was done.
   const days = useMemo(() => {
     const active = orders.filter(
-      (o) => o.status !== "completed" && o.status !== "cancelled",
+      (o) => o.status === "received" || o.status === "confirmed" || o.status === "baking",
     );
     const byDate = new Map<
       string,
@@ -134,7 +139,7 @@ export default function AdminBakeListPage() {
                   </span>
                 </div>
                 {day.windows.length > 0 && (
-                  <p className="mt-1 text-xs font-semibold text-rose-deep">
+                  <p className="mt-1 text-xs font-semibold text-rose-ink">
                     {day.windows.length > 1
                       ? `Bake order: ${day.windows.join(" → ")}`
                       : `Due: ${day.windows[0]}`}
@@ -145,7 +150,7 @@ export default function AdminBakeListPage() {
                     <button
                       type="button"
                       onClick={() => clear(keys)}
-                      className="text-xs font-semibold text-rose-deep transition hover:text-rose"
+                      className="text-xs font-semibold text-rose-ink transition hover:text-rose"
                     >
                       Reset ticks
                     </button>

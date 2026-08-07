@@ -160,7 +160,7 @@ export default function AdminInstagramPage() {
               <button
                 type="button"
                 onClick={() => remove(p.id)}
-                className="rounded-full border border-line px-3 py-1.5 text-sm font-semibold text-rose-deep transition hover:border-rose active:scale-95"
+                className="rounded-full border border-line px-3 py-1.5 text-sm font-semibold text-rose-ink transition hover:border-rose active:scale-95"
               >
                 Delete
               </button>
@@ -191,7 +191,7 @@ export default function AdminInstagramPage() {
                 />
               )}
               <label
-                className={`flex h-20 w-20 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-blush text-xs font-semibold text-rose-deep${
+                className={`flex h-20 w-20 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-blush text-xs font-semibold text-rose-ink${
                   uploading ? " opacity-60" : ""
                 }`}
               >
@@ -246,7 +246,7 @@ export default function AdminInstagramPage() {
               />
             </label>
           </div>
-          {error && <p className="mt-3 text-sm text-rose-deep">{error}</p>}
+          {error && <p className="mt-3 text-sm text-rose-ink">{error}</p>}
           <div className="mt-5 flex gap-3">
             <button
               type="button"

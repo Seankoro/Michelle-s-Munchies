@@ -1,8 +1,9 @@
+import Image from "next/image";
 import { fetchActiveInstagramPosts } from "@/lib/instagram";
 
 /**
  * Curated Instagram grid that Michelle fills by hand, pasting image and post
- * links. Uses plain <img> and <a> tags only, with no Meta embed script, so the
+ * links. Uses plain <a> tags with no Meta embed script, so the
  * CSP stays tight. Renders nothing when there are no active posts. The caller
  * gates on the `instagram` flag.
  */
@@ -23,7 +24,7 @@ export async function InstagramGrid() {
             href={`https://instagram.com/${handle}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-sm font-semibold text-rose-deep transition hover:text-rose"
+            className="text-sm font-semibold text-rose-ink transition hover:text-rose"
           >
             Follow us →
           </a>
@@ -39,11 +40,15 @@ export async function InstagramGrid() {
             className="group relative aspect-square overflow-hidden rounded-2xl"
             title={post.caption ?? "View on Instagram"}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            {/* next/image so the phone gets a thumbnail rather than the full
+                upload. These sit near the bottom of the home page, so they load
+                lazily and cost nothing until someone scrolls to them. */}
+            <Image
               src={post.imageUrl}
               alt={post.caption ?? "Instagram post"}
-              className="h-full w-full object-cover transition group-hover:scale-105"
+              fill
+              sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 16vw"
+              className="object-cover transition group-hover:scale-105"
             />
           </a>
         ))}

@@ -184,7 +184,7 @@ export default function AdminDashboardPage() {
 
           <div className="mt-8 flex items-center justify-between">
             <h2 className="font-display text-xl font-semibold">Recent orders</h2>
-            <Link href="/admin/orders" className="text-sm font-semibold text-rose-deep transition hover:text-rose">
+            <Link href="/admin/orders" className="text-sm font-semibold text-rose-ink transition hover:text-rose">
               View all →
             </Link>
           </div>
@@ -195,7 +195,7 @@ export default function AdminDashboardPage() {
                 <tr>
                   <th className="px-4 py-3 font-semibold">Order</th>
                   <th className="px-4 py-3 font-semibold">Customer</th>
-                  <th className="hidden px-4 py-3 font-semibold text-rose-deep sm:table-cell">
+                  <th className="hidden px-4 py-3 font-semibold text-rose-ink sm:table-cell">
                     Bake for
                   </th>
                   <th className="px-4 py-3 font-semibold">Total</th>
@@ -207,12 +207,12 @@ export default function AdminDashboardPage() {
                 {recent.map((order) => (
                   <tr key={order.orderNumber} className="border-b border-line transition last:border-0 hover:bg-marble/30">
                     <td className="whitespace-nowrap px-4 py-3 font-semibold">
-                      <Link href={`/admin/orders?order=${order.orderNumber}`} className="hover:text-rose-deep">
+                      <Link href={`/admin/orders?order=${order.orderNumber}`} className="hover:text-rose-ink">
                         {order.orderNumber}
                       </Link>
                     </td>
                     <td className="px-4 py-3">{order.name}</td>
-                    <td className="hidden whitespace-nowrap px-4 py-3 font-semibold text-rose-deep sm:table-cell">
+                    <td className="hidden whitespace-nowrap px-4 py-3 font-semibold text-rose-ink sm:table-cell">
                       {formatLongDate(order.scheduledDate)}
                     </td>
                     <td className="px-4 py-3">{formatPrice(order.totalCents)}</td>
@@ -261,7 +261,7 @@ function BakeDayCard({
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-semibold">{order.name}</span>
-                  <span className="shrink-0 text-sm font-semibold capitalize text-rose-deep">
+                  <span className="shrink-0 text-sm font-semibold capitalize text-rose-ink">
                     {order.fulfillmentType}
                   </span>
                 </div>

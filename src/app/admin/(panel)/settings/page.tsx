@@ -336,14 +336,14 @@ function SettingsForm({
             {blackout.map((date) => (
               <span
                 key={date}
-                className="inline-flex items-center gap-2 rounded-full bg-blush-soft px-3 py-1 text-sm font-semibold text-rose-deep"
+                className="inline-flex items-center gap-2 rounded-full bg-blush-soft px-3 py-1 text-sm font-semibold text-rose-ink"
               >
                 {formatLongDate(date)}
                 <button
                   type="button"
                   aria-label={`Remove ${date}`}
                   onClick={() => setBlackout((prev) => prev.filter((d) => d !== date))}
-                  className="-m-1 flex h-7 w-7 items-center justify-center rounded-full text-rose-deep transition hover:text-rose active:scale-90"
+                  className="-m-1 flex h-7 w-7 items-center justify-center rounded-full text-rose-ink transition hover:text-rose active:scale-90"
                 >
                   ✕
                 </button>
@@ -551,7 +551,7 @@ function SettingsForm({
                   type="button"
                   aria-label="Remove prompt"
                   onClick={() => setNotePrompts((prev) => prev.filter((_, i) => i !== index))}
-                  className="rounded-full border border-line px-3 py-1.5 text-sm text-rose-deep transition hover:border-rose active:scale-90"
+                  className="rounded-full border border-line px-3 py-1.5 text-sm text-rose-ink transition hover:border-rose active:scale-90"
                 >
                   ✕
                 </button>
@@ -733,7 +733,7 @@ function DeliveryZones() {
       <h3 className="text-sm font-semibold text-ink">Distance-based delivery zones</h3>
       <p className="mt-1 text-sm text-muted">
         Price delivery by driving distance from your kitchen. The flat delivery fee above stays
-        the fallback: it&rsquo;s used until zones are set up here, or whenever an address
+        the fallback. It is used until zones are set up here, or whenever an address
         can&rsquo;t be located. The farthest tier is unbounded, so its fee also covers any
         address beyond that distance, not just up to it.
       </p>
@@ -787,7 +787,7 @@ function DeliveryZones() {
               type="button"
               aria-label="Remove tier"
               onClick={() => setTiers((prev) => prev.filter((_, i) => i !== index))}
-              className="rounded-full border border-line px-3 py-1.5 text-sm text-rose-deep transition hover:border-rose active:scale-90"
+              className="rounded-full border border-line px-3 py-1.5 text-sm text-rose-ink transition hover:border-rose active:scale-90"
             >
               ✕
             </button>
@@ -816,7 +816,7 @@ function DeliveryZones() {
         )}
         <span role="status" aria-live="polite" className="text-sm">
           {error ? (
-            <span className="font-semibold text-rose-deep">{error}</span>
+            <span className="font-semibold text-rose-ink">{error}</span>
           ) : saved ? (
             <span className="font-semibold text-success">Saved ✓</span>
           ) : null}
@@ -831,7 +831,8 @@ function DeliveryZones() {
             <span className="font-semibold text-success">Located ✓</span>
           ) : (
             <span className="text-muted">
-              Not located yet — add your OneMap credentials, then save again.
+              Not on the map yet, so delivery stays on the flat fee above. The map lookup still
+              needs to be switched on.
             </span>
           )}
         </p>

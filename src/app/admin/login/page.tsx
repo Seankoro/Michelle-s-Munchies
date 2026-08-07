@@ -68,7 +68,7 @@ export default function AdminLoginPage() {
             />
           </div>
 
-          {error && <p className="text-sm text-rose-deep">{error}</p>}
+          {error && <p className="text-sm text-rose-ink">{error}</p>}
 
           <Button type="submit" size="lg" disabled={loading} className="mt-2 w-full">
             {loading ? "Signing in…" : "Sign in"}

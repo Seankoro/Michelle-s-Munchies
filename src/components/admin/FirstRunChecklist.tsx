@@ -93,7 +93,7 @@ export function FirstRunChecklist() {
             {!item.done && (
               <Link
                 href={item.href}
-                className="shrink-0 text-sm font-semibold text-rose-deep transition hover:text-rose"
+                className="shrink-0 text-sm font-semibold text-rose-ink transition hover:text-rose"
               >
                 {item.cta} →
               </Link>

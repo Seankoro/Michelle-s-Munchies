@@ -45,7 +45,7 @@ export function AllergenChips({
             <span
               role="tooltip"
               aria-hidden="true"
-              className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1 -translate-x-1/2 whitespace-nowrap rounded-lg bg-ink px-2 py-1 text-xs font-semibold text-white opacity-0 transition-opacity group-hover/chip:opacity-100 group-focus-within/chip:opacity-100"
+              className="pointer-events-none absolute bottom-full right-0 z-20 mb-1 whitespace-nowrap rounded-lg bg-ink px-2 py-1 text-xs font-semibold text-white opacity-0 transition-opacity group-hover/chip:opacity-100 group-focus-within/chip:opacity-100"
             >
               Contains {meta.label.toLowerCase()}
             </span>

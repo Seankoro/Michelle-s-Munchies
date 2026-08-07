@@ -164,6 +164,7 @@ export default function AdminAnalyticsPage() {
 
     // --- Fold paid orders into the window's buckets + range aggregates ---
     let rangeRevenue = 0;
+    let rangeDiscount = 0;
     let rangeCount = 0;
     let pickupCents = 0;
     let deliveryCents = 0;
@@ -179,6 +180,7 @@ export default function AdminAnalyticsPage() {
       const kept = keptCents(o);
       rangeRevenue += kept;
       rangeCount += 1;
+      rangeDiscount += o.discountCents ?? 0;
       const b = byKey.get(bucketKey(day));
       if (b) b.value += kept;
       if (o.fulfillmentType === "delivery") deliveryCents += kept;
@@ -231,9 +233,15 @@ export default function AdminAnalyticsPage() {
       ),
     );
     // Estimated profit for the range, across treats that have a cost entered.
-    const rangeProfit = sellerList
-      .filter((s) => s.hasCost)
-      .reduce((sum, s) => sum + s.profitCents, 0);
+    //
+    // Per-seller revenue above is the line price, which a promo code or points
+    // spent never touch, since those come off the order as a whole. Left out,
+    // every discounted order reported profit Michelle never made. It is taken
+    // off the range total rather than spread across the treats, because there is
+    // no honest way to say which line a whole-order discount belonged to.
+    const rangeProfit =
+      sellerList.filter((s) => s.hasCost).reduce((sum, s) => sum + s.profitCents, 0) -
+      rangeDiscount;
     const anyCost = costByName.size > 0;
     const maxWeekday = Math.max(1, ...weekdayCount);
     const points: ChartPoint[] = buckets.map((b) => ({

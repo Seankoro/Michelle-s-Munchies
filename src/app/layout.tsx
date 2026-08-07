@@ -46,6 +46,10 @@ export const metadata: Metadata = {
   },
   description:
     "A home-based bakery in Singapore. Freshly baked treats, made to order for self-pickup or delivery.",
+  // Without this, the same page shared with a tracking tag on the end counts as
+  // a separate URL, so the ranking is split across copies of one page. Routes
+  // that set their own canonical override this.
+  alternates: { canonical: "/" },
   icons: {
     icon: "/icon.png",
     apple: "/apple-icon.png",

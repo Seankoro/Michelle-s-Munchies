@@ -4,7 +4,7 @@ import { confirmStockSubscription } from "@/lib/stock-notify";
 import { confirmNewsletterSubscription } from "@/lib/newsletter";
 
 export const metadata: Metadata = {
-  title: "Confirm your email · Michelle's Munchies",
+  title: "Confirm your email",
   robots: { index: false },
 };
 

@@ -140,7 +140,7 @@ export default function SignUpPage() {
           )}
 
           {error && (
-            <p role="alert" className="text-sm text-rose-deep">
+            <p role="alert" className="text-sm text-rose-ink">
               {error}
             </p>
           )}
@@ -148,7 +148,7 @@ export default function SignUpPage() {
             <p
               role="status"
               aria-live="polite"
-              className="rounded-xl bg-blush-soft/60 px-3 py-2 text-sm text-rose-deep"
+              className="rounded-xl bg-blush-soft/60 px-3 py-2 text-sm text-rose-ink"
             >
               {pending}
             </p>
@@ -169,7 +169,7 @@ export default function SignUpPage() {
 
         <p className="mt-6 text-center text-sm text-muted">
           Already have an account?{" "}
-          <Link href="/account/sign-in" className="font-semibold text-rose-deep hover:text-rose">
+          <Link href="/account/sign-in" className="font-semibold text-rose-ink hover:text-rose">
             Sign in
           </Link>
         </p>

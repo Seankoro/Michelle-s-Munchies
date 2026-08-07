@@ -31,9 +31,20 @@ type Params = { params: Promise<{ slug: string }> };
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params;
   const product = await fetchProductBySlug(slug);
+  if (!product) return { title: "Not found" };
   return {
-    title: product ? product.name : "Not found",
-    description: product?.shortDescription,
+    title: product.name,
+    description: product.shortDescription,
+    alternates: { canonical: `/menu/${product.slug}` },
+    // Most of these links are pasted into a WhatsApp chat, and without this the
+    // preview is the same generic bakery card for every treat. The photo is the
+    // whole pitch, so it has to be the one in the card.
+    openGraph: {
+      title: product.name,
+      description: product.shortDescription,
+      type: "website",
+      images: product.imageUrls?.length ? [product.imageUrls[0]] : undefined,
+    },
   };
 }
 
@@ -197,7 +208,7 @@ export default async function ProductDetailPage({ params }: Params) {
           )}
           <p className="mt-4 text-muted">{product.longDescription}</p>
 
-          <p className="mt-4 rounded-xl bg-blush-soft/60 px-4 py-3 text-sm text-rose-deep">
+          <p className="mt-4 rounded-xl bg-blush-soft/60 px-4 py-3 text-sm text-rose-ink">
             🎀 Baked to order. Please order at least {leadTime} day{leadTime === 1 ? "" : "s"} ahead.
           </p>
 
@@ -299,7 +310,7 @@ export default async function ProductDetailPage({ params }: Params) {
               </p>
             ) : (
               <p className="rounded-2xl bg-marble/40 p-4 text-sm text-muted">
-                <Link href="/account/sign-in" className="font-semibold text-rose-deep hover:text-rose">
+                <Link href="/account/sign-in" className="font-semibold text-rose-ink hover:text-rose">
                   Sign in
                 </Link>{" "}
                 and order this treat to leave a review.

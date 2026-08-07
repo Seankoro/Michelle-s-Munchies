@@ -81,7 +81,7 @@ export function TrackReorderButton({ token }: { token: string }) {
       {errored && (
         <Link
           href="/menu"
-          className="text-xs font-semibold text-rose-deep underline hover:text-rose"
+          className="text-xs font-semibold text-rose-ink underline hover:text-rose"
         >
           Browse the menu
         </Link>

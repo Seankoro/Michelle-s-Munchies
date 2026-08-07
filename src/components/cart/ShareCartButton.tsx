@@ -40,7 +40,7 @@ export function ShareCartButton() {
     <button
       type="button"
       onClick={share}
-      className="mt-3 block w-full text-center text-sm font-semibold text-rose-deep transition hover:text-rose"
+      className="mt-3 block w-full text-center text-sm font-semibold text-rose-ink transition hover:text-rose"
     >
       {copied ? "Link copied ✓" : "🔗 Share this order"}
     </button>

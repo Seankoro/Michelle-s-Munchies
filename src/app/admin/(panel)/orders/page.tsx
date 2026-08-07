@@ -186,7 +186,7 @@ export default function AdminOrdersPage() {
             className={cn(
               "rounded-full border px-3 py-1.5 text-sm font-semibold transition active:scale-95",
               filter === status
-                ? "border-rose-deep bg-blush-soft text-rose-deep"
+                ? "border-rose-deep bg-blush-soft text-rose-ink"
                 : "border-line bg-white text-ink hover:border-rose",
             )}
           >
@@ -203,7 +203,7 @@ export default function AdminOrdersPage() {
               <th className="px-4 py-3 font-semibold">Customer</th>
               <th className="px-4 py-3 font-semibold">Fulfilment</th>
               <th className="px-4 py-3 font-semibold">Ordered</th>
-              <th className="px-4 py-3 font-semibold text-rose-deep">Bake for</th>
+              <th className="px-4 py-3 font-semibold text-rose-ink">Bake for</th>
               <th className="px-4 py-3 font-semibold">Total</th>
               <th className="px-4 py-3 font-semibold">Status</th>
               <th className="px-4 py-3 font-semibold">Payment</th>
@@ -234,7 +234,7 @@ export default function AdminOrdersPage() {
                 <td className="whitespace-nowrap px-4 py-3 text-muted">
                   {orderedOn(order.createdAt)}
                 </td>
-                <td className="whitespace-nowrap px-4 py-3 font-semibold text-rose-deep">
+                <td className="whitespace-nowrap px-4 py-3 font-semibold text-rose-ink">
                   {formatLongDate(order.scheduledDate)}
                   {bakeDateHasPassed(order, today) && (
                     <span className="mt-0.5 block text-xs font-semibold text-warning-ink">
@@ -298,8 +298,8 @@ export default function AdminOrdersPage() {
           dailyOrderCap={settings.dailyOrderCap}
           dayCounts={dayCounts}
           today={today}
-          onCancel={() =>
-            cancelOrder(selectedOrder.orderNumber)
+          onCancel={(cancelWithoutRefund) =>
+            cancelOrder(selectedOrder.orderNumber, cancelWithoutRefund)
           }
           onRecordRefund={(cents, reason, via) =>
             recordRefund(selectedOrder.orderNumber, cents, reason, via)
@@ -345,12 +345,14 @@ function OrderDetailModal({
   dailyOrderCap: number | null;
   dayCounts: Record<string, number>;
   today: string;
-  onCancel: () => Promise<{
+  onCancel: (cancelWithoutRefund?: boolean) => Promise<{
     ok: boolean;
     refunded?: boolean;
     /** Paid outside Stripe, so nothing was reversed and the money goes back by hand. */
     manualRefundDue?: boolean;
     amountCents?: number;
+    /** Stripe would not return the money. The one refusal she may override. */
+    refundFailed?: boolean;
     error?: string;
   }>;
   onRecordRefund: (
@@ -473,7 +475,22 @@ function OrderDetailModal({
       )
     )
       return;
-    const result = await onCancel();
+    let result = await onCancel();
+    // Stripe would not send the money back. Some refusals never come good, a
+    // charge too old to refund, one already refunded from the Stripe dashboard,
+    // a PaymentIntent that no longer exists, and retrying those forever leaves
+    // the order stuck in the bake list with no way out. This is the one refusal
+    // she is allowed to overrule, and it is only offered after the server has
+    // actually refused, never before.
+    if (!result.ok && result.refundFailed) {
+      if (
+        !confirm(
+          `${result.error ?? "Stripe would not send the money back."}\n\nCancel it anyway? The order closes and you send the money back to the customer yourself. Nothing goes back through Stripe.`,
+        )
+      )
+        return;
+      result = await onCancel(true);
+    }
     if (!result.ok) {
       alert(result.error ?? "Could not cancel the order.");
       return;
@@ -584,7 +601,7 @@ function OrderDetailModal({
             <h2 className="font-display text-xl font-semibold">{order.orderNumber}</h2>
             <p className="text-sm text-muted">{order.name}</p>
             <p className="mt-1 text-sm text-muted">Ordered {orderedOnFull(order.createdAt)}</p>
-            <p className="text-sm font-semibold text-rose-deep">
+            <p className="text-sm font-semibold text-rose-ink">
               Bake for {formatLongDate(order.scheduledDate)}
               {order.timeWindow ? ` · ${order.timeWindow}` : ""}
             </p>
@@ -690,7 +707,7 @@ function OrderDetailModal({
                 </span>
               </div>
               {item.personalisation && (item.personalisation.message || item.personalisation.photoUrl) && (
-                <div className="ml-5 rounded-lg bg-blush-soft/50 px-3 py-2 text-xs text-rose-deep">
+                <div className="ml-5 rounded-lg bg-blush-soft/50 px-3 py-2 text-xs text-rose-ink">
                   {item.personalisation.message && (
                     <p>
                       ✍️ &ldquo;{item.personalisation.message}&rdquo;
@@ -724,7 +741,7 @@ function OrderDetailModal({
               <span>Refunded to the customer</span>
               <span>-{formatPrice(refundedCents)}</span>
             </div>
-            <div className="flex justify-between font-semibold text-rose-deep">
+            <div className="flex justify-between font-semibold text-rose-ink">
               <span>Net kept</span>
               <span>{formatPrice(netKeptCents)}</span>
             </div>
@@ -749,7 +766,7 @@ function OrderDetailModal({
                   )}
                   target="_blank"
                   rel="noreferrer"
-                  className="font-semibold text-rose-deep underline decoration-rose/40 underline-offset-2 transition hover:text-rose"
+                  className="font-semibold text-rose-ink underline decoration-rose/40 underline-offset-2 transition hover:text-rose"
                 >
                   {order.address.line1}
                   {order.address.unit ? `, ${order.address.unit}` : ""}, S{order.address.postalCode}
@@ -831,7 +848,7 @@ function OrderDetailModal({
 
         {/* Gift */}
         {order.isGift && (
-          <div className="mt-4 rounded-2xl bg-blush-soft/60 p-4 text-sm text-rose-deep">
+          <div className="mt-4 rounded-2xl bg-blush-soft/60 p-4 text-sm text-rose-ink">
             <p className="font-semibold">🎁 Gift order. Include a card, no receipt in the package.</p>
             <p className="mt-1">
               For: <span className="font-semibold">{order.recipientName || "Not set"}</span>
@@ -1254,7 +1271,7 @@ function OrderDetailModal({
               <button
                 type="button"
                 onClick={handleCancel}
-                className="rounded-full border border-rose-deep px-4 py-2 text-sm font-semibold text-rose-deep transition hover:bg-blush-soft active:scale-95"
+                className="rounded-full border border-rose-deep px-4 py-2 text-sm font-semibold text-rose-ink transition hover:bg-blush-soft active:scale-95"
               >
                 Cancel order
               </button>

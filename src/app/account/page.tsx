@@ -126,16 +126,16 @@ export default async function AccountPage() {
       {/* Rewards */}
       {features.rewards && (
       <div className="mt-6 rounded-2xl bg-blush-soft/60 p-5">
-        <p className="text-sm font-semibold text-rose-deep">✨ Rewards</p>
-        <p className="mt-1 font-display text-3xl font-semibold text-rose-deep">
+        <p className="text-sm font-semibold text-rose-ink">✨ Rewards</p>
+        <p className="mt-1 font-display text-3xl font-semibold text-rose-ink">
           {pointsBalance} {pointsBalance === 1 ? "point" : "points"}
         </p>
-        <p className="text-sm text-rose-deep">
+        <p className="text-sm text-rose-ink">
           worth {formatPrice(pointsBalance * pointValueCents)} off a future order · earn{" "}
           {pointsPerDollar} {pointsPerDollar === 1 ? "point" : "points"} per S$1 spent
         </p>
         {ledger.length > 0 && (
-          <ul className="mt-3 flex flex-col gap-1 text-sm text-rose-deep/90">
+          <ul className="mt-3 flex flex-col gap-1 text-sm text-rose-ink">
             {ledger.slice(0, 5).map((entry, index) => (
               <li key={index} className="flex justify-between">
                 <span>{rewardReasonLabel(entry.reason)}</span>
@@ -184,7 +184,7 @@ export default async function AccountPage() {
         {orders.length === 0 ? (
           <p className="mt-3 text-muted">
             No orders yet.{" "}
-            <Link href="/menu" className="font-semibold text-rose-deep hover:text-rose">
+            <Link href="/menu" className="font-semibold text-rose-ink hover:text-rose">
               Browse the menu
             </Link>
             .
@@ -208,7 +208,7 @@ export default async function AccountPage() {
                   <span className="font-semibold">{formatPrice(order.total_cents)}</span>
                   <Link
                     href={`/track/${order.tracking_token}`}
-                    className="text-sm font-semibold text-rose-deep hover:text-rose"
+                    className="text-sm font-semibold text-rose-ink hover:text-rose"
                   >
                     Track →
                   </Link>

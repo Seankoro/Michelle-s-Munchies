@@ -27,6 +27,9 @@ export default function CartPage() {
   // Spend-gift nudge details, null until loaded or when off.
   const [giftThreshold, setGiftThreshold] = useState<number | null>(null);
   const [giftName, setGiftName] = useState<string | null>(null);
+  // Removing a line changes the page silently for anyone not watching it.
+  // This is the only thing that says a treat has gone.
+  const [removed, setRemoved] = useState("");
   useEffect(() => {
     let active = true;
     void (async () => {
@@ -88,6 +91,9 @@ export default function CartPage() {
     <main className="mx-auto max-w-3xl px-6 py-12">
       <h1 className="font-display text-4xl font-semibold">Your cart</h1>
 
+      <span className="sr-only" role="status" aria-live="polite">
+        {removed}
+      </span>
       <ul className="mt-8 flex flex-col gap-4">
         {items.map((item) => (
           <li
@@ -114,7 +120,7 @@ export default function CartPage() {
               <div className="flex items-start justify-between gap-2">
                 <Link
                   href={`/menu/${item.slug}`}
-                  className="font-display text-lg font-semibold transition hover:text-rose-deep"
+                  className="font-display text-lg font-semibold transition hover:text-rose-ink"
                 >
                   {item.name}
                 </Link>
@@ -132,7 +138,7 @@ export default function CartPage() {
               )}
 
               {item.personalisation && (item.personalisation.message || item.personalisation.photoUrl) && (
-                <p className="mt-1 flex items-center gap-2 text-sm text-rose-deep">
+                <p className="mt-1 flex items-center gap-2 text-sm text-rose-ink">
                   {item.personalisation.message && (
                     <span>✍️ &ldquo;{item.personalisation.message}&rdquo;</span>
                   )}
@@ -142,18 +148,26 @@ export default function CartPage() {
 
               <div className="mt-2 flex items-center justify-between">
                 <div className="inline-flex items-center rounded-full border border-line">
+                  {/* Floored at one, so the minus can never delete a line. It
+                      used to, silently, and the tap that does it sits a
+                      thumb-width from the one that only changes a number.
+                      Removing is the Remove button's job, and that one says so.
+                      aria-disabled rather than disabled, because a control that
+                      really disables under your finger drops focus to the page
+                      body. */}
                   <button
                     type="button"
                     aria-label={`Decrease quantity of ${item.name}`}
-                    onClick={() => updateQuantity(item.key, item.quantity - 1)}
-                    className="flex h-8 w-8 items-center justify-center rounded-full text-lg text-ink hover:bg-blush-soft"
+                    aria-disabled={item.quantity === 1}
+                    onClick={() => updateQuantity(item.key, Math.max(1, item.quantity - 1))}
+                    className="flex h-11 w-11 items-center justify-center rounded-full text-lg text-ink hover:bg-blush-soft aria-disabled:opacity-40"
                   >
                     −
                   </button>
                   <span
                     aria-live="polite"
                     aria-atomic="true"
-                    className="w-8 text-center text-sm font-semibold"
+                    className="w-10 text-center text-sm font-semibold"
                   >
                     {item.quantity}
                   </span>
@@ -161,16 +175,22 @@ export default function CartPage() {
                     type="button"
                     aria-label={`Increase quantity of ${item.name}`}
                     onClick={() => updateQuantity(item.key, item.quantity + 1)}
-                    className="flex h-8 w-8 items-center justify-center rounded-full text-lg text-ink hover:bg-blush-soft"
+                    className="flex h-11 w-11 items-center justify-center rounded-full text-lg text-ink hover:bg-blush-soft"
                   >
                     +
                   </button>
                 </div>
+                {/* The only control that deletes, so it gets a real target. The
+                    negative margin keeps it sitting flush to the card edge, so
+                    nothing moves visually. */}
                 <button
                   type="button"
                   aria-label={`Remove ${item.name}`}
-                  onClick={() => removeItem(item.key)}
-                  className="text-sm font-semibold text-muted transition hover:text-rose-deep"
+                  onClick={() => {
+                    setRemoved(`Removed ${item.name} from your cart.`);
+                    removeItem(item.key);
+                  }}
+                  className="-mr-2 rounded-full px-3 py-2.5 text-sm font-semibold text-muted transition hover:text-rose-ink"
                 >
                   Remove
                 </button>
@@ -186,7 +206,7 @@ export default function CartPage() {
         <div
           role="status"
           aria-live="polite"
-          className="mt-6 rounded-2xl bg-blush-soft/60 px-4 py-3 text-sm text-rose-deep"
+          className="mt-6 rounded-2xl bg-blush-soft/60 px-4 py-3 text-sm text-rose-ink"
         >
           {qualifiesForFreeDelivery
             ? "🎉 Your order qualifies for free delivery!"
@@ -196,7 +216,7 @@ export default function CartPage() {
 
       {/* Spend-gift nudge */}
       {features.spendGift && giftThreshold && giftName && (
-        <div className="mt-3 rounded-2xl bg-blush-soft/60 px-4 py-3 text-sm text-rose-deep">
+        <div className="mt-3 rounded-2xl bg-blush-soft/60 px-4 py-3 text-sm text-rose-ink">
           {subtotalCents >= giftThreshold
             ? `🎁 You've earned a free ${giftName}! We'll add it to your order.`
             : `🎁 Spend ${formatPrice(giftThreshold - subtotalCents)} more for a free ${giftName}.`}
@@ -232,7 +252,7 @@ export default function CartPage() {
         </Link>
         <Link
           href="/menu"
-          className="mt-3 block text-center text-sm font-semibold text-rose-deep transition hover:text-rose"
+          className="mt-3 block text-center text-sm font-semibold text-rose-ink transition hover:text-rose"
         >
           Continue shopping
         </Link>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { singaporeNow } from "@/lib/time";
 
 function format12h(hhmm: string): string {
   const [h, m] = hhmm.split(":").map(Number);
@@ -22,7 +23,10 @@ export function CutoffBanner({
   useEffect(() => {
     function tick() {
       const [h, m] = cutoffTime.split(":").map(Number);
-      const now = new Date();
+      // Singapore time, not the phone's. The cutoff the server enforces is
+      // Singapore's, so a device on another timezone or a wrong clock used to
+      // count down to a deadline that was not the real one.
+      const now = singaporeNow();
       const cutoff = new Date(now);
       cutoff.setHours(h, m || 0, 0, 0);
       const diff = cutoff.getTime() - now.getTime();
@@ -40,7 +44,7 @@ export function CutoffBanner({
   }, [cutoffTime]);
 
   return (
-    <div className="rounded-xl bg-blush-soft/60 px-4 py-3 text-sm text-rose-deep">
+    <div className="rounded-xl bg-blush-soft/60 px-4 py-3 text-sm text-rose-ink">
       {remaining
         ? `🕒 Order within ${remaining}, before today's ${format12h(cutoffTime)} cutoff, for the earliest pickup or delivery date.`
         : `🕒 Today's ${format12h(cutoffTime)} cutoff has passed. The earliest date is now ${earliestLabel}.`}

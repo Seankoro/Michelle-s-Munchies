@@ -27,8 +27,8 @@ export function GiftShareLink({ path }: { path: string }) {
 
   return (
     <div className="mt-6 rounded-2xl border border-rose/30 bg-blush-soft/60 p-5">
-      <p className="font-display text-lg font-semibold text-rose-deep">Share with the recipient 🎁</p>
-      <p className="mt-1 text-sm text-rose-deep">
+      <p className="font-display text-lg font-semibold text-rose-ink">Share with the recipient 🎁</p>
+      <p className="mt-1 text-sm text-rose-ink">
         Send them this link so they can add their delivery address and pick a time. We&rsquo;ll let
         you know once they have.
       </p>

@@ -146,7 +146,7 @@ export default function AdminProductsPage() {
                           deleteProduct(product.id);
                         }
                       }}
-                      className="rounded-full border border-line px-3 py-1.5 text-xs font-semibold text-rose-deep transition hover:border-rose active:scale-95"
+                      className="rounded-full border border-line px-3 py-1.5 text-xs font-semibold text-rose-ink transition hover:border-rose active:scale-95"
                     >
                       Delete
                     </button>
@@ -185,6 +185,14 @@ export default function AdminProductsPage() {
 
 /** Same format the bundle and box-template admin forms already enforce. */
 const SLUG_PATTERN = /^[a-z0-9-]{3,40}$/;
+
+/** The smallest box count not already taken, so a new size never clashes. */
+function nextFreeBoxCount(sizes: { count: number }[]): number {
+  const taken = new Set(sizes.map((size) => size.count));
+  let count = 6;
+  while (taken.has(count)) count += 1;
+  return count;
+}
 
 function ProductFormModal({
   product,
@@ -319,7 +327,12 @@ function ProductFormModal({
       const fb = prev.flavourBox ?? { flavourOption: "Flavour", sizes: [] };
       return {
         ...prev,
-        flavourBox: { ...fb, sizes: [...fb.sizes, { label: "", count: 6, priceCents: 0 }] },
+        flavourBox: {
+          ...fb,
+          // Start on a number no other size is using, so adding a second size
+          // does not land on a clash the save then refuses.
+          sizes: [...fb.sizes, { label: "", count: nextFreeBoxCount(fb.sizes), priceCents: 0 }],
+        },
       };
     });
   }
@@ -352,10 +365,25 @@ function ProductFormModal({
 
   function handleSave() {
     setSaveError(null);
-    const cents = Math.max(0, Math.round(parseFloat(priceText || "0") * 100));
-    const costCents = costText.trim()
-      ? Math.max(0, Math.round(parseFloat(costText) * 100))
-      : null;
+    // parseFloat("") is NaN, and Math.max(0, NaN) is NaN, which used to write
+    // through as a zero-priced treat nobody noticed until it sold. Refuse it
+    // instead, and treat an unreadable cost the same way rather than letting it
+    // land as an innocent looking null.
+    const price = parseFloat(priceText);
+    if (!Number.isFinite(price) || price <= 0) {
+      setSaveError("Give this treat a price above zero.");
+      return;
+    }
+    const cents = Math.round(price * 100);
+    let costCents: number | null = null;
+    if (costText.trim()) {
+      const cost = parseFloat(costText);
+      if (!Number.isFinite(cost) || cost < 0) {
+        setSaveError("That cost is not a number. Clear it or type what it costs you to make.");
+        return;
+      }
+      costCents = Math.round(cost * 100);
+    }
     const slug = draft.slug.trim() || slugify(draft.name);
     if (!SLUG_PATTERN.test(slug)) {
       setSaveError("Slug must be 3–40 lowercase letters, numbers, and dashes.");
@@ -394,6 +422,17 @@ function ProductFormModal({
       }
       if (draft.flavourBox.sizes.length === 0) {
         setSaveError("Add at least one box size, or turn off the build-your-own box.");
+        return;
+      }
+      // Checkout finds the size by its count and nothing else, so two sizes
+      // holding the same number are indistinguishable once an order is placed
+      // and the cheaper one always wins. Stop that being saved at all.
+      const counts = draft.flavourBox.sizes.map((size) => size.count);
+      const repeated = counts.find((count, i) => counts.indexOf(count) !== i);
+      if (repeated != null) {
+        setSaveError(
+          `Two box sizes both hold ${repeated} treats. Give each size its own number, otherwise an order for one is priced as the other.`,
+        );
         return;
       }
     }
@@ -556,7 +595,7 @@ function ProductFormModal({
               ))}
               <label
                 className={cn(
-                  "flex h-20 w-20 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-blush text-xs font-semibold text-rose-deep",
+                  "flex h-20 w-20 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-blush text-xs font-semibold text-rose-ink",
                   uploading && "opacity-60",
                 )}
               >
@@ -584,7 +623,7 @@ function ProductFormModal({
                   className={cn(
                     "rounded-full border px-3 py-1.5 text-xs font-semibold transition active:scale-95",
                     draft.allergens.includes(allergen)
-                      ? "border-rose-deep bg-blush-soft text-rose-deep"
+                      ? "border-rose-deep bg-blush-soft text-rose-ink"
                       : "border-line bg-white text-ink hover:border-rose",
                   )}
                 >
@@ -605,7 +644,7 @@ function ProductFormModal({
                   className={cn(
                     "rounded-full border px-3 py-1.5 text-xs font-semibold transition active:scale-95",
                     draft.dietaryTags.includes(tag)
-                      ? "border-rose-deep bg-blush-soft text-rose-deep"
+                      ? "border-rose-deep bg-blush-soft text-rose-ink"
                       : "border-line bg-white text-ink hover:border-rose",
                   )}
                 >
@@ -835,7 +874,7 @@ function ProductFormModal({
               <button
                 type="button"
                 onClick={addOption}
-                className="self-start rounded-full border border-dashed border-blush px-4 py-2 text-xs font-semibold text-rose-deep transition hover:border-rose active:scale-95"
+                className="self-start rounded-full border border-dashed border-blush px-4 py-2 text-xs font-semibold text-rose-ink transition hover:border-rose active:scale-95"
               >
                 + Add option group
               </button>

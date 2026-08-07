@@ -118,7 +118,7 @@ export function FlavourBoxPicker({
       <div
         role="status"
         aria-live="polite"
-        className="mt-4 flex items-center justify-between rounded-xl bg-blush-soft/60 px-4 py-3 text-sm font-semibold text-rose-deep"
+        className="mt-4 flex items-center justify-between rounded-xl bg-blush-soft/60 px-4 py-3 text-sm font-semibold text-rose-ink"
       >
         <span>
           {chosen} of {size.count} chosen

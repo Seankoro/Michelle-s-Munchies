@@ -105,7 +105,14 @@ export async function signUpWithPassword(
       console.error("[auth] signup failed after retries:", error.message);
       return { error: "Something went wrong creating your account. Please try again." };
     }
-    return { error: error.message };
+    // Supabase writes for developers, so its wording lands in front of a
+    // customer as things like "AuthApiError: invalid claim". Keep the real one
+    // for us and say something they can act on.
+    console.error("[auth] signup rejected:", error.message);
+    return {
+      error:
+        "We couldn't create your account with those details. Check your email and password, then try again.",
+    };
   }
   if (data.user && referralCode.trim()) {
     await linkReferral(data.user.id, referralCode);
@@ -168,7 +175,10 @@ export async function sendMagicLink(email: string, next?: string): Promise<AuthR
     email,
     options: { emailRedirectTo },
   });
-  if (error) return { error: error.message };
+  if (error) {
+    console.error("[auth] magic link failed:", error.message);
+    return { error: "We couldn't send that link just now. Check your email address and try again." };
+  }
   return { ok: true, pending: "We've emailed you a magic link. Open it on this device to sign in." };
 }
 

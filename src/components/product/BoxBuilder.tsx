@@ -102,7 +102,7 @@ export function BoxBuilder({ box }: { box: BoxTemplate }) {
       <div
         role="status"
         aria-live="polite"
-        className="flex items-center justify-between rounded-xl bg-blush-soft/60 px-4 py-3 text-sm font-semibold text-rose-deep"
+        className="flex items-center justify-between rounded-xl bg-blush-soft/60 px-4 py-3 text-sm font-semibold text-rose-ink"
       >
         <span>
           {chosen} of {box.itemCount} chosen
@@ -151,8 +151,8 @@ export function BoxBuilder({ box }: { box: BoxTemplate }) {
                       type="button"
                       aria-label={`Remove one ${labelFor(product.name, choice.flavour)}`}
                       onClick={() => bump(choice.key, -1)}
-                      disabled={qty === 0}
-                      className="h-8 w-8 rounded-full border border-line text-ink transition active:scale-90 disabled:opacity-40"
+                      aria-disabled={qty === 0}
+                      className="h-10 w-10 rounded-full border border-line text-ink transition active:scale-90 disabled:opacity-40 aria-disabled:opacity-40"
                     >
                       −
                     </button>
@@ -161,8 +161,13 @@ export function BoxBuilder({ box }: { box: BoxTemplate }) {
                       type="button"
                       aria-label={`Add one ${labelFor(product.name, choice.flavour)}`}
                       onClick={() => bump(choice.key, 1)}
-                      disabled={choice.soldOut || remaining <= 0}
-                      className="h-8 w-8 rounded-full border border-line text-ink transition active:scale-90 disabled:opacity-40"
+                      // Sold out is a fact about the treat and stays a real
+                      // disable. Box-is-full is about the tap you just made, and
+                      // a button that really disables under your finger drops
+                      // focus to the page body, so that half is aria-only.
+                      disabled={choice.soldOut}
+                      aria-disabled={remaining <= 0}
+                      className="h-10 w-10 rounded-full border border-line text-ink transition active:scale-90 disabled:opacity-40 aria-disabled:opacity-40"
                     >
                       +
                     </button>

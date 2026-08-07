@@ -32,7 +32,7 @@ export function SiteFooter({ channels = [] }: { channels?: FooterChannel[] }) {
                     {...(channel.external
                       ? { target: "_blank", rel: "noopener noreferrer" }
                       : {})}
-                    className="font-semibold text-rose-deep transition hover:text-rose"
+                    className="font-semibold text-rose-ink transition hover:text-rose"
                   >
                     {channel.label}
                   </a>
@@ -42,19 +42,19 @@ export function SiteFooter({ channels = [] }: { channels?: FooterChannel[] }) {
           </div>
 
           <nav aria-label="Footer">
-            <p className="mb-3 text-sm font-semibold uppercase tracking-wide text-rose-deep">
+            <p className="mb-3 text-sm font-semibold uppercase tracking-wide text-rose-ink">
               Explore
             </p>
             <ul className="flex flex-col gap-2 text-sm">
               {primaryNav.map((link) => (
                 <li key={link.href}>
-                  <Link href={link.href} className="text-ink transition hover:text-rose-deep">
+                  <Link href={link.href} className="text-ink transition hover:text-rose-ink">
                     {link.label}
                   </Link>
                 </li>
               ))}
               <li>
-                <Link href="/track" className="text-ink transition hover:text-rose-deep">
+                <Link href="/track" className="text-ink transition hover:text-rose-ink">
                   Track an order
                 </Link>
               </li>
@@ -62,7 +62,7 @@ export function SiteFooter({ channels = [] }: { channels?: FooterChannel[] }) {
           </nav>
 
           <div>
-            <p className="mb-3 text-sm font-semibold uppercase tracking-wide text-rose-deep">
+            <p className="mb-3 text-sm font-semibold uppercase tracking-wide text-rose-ink">
               Good to know
             </p>
             <ul className="flex flex-col gap-2 text-sm text-muted">

@@ -123,7 +123,7 @@ export default function AdminNewsletterPage() {
         )}
 
         {message && (
-          <p className={`text-sm ${message.kind === "ok" ? "text-success" : "text-rose-deep"}`}>
+          <p className={`text-sm ${message.kind === "ok" ? "text-success" : "text-rose-ink"}`}>
             {message.text}
           </p>
         )}

@@ -297,7 +297,7 @@ export function MenuBrowser({
             </button>
             <Link
               href="/contact"
-              className="text-sm font-semibold text-rose-deep transition hover:text-rose"
+              className="text-sm font-semibold text-rose-ink transition hover:text-rose"
             >
               Michelle takes requests →
             </Link>

@@ -73,7 +73,7 @@ function Field({
       </label>
       {field}
       {error && (
-        <p id={errorId} role="alert" className="mt-1 text-sm text-rose-deep">
+        <p id={errorId} role="alert" className="mt-1 text-sm text-rose-ink">
           {error}
         </p>
       )}
@@ -613,7 +613,7 @@ export default function CheckoutPage() {
             <span
               className={cn(
                 "flex h-6 w-6 items-center justify-center rounded-full text-xs",
-                index === 0 ? "bg-rose-deep text-white" : "bg-blush-soft text-rose-deep",
+                index === 0 ? "bg-rose-deep text-white" : "bg-blush-soft text-rose-ink",
               )}
               aria-hidden="true"
             >
@@ -678,7 +678,7 @@ export default function CheckoutPage() {
           {fulfillment === "delivery" && giftSelfSchedule && (
             <section className="flex flex-col gap-2">
               <h2 className="font-display text-xl font-semibold">Delivery address</h2>
-              <p className="rounded-xl bg-blush-soft/50 px-4 py-3 text-sm text-rose-deep">
+              <p className="rounded-xl bg-blush-soft/50 px-4 py-3 text-sm text-rose-ink">
                 💌 The recipient will add their own address using the link we give you to share, so
                 you don&rsquo;t need it here.
               </p>
@@ -807,13 +807,13 @@ export default function CheckoutPage() {
               )}
             </div>
             {orderingPaused && (
-              <p role="status" className="rounded-xl bg-blush-soft/60 px-3 py-2 text-sm text-rose-deep">
+              <p role="status" className="rounded-xl bg-blush-soft/60 px-3 py-2 text-sm text-rose-ink">
                 Ordering is paused right now. There are no pickup or delivery times open, so please
                 check back soon.
               </p>
             )}
             {!orderingPaused && (dailyCapReached || allWindowsFull) && (
-              <p role="status" className="rounded-xl bg-blush-soft/60 px-3 py-2 text-sm text-rose-deep">
+              <p role="status" className="rounded-xl bg-blush-soft/60 px-3 py-2 text-sm text-rose-ink">
                 {formatLongDate(date)} is fully booked. Please choose another date.
               </p>
             )}
@@ -1025,7 +1025,7 @@ export default function CheckoutPage() {
             {features.promos && (
             <div className="mt-4" aria-live="polite">
               {appliedPromo ? (
-                <div className="flex items-center justify-between gap-2 rounded-xl bg-blush-soft/60 p-3 text-sm text-rose-deep">
+                <div className="flex items-center justify-between gap-2 rounded-xl bg-blush-soft/60 p-3 text-sm text-rose-ink">
                   <span>
                     🎟️ <span className="font-semibold">{appliedPromo.code}</span> applied (
                     {appliedPromo.label})
@@ -1060,12 +1060,12 @@ export default function CheckoutPage() {
                   </button>
                 </div>
               )}
-              {promoError && <p className="mt-1 text-sm text-rose-deep">{promoError}</p>}
+              {promoError && <p className="mt-1 text-sm text-rose-ink">{promoError}</p>}
             </div>
             )}
 
             {features.rewards && pointsBalance > 0 && (
-              <div className="mt-3 flex items-start gap-3 rounded-xl bg-blush-soft/60 p-3 text-sm text-rose-deep">
+              <div className="mt-3 flex items-start gap-3 rounded-xl bg-blush-soft/60 p-3 text-sm text-rose-ink">
                 <Toggle
                   checked={applyPoints}
                   onChange={setApplyPoints}
@@ -1097,13 +1097,13 @@ export default function CheckoutPage() {
                 </dd>
               </div>
               {promoDiscountCents > 0 && (
-                <div className="flex justify-between text-rose-deep">
+                <div className="flex justify-between text-rose-ink">
                   <dt>Promo ({appliedPromo?.code})</dt>
                   <dd>−{formatPrice(promoDiscountCents)}</dd>
                 </div>
               )}
               {pointsDiscountCents > 0 && (
-                <div className="flex justify-between text-rose-deep">
+                <div className="flex justify-between text-rose-ink">
                   <dt>Rewards points</dt>
                   <dd>−{formatPrice(pointsDiscountCents)}</dd>
                 </div>
@@ -1123,7 +1123,7 @@ export default function CheckoutPage() {
             {dietaryConflicts.length > 0 && (
               <p
                 role="status"
-                className="mt-2 rounded-xl bg-blush-soft/60 px-3 py-2 text-sm text-rose-deep"
+                className="mt-2 rounded-xl bg-blush-soft/60 px-3 py-2 text-sm text-rose-ink"
               >
                 Heads up: {dietaryConflicts.join(", ")} may not match your saved dietary
                 preferences. You can still order if that&rsquo;s fine.
@@ -1131,7 +1131,7 @@ export default function CheckoutPage() {
             )}
 
             {errors.order && (
-              <p role="alert" className="mt-2 text-sm text-rose-deep">
+              <p role="alert" className="mt-2 text-sm text-rose-ink">
                 {errors.order}
               </p>
             )}
@@ -1152,7 +1152,7 @@ export default function CheckoutPage() {
             </p>
             <Link
               href="/cart"
-              className="mt-3 block text-center text-sm font-semibold text-rose-deep transition hover:text-rose"
+              className="mt-3 block text-center text-sm font-semibold text-rose-ink transition hover:text-rose"
             >
               Back to cart
             </Link>

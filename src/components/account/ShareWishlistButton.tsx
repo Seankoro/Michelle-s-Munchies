@@ -42,7 +42,7 @@ export function ShareWishlistButton() {
       >
         {status === "copied" ? "Link copied ✓" : status === "loading" ? "…" : "🔗 Share my wishlist"}
       </Button>
-      {status === "error" && <p className="mt-1 text-sm text-rose-deep">{message}</p>}
+      {status === "error" && <p className="mt-1 text-sm text-rose-ink">{message}</p>}
     </div>
   );
 }

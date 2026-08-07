@@ -107,7 +107,7 @@ export function ProductCard({
         <div className="flex flex-1 flex-col gap-3 p-4">
           <div className="flex items-start justify-between gap-2">
             <h3 className="font-display text-lg font-semibold leading-snug">
-              <Link href={detailHref} className="transition hover:text-rose-deep">
+              <Link href={detailHref} className="transition hover:text-rose-ink">
                 {product.name}
               </Link>
             </h3>
@@ -116,7 +116,7 @@ export function ProductCard({
 
           {rating && rating.count > 0 && (
             <p className="-mt-1 text-sm text-ink">
-              <span aria-hidden="true" className="text-rose-deep">
+              <span aria-hidden="true" className="text-rose-ink">
                 ★
               </span>{" "}
               {rating.avg.toFixed(1)}

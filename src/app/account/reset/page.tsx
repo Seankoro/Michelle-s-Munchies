@@ -99,7 +99,7 @@ function ResetPasswordForm() {
           </div>
 
           {error && (
-            <p role="alert" className="text-sm text-rose-deep">
+            <p role="alert" className="text-sm text-rose-ink">
               {error}
             </p>
           )}
@@ -111,7 +111,7 @@ function ResetPasswordForm() {
 
         <p className="mt-6 text-center text-sm text-muted">
           Link expired?{" "}
-          <Link href="/account/forgot" className="font-semibold text-rose-deep hover:text-rose">
+          <Link href="/account/forgot" className="font-semibold text-rose-ink hover:text-rose">
             Request a new one
           </Link>
         </p>

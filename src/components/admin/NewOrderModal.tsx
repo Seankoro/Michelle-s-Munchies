@@ -331,7 +331,7 @@ export function NewOrderModal({ onClose }: { onClose: () => void }) {
                           type="number"
                           min={0}
                           step="0.01"
-                          className={cn(inputClass, "w-28 text-sm")}
+                          className={cn(inputClass, "w-28 sm:text-sm")}
                           value={custom.priceText}
                           onChange={(e) =>
                             setLine(index, {
@@ -351,10 +351,10 @@ export function NewOrderModal({ onClose }: { onClose: () => void }) {
                       >
                         <span>
                           {option.name}
-                          {option.required && <span className="text-rose-deep"> *</span>}
+                          {option.required && <span className="text-rose-ink"> *</span>}
                         </span>
                         <select
-                          className={cn(inputClass, "flex-1 text-sm")}
+                          className={cn(inputClass, "flex-1 sm:text-sm")}
                           value={line.choices[option.id] ?? ""}
                           onChange={(e) =>
                             setLine(index, {
@@ -519,7 +519,7 @@ export function NewOrderModal({ onClose }: { onClose: () => void }) {
               {busy ? "Saving…" : "Log order"}
             </button>
           </div>
-          {error && <p className="text-sm text-rose-deep">{error}</p>}
+          {error && <p className="text-sm text-rose-ink">{error}</p>}
         </div>
     </AdminModal>
   );

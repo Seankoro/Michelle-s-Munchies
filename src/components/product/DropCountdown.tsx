@@ -44,7 +44,7 @@ export function DropCountdown({ availableFrom }: { availableFrom: string }) {
   });
 
   return (
-    <div className="rounded-xl bg-blush-soft/60 px-4 py-3 text-sm text-rose-deep">
+    <div className="rounded-xl bg-blush-soft/60 px-4 py-3 text-sm text-rose-ink">
       <p className="font-semibold">Launching {launchLabel}</p>
       <p className="mt-1">
         Opens in {days > 0 ? `${days}d ` : ""}

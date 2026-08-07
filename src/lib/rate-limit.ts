@@ -69,6 +69,12 @@ async function upstashAllow(key: string, limit: number, windowMs: number): Promi
       ["PEXPIRE", key, windowMs, "NX"],
     ]),
     cache: "no-store",
+    // A Redis that answers slowly is worse than one that is plainly down. With
+    // no bound this fetch waits as long as the connection stays open, and the
+    // caller is a checkout or a sign-in that cannot start until it returns, so
+    // the fallback written below to survive exactly this never gets to run.
+    // Two seconds is far longer than a healthy round trip to the same region.
+    signal: AbortSignal.timeout(2000),
   });
   if (!res.ok) throw new Error(`Upstash responded ${res.status}`);
   const data = (await res.json()) as Array<{ result?: number; error?: string }>;

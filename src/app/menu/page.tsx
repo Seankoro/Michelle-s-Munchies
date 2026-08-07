@@ -13,31 +13,40 @@ export const metadata: Metadata = {
 };
 
 export default async function MenuPage() {
-  const products = await fetchProducts();
-  const categories = Array.from(new Set(products.map((product) => product.category)));
+  // Settings first, because the two feature flags below decide whether the
+  // other reads happen at all. Everything after it is independent, so it runs
+  // together rather than as a queue of round trips the customer waits through
+  // one at a time.
   const settings = await fetchStoreSettings();
 
-  // Star lines on the cards, social proof where browsing actually happens.
-  const ratings = settings.features.reviews ? await fetchAllRatings() : {};
-
-  // Pre-apply the signed-in customer's saved dietary preferences when enabled.
-  let initialDietary: DietaryTag[] = [];
-  if (settings.features.dietaryPrefs) {
-    const supabase = await createServerSupabase();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (user) {
+  const [products, ratings, dietaryPrefs] = await Promise.all([
+    fetchProducts(),
+    // Star lines on the cards, social proof where browsing actually happens.
+    settings.features.reviews ? fetchAllRatings() : Promise.resolve({}),
+    // The signed-in customer's saved dietary preferences. getUser has to finish
+    // before the profile row can be asked for, so this pair is the only part
+    // that genuinely has to be serial.
+    (async (): Promise<DietaryTag[]> => {
+      if (!settings.features.dietaryPrefs) return [];
+      const supabase = await createServerSupabase();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return [];
       const { data } = await supabase
         .from("profiles")
         .select("dietary_prefs")
         .eq("id", user.id)
         .maybeSingle();
-      const prefs = (data as { dietary_prefs: DietaryTag[] | null } | null)?.dietary_prefs ?? [];
-      // Only keep tags some product actually carries, so we never empty the menu.
-      initialDietary = prefs.filter((tag) => products.some((p) => p.dietaryTags.includes(tag)));
-    }
-  }
+      return (data as { dietary_prefs: DietaryTag[] | null } | null)?.dietary_prefs ?? [];
+    })(),
+  ]);
+
+  const categories = Array.from(new Set(products.map((product) => product.category)));
+  // Only keep tags some product actually carries, so we never empty the menu.
+  const initialDietary = dietaryPrefs.filter((tag) =>
+    products.some((p) => p.dietaryTags.includes(tag)),
+  );
 
   return (
     <main className="mx-auto max-w-none px-6 py-12 lg:px-10">

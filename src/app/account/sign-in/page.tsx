@@ -79,7 +79,7 @@ function SignInForm() {
         {showCallbackError && (
           <p
             role="alert"
-            className="mt-4 rounded-xl bg-blush-soft/60 px-3 py-2 text-center text-sm text-rose-deep"
+            className="mt-4 rounded-xl bg-blush-soft/60 px-3 py-2 text-center text-sm text-rose-ink"
           >
             That link didn’t work or has expired. Please sign in again.
           </p>
@@ -115,7 +115,7 @@ function SignInForm() {
             <div className="mt-1 text-right">
               <Link
                 href={forgotHref}
-                className="text-sm font-semibold text-rose-deep hover:text-rose"
+                className="text-sm font-semibold text-rose-ink hover:text-rose"
               >
                 Forgot password?
               </Link>
@@ -123,12 +123,12 @@ function SignInForm() {
           </div>
 
           {error && (
-            <p role="alert" className="text-sm text-rose-deep">
+            <p role="alert" className="text-sm text-rose-ink">
               {error}
             </p>
           )}
           {pending && (
-            <p role="status" aria-live="polite" className="text-sm text-rose-deep">
+            <p role="status" aria-live="polite" className="text-sm text-rose-ink">
               {pending}
             </p>
           )}
@@ -163,7 +163,7 @@ function SignInForm() {
 
         <p className="mt-6 text-center text-sm text-muted">
           New here?{" "}
-          <Link href="/account/sign-up" className="font-semibold text-rose-deep hover:text-rose">
+          <Link href="/account/sign-up" className="font-semibold text-rose-ink hover:text-rose">
             Create an account
           </Link>
         </p>

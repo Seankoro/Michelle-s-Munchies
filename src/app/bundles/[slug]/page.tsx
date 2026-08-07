@@ -13,7 +13,18 @@ type Params = { params: Promise<{ slug: string }> };
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params;
   const bundle = await fetchBundleBySlug(slug);
-  return { title: bundle ? bundle.name : "Not found", description: bundle?.description ?? undefined };
+  if (!bundle) return { title: "Not found" };
+  return {
+    title: bundle.name,
+    description: bundle.description ?? undefined,
+    alternates: { canonical: `/bundles/${bundle.slug}` },
+    openGraph: {
+      title: bundle.name,
+      description: bundle.description ?? undefined,
+      type: "website",
+      images: bundle.imageUrl ? [bundle.imageUrl] : undefined,
+    },
+  };
 }
 
 export default async function BundleDetailPage({ params }: Params) {
@@ -24,7 +35,7 @@ export default async function BundleDetailPage({ params }: Params) {
 
   return (
     <main className="mx-auto max-w-none px-6 py-10 lg:px-10">
-      <Link href="/bundles" className="text-sm font-semibold text-rose-deep transition hover:text-rose">
+      <Link href="/bundles" className="text-sm font-semibold text-rose-ink transition hover:text-rose">
         ← Back to bundles
       </Link>
 

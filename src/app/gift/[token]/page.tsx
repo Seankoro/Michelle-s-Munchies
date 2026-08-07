@@ -61,9 +61,9 @@ export default async function GiftSchedulePage({
       </div>
 
       {gift.gift_message && (
-        <div className="mt-6 rounded-2xl bg-blush-soft/60 p-5 text-center text-sm text-rose-deep">
+        <div className="mt-6 rounded-2xl bg-blush-soft/60 p-5 text-center text-sm text-rose-ink">
           <p className="italic">&ldquo;{gift.gift_message}&rdquo;</p>
-          <p className="mt-1 text-rose-deep/80">with love, {senderFirst}</p>
+          <p className="mt-1 text-rose-ink">with love, {senderFirst}</p>
         </div>
       )}
 
@@ -73,7 +73,7 @@ export default async function GiftSchedulePage({
         </p>
       ) : scheduled ? (
         <div className="mt-8 rounded-2xl border border-line bg-white p-6 text-center">
-          <p className="font-display text-lg font-semibold text-rose-deep">You&rsquo;re all set! 🎀</p>
+          <p className="font-display text-lg font-semibold text-rose-ink">You&rsquo;re all set! 🎀</p>
           <p className="mt-2 text-sm text-muted">
             We have your delivery details for {formatLongDate(gift.scheduled_date)}
             {gift.time_window ? ` · ${gift.time_window}` : ""}. Keep an eye out!
@@ -106,7 +106,7 @@ export default async function GiftSchedulePage({
       <div className="mt-10 text-center">
         <Link
           href="/menu"
-          className="text-sm font-semibold text-rose-deep transition hover:text-rose"
+          className="text-sm font-semibold text-rose-ink transition hover:text-rose"
         >
           Peek at the menu
         </Link>

@@ -188,8 +188,8 @@ export default async function TrackOrderPage({
 
       {waHref && (
         <div className="mt-6 rounded-2xl border border-rose/30 bg-blush-soft/60 p-5 text-center">
-          <p className="font-display text-lg font-semibold text-rose-deep">One more step</p>
-          <p className="mt-1 text-sm text-rose-deep">
+          <p className="font-display text-lg font-semibold text-rose-ink">One more step</p>
+          <p className="mt-1 text-sm text-rose-ink">
             Send your order to us on WhatsApp. We&rsquo;ll confirm it and reply with PayNow details
             so you can pay by transfer, usually the same day.
           </p>
@@ -206,8 +206,8 @@ export default async function TrackOrderPage({
 
       {!waHref && needsPayment && (
         <div className="mt-6 rounded-2xl border border-rose/30 bg-blush-soft/60 p-5 text-center">
-          <p className="font-display text-lg font-semibold text-rose-deep">One more step</p>
-          <p className="mt-1 text-sm text-rose-deep">
+          <p className="font-display text-lg font-semibold text-rose-ink">One more step</p>
+          <p className="mt-1 text-sm text-rose-ink">
             We&rsquo;ll message you on WhatsApp to confirm your order and share PayNow details.
             Questions in the meantime?{" "}
             <Link href="/contact" className="font-semibold underline">
@@ -319,7 +319,7 @@ export default async function TrackOrderPage({
                   </span>
                 )}
                 {item.personalisation?.message && (
-                  <span className="block text-xs text-rose-deep">
+                  <span className="block text-xs text-rose-ink">
                     ✍️ &ldquo;{item.personalisation.message}&rdquo;
                   </span>
                 )}
@@ -345,7 +345,7 @@ export default async function TrackOrderPage({
             <dd>{order.delivery_fee_cents === 0 ? "Free" : formatPrice(order.delivery_fee_cents)}</dd>
           </div>
           {order.discount_cents > 0 && (
-            <div className="flex justify-between text-rose-deep">
+            <div className="flex justify-between text-rose-ink">
               <dt>Discount{order.promo_code ? ` (${order.promo_code})` : ""}</dt>
               <dd>−{formatPrice(order.discount_cents)}</dd>
             </div>
@@ -406,19 +406,19 @@ export default async function TrackOrderPage({
       )}
 
       {order.is_gift && (
-        <div className="mt-6 rounded-2xl bg-blush-soft/60 p-5 text-sm text-rose-deep">
+        <div className="mt-6 rounded-2xl bg-blush-soft/60 p-5 text-sm text-rose-ink">
           <p className="font-semibold">
             🎁 A gift{order.recipient_name ? ` for ${order.recipient_name}` : ""}
           </p>
           {order.gift_message && <p className="mt-1 italic">&ldquo;{order.gift_message}&rdquo;</p>}
-          <p className="mt-1 text-rose-deep/80">
+          <p className="mt-1 text-rose-ink">
             We&rsquo;ll tuck in your message and leave the price off the package.
           </p>
         </div>
       )}
 
       {!signedIn && (
-        <div className="mt-6 rounded-2xl bg-blush-soft/60 p-5 text-sm text-rose-deep">
+        <div className="mt-6 rounded-2xl bg-blush-soft/60 p-5 text-sm text-rose-ink">
           <p>
             ✨{" "}
             <Link href="/account/sign-up" className="font-semibold underline">
@@ -435,7 +435,7 @@ export default async function TrackOrderPage({
             <TrackReorderButton token={token} />
             <Link
               href="/menu"
-              className="text-sm font-semibold text-rose-deep transition hover:text-rose"
+              className="text-sm font-semibold text-rose-ink transition hover:text-rose"
             >
               Back to the menu
             </Link>

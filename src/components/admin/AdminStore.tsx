@@ -97,6 +97,8 @@ type AdminContextValue = {
   error: string | null;
   /** Re-pull everything from the server. Safe to call any time. */
   refresh: () => Promise<void>;
+  /** A re-pull is in flight, so a retry button can show it is doing something. */
+  loading: boolean;
   lastUpdated: Date | null;
   toggleAvailability: (id: string) => void;
   toggleBestSeller: (id: string) => void;
@@ -115,12 +117,20 @@ type AdminContextValue = {
     timeWindow: string,
   ) => void;
   addManualOrder: (input: ManualOrderInput) => Promise<ManualOrderResult>;
-  cancelOrder: (orderNumber: string) => Promise<{
+  /** `cancelWithoutRefund` overrides a Stripe refusal Stripe will never accept.
+   *  Always call it off first, so the override is only ever offered after the
+   *  server has actually refused. */
+  cancelOrder: (
+    orderNumber: string,
+    cancelWithoutRefund?: boolean,
+  ) => Promise<{
     ok: boolean;
     refunded?: boolean;
     /** Paid outside Stripe, so nothing was reversed and the money goes back by hand. */
     manualRefundDue?: boolean;
     amountCents?: number;
+    /** Stripe would not return the money. The one refusal she may override. */
+    refundFailed?: boolean;
     error?: string;
   }>;
   recordRefund: (
@@ -175,9 +185,11 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
   const [hydrated, setHydrated] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [loading, setLoading] = useState(false);
   const lastFetchAt = useRef(0);
 
   const refresh = useCallback(async () => {
+    setLoading(true);
     try {
       const data = await loadAdminData();
       setProducts(data.products);
@@ -201,6 +213,7 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
       setError(readableError(e) ?? "Failed to load admin data.");
     } finally {
       lastFetchAt.current = Date.now();
+      setLoading(false);
     }
   }, []);
 
@@ -229,8 +242,11 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
     function failed(detail: string | null) {
       rollback();
       setError(
+        // The reason is already a whole sentence with its own full stop, so
+        // wrapping it in brackets produced a stray ".)." mid-message. Let it
+        // stand as its own sentence.
         detail
-          ? `${what} didn't save (${detail}). The change was undone, please try again.`
+          ? `${what} didn't save. ${detail} Nothing changed, please try again.`
           : `${what} didn't save. The change was undone, please try again.`,
       );
     }
@@ -431,8 +447,8 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
     return result;
   }
 
-  async function cancelOrder(orderNumber: string) {
-    const result = await cancelOrderAction(orderNumber);
+  async function cancelOrder(orderNumber: string, cancelWithoutRefund = false) {
+    const result = await cancelOrderAction(orderNumber, cancelWithoutRefund);
     if (result.ok) {
       setOrders((prev) =>
         prev.map((o) =>
@@ -445,6 +461,13 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
             : o,
         ),
       );
+      // A cancel does more than move two fields. It puts tracked stock back,
+      // which can flip a treat that auto-hid at zero back to available, it
+      // returns loyalty points, and it writes down what Stripe sent back. None
+      // of that is in the local patch above, so without a re-pull the menu keeps
+      // showing sold out on something that is orderable again and the money
+      // figures on screen stay at what they were before the refund.
+      await refresh();
       // manualRefundDue and amountCents carry the "no Stripe payment to reverse,
       // send it back yourself" case, so pass them through instead of dropping
       // them and leaving the panel unable to say how much is owed.
@@ -455,7 +478,10 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
         amountCents: result.amountCents,
       };
     }
-    return { ok: false, error: result.error };
+    // refundFailed marks the one refusal she is allowed to override, so it has
+    // to survive the trip back. Dropped here, the panel could never offer the
+    // way out and the order stayed stuck for good.
+    return { ok: false, error: result.error, refundFailed: result.refundFailed };
   }
 
   /** Not optimistic: the server refuses a refund that would take back more than
@@ -532,6 +558,7 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
     hydrated,
     error,
     refresh,
+    loading,
     lastUpdated,
     toggleAvailability,
     toggleBestSeller,

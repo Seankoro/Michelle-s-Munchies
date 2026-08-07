@@ -84,7 +84,7 @@ export function RibbonNav() {
         className="group flex flex-col items-center rounded-2xl p-1 transition-transform hover:translate-y-1 active:translate-y-1.5"
       >
         <RibbonBow className={cn("h-12 w-14 transition-transform", open && "scale-105")} />
-        <span className="-mt-1 text-[0.7rem] font-semibold uppercase tracking-wide text-rose-deep">
+        <span className="-mt-1 text-[0.7rem] font-semibold uppercase tracking-wide text-rose-ink">
           {open ? "Close" : "Menu"}
         </span>
       </button>

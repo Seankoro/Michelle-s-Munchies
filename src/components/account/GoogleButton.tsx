@@ -56,7 +56,7 @@ export function GoogleButton({ label = "Continue with Google" }: { label?: strin
         </svg>
         {loading ? "Redirecting…" : label}
       </button>
-      {error && <p className="mt-2 text-sm text-rose-deep">{error}</p>}
+      {error && <p className="mt-2 text-sm text-rose-ink">{error}</p>}
     </div>
   );
 }

@@ -10,7 +10,23 @@ type Params = { params: Promise<{ slug: string }> };
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params;
   const box = await fetchBoxBySlug(slug);
-  return { title: box ? box.name : "Not found" };
+  if (!box) return { title: "Not found" };
+  // A box carries no photo of its own, so borrow the first treat that can go in
+  // it. That is what the box actually is, and it beats the generic bakery card
+  // this link shows in a WhatsApp chat today.
+  const description = `Pick any ${box.itemCount} treats for ${(box.priceCents / 100).toFixed(2)} SGD.`;
+  const cover = box.eligibleProducts.find((p) => p.imageUrls?.length)?.imageUrls?.[0];
+  return {
+    title: box.name,
+    description,
+    alternates: { canonical: `/build-a-box/${box.slug}` },
+    openGraph: {
+      title: box.name,
+      description,
+      type: "website",
+      images: cover ? [cover] : undefined,
+    },
+  };
 }
 
 export default async function BoxDetailPage({ params }: Params) {
@@ -21,7 +37,7 @@ export default async function BoxDetailPage({ params }: Params) {
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-10 lg:px-10">
-      <Link href="/build-a-box" className="text-sm font-semibold text-rose-deep transition hover:text-rose">
+      <Link href="/build-a-box" className="text-sm font-semibold text-rose-ink transition hover:text-rose">
         ← Back to boxes
       </Link>
       <h1 className="mt-6 font-display text-4xl font-semibold">{box.name}</h1>

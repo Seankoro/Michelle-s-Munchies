@@ -154,7 +154,7 @@ export default function AdminBundlesPage() {
               <button
                 type="button"
                 onClick={() => remove(b.id)}
-                className="rounded-full border border-line px-3 py-1.5 text-sm font-semibold text-rose-deep transition hover:border-rose active:scale-95"
+                className="rounded-full border border-line px-3 py-1.5 text-sm font-semibold text-rose-ink transition hover:border-rose active:scale-95"
               >
                 Delete
               </button>
@@ -280,7 +280,7 @@ export default function AdminBundlesPage() {
                   onClick={() =>
                     setDraft((d) => (d ? { ...d, items: d.items.filter((_, i) => i !== index) } : d))
                   }
-                  className="rounded-full border border-line px-3 text-sm text-rose-deep transition hover:border-rose active:scale-90"
+                  className="rounded-full border border-line px-3 text-sm text-rose-ink transition hover:border-rose active:scale-90"
                 >
                   ✕
                 </button>
@@ -297,7 +297,7 @@ export default function AdminBundlesPage() {
             </button>
           </div>
 
-          {error && <p className="mt-3 text-sm text-rose-deep">{error}</p>}
+          {error && <p className="mt-3 text-sm text-rose-ink">{error}</p>}
           <div className="mt-5 flex gap-3">
             <button
               type="button"

@@ -42,12 +42,17 @@ export default async function HomePage() {
   // The middleware's per-request CSP nonce, so the JSON-LD script below stays
   // allowed now that inline scripts without a nonce are refused.
   const nonce = (await headers()).get("x-nonce") ?? undefined;
-  // Best sellers first, then Michelle's picks, set in admin.
-  const featured = await fetchFeatured(8);
+  // Settings first, because the reviews flag decides whether that read happens
+  // at all. The featured rail does not depend on it, so the two run together
+  // rather than one after the other on the page people land on first.
   const settings = await fetchStoreSettings();
-  const reviews = settings.features.reviews
-    ? await fetchReviewHighlights()
-    : { avg: 0, count: 0, quotes: [] };
+  const [featured, reviews] = await Promise.all([
+    // Best sellers first, then Michelle's picks, set in admin.
+    fetchFeatured(8),
+    settings.features.reviews
+      ? fetchReviewHighlights()
+      : Promise.resolve({ avg: 0, count: 0, quotes: [] }),
+  ]);
 
   // The mascot's speech bubble. Michelle's own message from admin Settings
   // leads when present; a tap cycles through the rest.
@@ -93,7 +98,7 @@ export default async function HomePage() {
             <MascotSays lines={mascotLines} size="hero" priority />
           </div>
           <p
-            className="animate-rise mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-rose-deep"
+            className="animate-rise mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-rose-ink"
             style={{ "--rise-delay": "90ms" } as CSSProperties}
           >
             Home-based bakery · Singapore
@@ -154,7 +159,7 @@ export default async function HomePage() {
         <section className="mx-auto max-w-none px-6 py-16 lg:px-10">
           <Reveal>
             <div className="text-center">
-              <div className="text-2xl tracking-widest text-rose-deep" aria-hidden="true">
+              <div className="text-2xl tracking-widest text-rose-ink" aria-hidden="true">
                 {"★".repeat(Math.round(reviews.avg))}
                 {"☆".repeat(5 - Math.round(reviews.avg))}
               </div>
@@ -174,7 +179,7 @@ export default async function HomePage() {
                     className="rounded-2xl border border-line bg-white p-5 text-center shadow-soft"
                   >
                     <div
-                      className="text-rose-deep"
+                      className="text-rose-ink"
                       aria-label={`${quote.rating} out of 5 stars`}
                     >
                       {"★".repeat(quote.rating)}

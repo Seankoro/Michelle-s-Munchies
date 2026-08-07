@@ -105,7 +105,7 @@ export default function AdminPackingSlipsPage() {
                       </p>
                     )}
                     {order.isGift && (
-                      <p className="mt-1 text-sm font-semibold text-rose-deep">
+                      <p className="mt-1 text-sm font-semibold text-rose-ink">
                         🎁 Gift{order.recipientName ? ` for ${order.recipientName}` : ""}. Include a card, no receipt
                       </p>
                     )}
