@@ -516,12 +516,37 @@ export default function CheckoutPage() {
     // Nothing to book while every window is cleared, and the server would refuse
     // the order anyway, so stop here rather than sending it.
     if (orderingPaused) return;
+    // Worked out again right now, because `earliest` was frozen when the page
+    // opened. A checkout left sitting across the daily cutoff, or across
+    // midnight, still offers the date it loaded with and the server then refuses
+    // it with nothing on screen saying why.
+    const earliestNow = earliestFulfillmentDate(
+      settings.leadTimeDays,
+      singaporeNow(),
+      settings.dailyCutoffTime,
+    );
+    if (date && date < earliestNow) {
+      setErrors({
+        date: `We can't manage that date any more. The earliest we can bake for is ${formatLongDate(earliestNow)}.`,
+      });
+      setDate("");
+      document.getElementById("date")?.focus();
+      return;
+    }
     const found = validate();
     setErrors(found);
     if (Object.keys(found).length > 0) {
-      // Move focus to the first error for usability.
-      const firstId = Object.keys(found)[0];
-      document.getElementById(firstId)?.focus();
+      // The FIRST one on the page, not the first one validate() happened to
+      // find. Object key order follows insertion, so focusing that jumped to
+      // whichever check ran first and scrolled straight past anything above it.
+      const ids = Object.keys(found);
+      const firstOnPage = ids
+        .map((id) => document.getElementById(id))
+        .filter((el): el is HTMLElement => el != null)
+        .sort((a, b) =>
+          a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
+        )[0];
+      (firstOnPage ?? document.getElementById(ids[0]))?.focus();
       return;
     }
 

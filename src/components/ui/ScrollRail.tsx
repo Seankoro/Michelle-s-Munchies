@@ -8,6 +8,12 @@ import { cn } from "@/lib/cn";
  * touch, arrow buttons and a draggable slider for mouse and trackpad. One
  * layout for all devices; at xl the caller's track classes switch to a grid
  * and the controls hide themselves.
+  *
+ * The cards deliberately carry no scroll-snap class. Snapping was tried and
+ * measured against the live rail: with either `mandatory` or `proximity` set on
+ * the track, a programmatic `scrollLeft = 137` landed at 24 instead. This
+ * component writes scrollLeft directly for the grab-pan and for the bow slider,
+ * so snapping hijacks both. Free scrolling is what actually works here.
  */
 export function ScrollRail({
   label,

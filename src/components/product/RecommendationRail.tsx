@@ -3,7 +3,7 @@ import { ProductCard } from "@/components/product/ProductCard";
 import { ScrollRail } from "@/components/ui/ScrollRail";
 
 /**
- * Recommendations carousel. A scroll-snap rail with a peeking next card,
+ * Recommendations carousel. A scrolling rail with a peeking next card,
  * browsable by swipe, arrows, or the slider via ScrollRail; at xl the same
  * products render as a static grid so desktop is not a mobile afterthought.
  */
@@ -16,7 +16,7 @@ export function RecommendationRail({ products }: { products: Product[] }) {
       {products.map((product) => (
         <div
           key={product.id}
-          className="shrink-0 basis-[78%] snap-start sm:basis-[46%] lg:basis-[31%] xl:basis-auto"
+          className="shrink-0 basis-[78%] sm:basis-[46%] lg:basis-[31%] xl:basis-auto"
         >
           <ProductCard product={product} />
         </div>

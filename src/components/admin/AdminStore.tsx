@@ -280,13 +280,22 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
     what: string,
   ) {
     const before = orders.find((o) => o.orderNumber === orderNumber);
+    // Only the fields this patch touched, captured before it is applied. The
+    // rollback used to put a whole snapshot of the order back, which also undid
+    // anything that saved in between. Typing a note and then tapping Advance
+    // fires two saves in a row, because the tap blurs the textarea first, so a
+    // failing note save could quietly reverse a status change that had already
+    // gone through.
+    const undo = before
+      ? (Object.fromEntries(
+          Object.keys(patch).map((key) => [key, before[key as keyof AdminOrder]]),
+        ) as Partial<AdminOrder>)
+      : null;
     patchOrderLocal(orderNumber, patch);
     persist(
       action,
       () => {
-        if (before) {
-          setOrders((prev) => prev.map((o) => (o.orderNumber === orderNumber ? before : o)));
-        }
+        if (undo) patchOrderLocal(orderNumber, undo);
       },
       what,
     );

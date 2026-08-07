@@ -27,7 +27,7 @@ const VIEW_KEY = "mm-menu-view";
 const RESTORE_FLAG = "mm-menu-restore";
 
 /**
- * One category's products as a horizontal scroll-snap rail on phones and tablets,
+ * One category's products as a horizontal scrolling rail on phones and tablets,
  * so the menu reads as short swipeable rows instead of one long vertical list, and
  * a plain grid on desktop. Pure CSS, no JS needed.
  */
@@ -48,7 +48,7 @@ function ProductRail({
       {products.map((product) => (
         <div
           key={product.id}
-          className="shrink-0 basis-[72%] snap-start sm:basis-[40%] lg:basis-[31%] xl:basis-auto"
+          className="shrink-0 basis-[72%] sm:basis-[40%] lg:basis-[31%] xl:basis-auto"
         >
           <ProductCard product={product} rating={ratings?.[product.id]} />
         </div>
