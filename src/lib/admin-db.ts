@@ -931,35 +931,6 @@ export async function recordRefund(
   if (error) throw new Error(`Failed to record the refund: ${error.message}`);
 }
 
-export type OrderRefund = {
-  id: string;
-  amountCents: number;
-  reason: string | null;
-  via: "manual" | "stripe";
-  createdAt: string;
-};
-
-/** Every amount returned on one order, newest first, for the order detail. */
-export async function fetchOrderRefunds(orderId: string): Promise<OrderRefund[]> {
-  const supabase = createAdminClient();
-  const { data } = await supabase
-    .from("order_refunds")
-    .select("id, amount_cents, reason, via, created_at")
-    .eq("order_id", orderId)
-    .order("created_at", { ascending: false });
-  const rows =
-    (data as
-      | { id: string; amount_cents: number; reason: string | null; via: string; created_at: string }[]
-      | null) ?? [];
-  return rows.map((row) => ({
-    id: row.id,
-    amountCents: row.amount_cents,
-    reason: row.reason,
-    via: row.via === "stripe" ? "stripe" : "manual",
-    createdAt: row.created_at,
-  }));
-}
-
 /**
  * Total returned on one order, so revenue can subtract it.
  *
