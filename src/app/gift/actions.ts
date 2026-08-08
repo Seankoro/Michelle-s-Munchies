@@ -30,7 +30,15 @@ export async function scheduleGiftAction(
   const settings = await fetchStoreSettings();
 
   const line1 = address.line1.trim();
+  const unit = address.unit?.trim() ?? "";
   const postal = address.postalCode.trim();
+  // The other two writers of this column cap their text. This one did not, so a
+  // gift link, which anyone can mint by placing their own self-scheduled gift
+  // order, was an uncapped write into an order the admin panel loads in full.
+  // The same caps the owner's own address control uses.
+  if (line1.length > 200 || unit.length > 60) {
+    return { ok: false, error: "That address is too long. Please shorten it." };
+  }
   if (!line1 || !/^\d{6}$/.test(postal)) {
     return { ok: false, error: "Enter your address and a 6-digit postal code." };
   }

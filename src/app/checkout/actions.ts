@@ -535,6 +535,24 @@ export async function placeOrder(
         return { ok: false, error: "Enter a delivery address with a 6-digit postal code." };
       }
     }
+    // Rebuilt from the three fields we know about, never the object the request
+    // sent. Spreading that stored whatever it carried: the postal code was
+    // length-checked nowhere, and the format check above is skipped entirely on
+    // a pickup order and on a gift the recipient schedules, so either could park
+    // a megabyte of text in the order. Every admin screen loads every order, so
+    // it would land on Michelle's phone on every visit.
+    //
+    // A pickup has no address, and a self-scheduled gift does not have one yet,
+    // so both store nothing rather than storing something unchecked. Same rule
+    // the time window above already follows.
+    const address =
+      input.fulfillmentType === "delivery" && !giftSelfSchedule && input.address
+        ? {
+            line1: input.address.line1.trim(),
+            unit: input.address.unit?.trim() || undefined,
+            postalCode: input.address.postalCode.trim(),
+          }
+        : undefined;
     if (!giftSelfSchedule && (!input.timeWindow || !settings.timeWindows.includes(input.timeWindow))) {
       return { ok: false, error: "Please choose a time window." };
     }
@@ -718,6 +736,7 @@ export async function placeOrder(
           // the checked flag rather than from what the request asked for.
           recipientScheduling: giftSelfSchedule,
           timeWindow,
+          address,
           deliveryFeeCents,
         },
         user?.id ?? null,

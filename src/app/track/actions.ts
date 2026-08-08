@@ -381,7 +381,20 @@ export async function addItemsToOrderAction(
     p_items: rows,
     p_added_cents: addedCents,
   });
-  if (rpcErr) return { ok: false, error: "Couldn’t add the items. Please try again." };
+  if (rpcErr) {
+    // The order can be marked paid, or moved on to baking, in the time between
+    // the check near the top of this action and this write. The function now
+    // refuses that rather than quietly inflating a paid total, so tell the
+    // customer what actually happened instead of asking them to try again at
+    // something that will never work.
+    if (rpcErr.message.includes("order_not_changeable")) {
+      return {
+        ok: false,
+        error: "This order was just confirmed or paid, so it can’t be added to. Message us and we’ll sort it.",
+      };
+    }
+    return { ok: false, error: "Couldn’t add the items. Please try again." };
+  }
 
   await sendItemsAddedEmail(order.order_number, order.customer_name, addedNames);
   // The same list Michelle's email carries, so the customer is told exactly what

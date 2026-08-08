@@ -45,6 +45,26 @@ export async function signInWithPassword(email: string, password: string): Promi
   if (!(await rateLimit("auth-sign-in", { limit: 10, windowMs: 5 * 60_000 }))) {
     return { error: "Too many attempts. Please wait a few minutes and try again." };
   }
+  // This form reaches the same Supabase auth as /admin/login, with the same
+  // password, so without an address-keyed cap it was a second door to
+  // Michelle's account that the per-IP bucket above cannot close. Anyone
+  // rotating source addresses gets a fresh budget on every one of them, which
+  // is the exact thing the admin door already guards against.
+  //
+  // Its own key, not the admin one. Sharing a bucket would let an attacker
+  // spend Michelle's remaining admin attempts from out here and lock her out of
+  // the panel while she is mid-bake.
+  const normalizedEmail = email.trim().toLowerCase();
+  if (
+    normalizedEmail &&
+    !(await rateLimit(`auth-sign-in:${normalizedEmail}`, {
+      limit: 20,
+      windowMs: 60 * 60_000,
+      scope: "global",
+    }))
+  ) {
+    return { error: "Too many attempts. Please wait a few minutes and try again." };
+  }
   const supabase = await createServerSupabase();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   // Generic message on any failure. Anti-enumeration, mirroring sendPasswordReset:

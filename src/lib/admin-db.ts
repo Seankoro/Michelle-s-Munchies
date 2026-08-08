@@ -1055,7 +1055,14 @@ export async function removeOrderItems(orderNumber: string, itemIds: string[]): 
     p_order_id: order.id,
     p_item_ids: itemIds,
   });
-  if (error) throw new Error(`Failed to remove the items: ${error.message}`);
+  if (error) {
+    if (error.message.includes("order_not_changeable")) {
+      throw new Error(
+        "This order moved on while you were choosing. Reload it and check where it is now.",
+      );
+    }
+    throw new Error(`Failed to remove the items: ${error.message}`);
+  }
   return typeof removed === "number" ? removed : 0;
 }
 
