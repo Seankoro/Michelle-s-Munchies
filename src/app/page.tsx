@@ -214,8 +214,8 @@ export default async function HomePage() {
                   <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blush-soft text-3xl shadow-soft">
                     <span aria-hidden>{step.icon}</span>
                   </div>
-                  <h3 className="font-display text-xl font-semibold">{step.title}</h3>
-                  <p className="mt-2 text-sm text-muted">{step.body}</p>
+                  <h3 className="font-display text-2xl font-semibold sm:text-3xl">{step.title}</h3>
+                  <p className="mt-2 text-base text-muted">{step.body}</p>
                 </div>
               </Reveal>
             ))}
