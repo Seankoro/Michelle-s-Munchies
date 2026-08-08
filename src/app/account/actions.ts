@@ -9,6 +9,7 @@ import { reorderFromOrderId, type ReorderResult } from "@/lib/cart-resolve";
 import { rateLimit } from "@/lib/rate-limit";
 import { normalizeSgPhone } from "@/lib/phone";
 import type { AuthError } from "@supabase/supabase-js";
+import { canonicalEmail } from "@/lib/text";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 const SITE_ORIGIN = new URL(SITE_URL).origin;
@@ -40,6 +41,10 @@ function resolveSafeNext(next: string | undefined | null): string | null {
     return null;
   }
 }
+
+/** One wording for both the real send and the suppressed one, so the two can
+ * never be told apart by their reply. */
+const MAGIC_LINK_PENDING = "We've emailed you a magic link. Open it on this device to sign in.";
 
 export async function signInWithPassword(email: string, password: string): Promise<AuthResult> {
   if (!(await rateLimit("auth-sign-in", { limit: 10, windowMs: 5 * 60_000 }))) {
@@ -178,13 +183,20 @@ export async function sendMagicLink(email: string, next?: string): Promise<AuthR
     normalizedEmail &&
     // Keyed on the address alone, no client IP, so the cap really is "this many
     // links to this inbox" rather than "this many per inbox per source address".
-    !(await rateLimit(`auth-magic-link:${normalizedEmail}`, {
+    // canonicalEmail so an alias cannot mint a fresh budget for the same inbox.
+    !(await rateLimit(`auth-magic-link:${canonicalEmail(email)}`, {
       limit: 3,
       windowMs: 60 * 60_000,
       scope: "global",
     }))
   ) {
-    return { error: "Too many requests for that email. Please wait a bit and try again." };
+    // Suppressed, not refused. Saying "too many for that email" told anyone who
+    // typed an address whether that inbox had been asked for recently, and gave
+    // an attacker a clear signal that they had successfully burned someone
+    // else's three attempts. The caller sees the same thing they always see and
+    // simply gets no mail. The cap itself stays at 3, since raising it is what
+    // the address-keyed bucket exists to prevent.
+    return { ok: true, pending: MAGIC_LINK_PENDING };
   }
   const supabase = await createServerSupabase();
   const target = resolveSafeNext(next);
@@ -199,7 +211,7 @@ export async function sendMagicLink(email: string, next?: string): Promise<AuthR
     console.error("[auth] magic link failed:", error.message);
     return { error: "We couldn't send that link just now. Check your email address and try again." };
   }
-  return { ok: true, pending: "We've emailed you a magic link. Open it on this device to sign in." };
+  return { ok: true, pending: MAGIC_LINK_PENDING };
 }
 
 /**
@@ -218,13 +230,20 @@ export async function sendPasswordReset(email: string, next?: string): Promise<A
   if (
     normalizedEmail &&
     // Address-only key, same reasoning as the magic link above.
-    !(await rateLimit(`auth-password-reset:${normalizedEmail}`, {
+    // canonicalEmail so an alias cannot mint a fresh budget for the same inbox.
+    !(await rateLimit(`auth-password-reset:${canonicalEmail(email)}`, {
       limit: 3,
       windowMs: 60 * 60_000,
       scope: "global",
     }))
   ) {
-    return { error: "Too many requests for that email. Please wait a bit and try again." };
+    // Same reasoning as the magic link above. This one matters more, because the
+    // generic answer below is already worded so it reveals nothing about whether
+    // an account exists, and a distinct "too many" reply undid that.
+    return {
+      ok: true,
+      pending: "If that email has an account, we've sent a reset link. Check your inbox.",
+    };
   }
   const start = Date.now();
   try {
@@ -267,7 +286,10 @@ export async function updatePassword(newPassword: string): Promise<AuthResult> {
   if (!user) return { error: "Your reset link has expired. Please request a new one." };
 
   const cookieStore = await cookies();
-  if (cookieStore.get(RECOVERY_COOKIE)?.value !== "1") {
+  // Must match THIS user, not merely exist. A cookie minted by exchanging the
+  // attacker's own recovery code would otherwise satisfy a bare presence check
+  // while the session underneath belonged to someone else.
+  if (cookieStore.get(RECOVERY_COOKIE)?.value !== user.id) {
     return {
       error: "For your security, please use the password reset link from your email to change your password.",
     };

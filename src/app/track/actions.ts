@@ -447,17 +447,28 @@ export async function requestCancellationAction(token: string): Promise<ChangeRe
   // deliberately without touching updated_at, which the sweep also reads as a
   // human having been here.
   if (!order.cancellation_requested_at) {
-    const { error } = await admin
+    const { data: claimed, error } = await admin
       .from("orders")
       .update({ cancellation_requested_at: new Date().toISOString() })
       .eq("id", order.id)
-      .is("cancellation_requested_at", null);
+      .is("cancellation_requested_at", null)
+      .select("id")
+      .maybeSingle();
     if (error) {
       return { ok: false, error: "Couldn’t send the request. Please message us on WhatsApp." };
     }
+    // Only the tap that actually claimed the stamp mails Michelle. The send used
+    // to sit outside this block and fired on every call, so anyone holding a
+    // tracking link, and a link is minted by placing a guest order with no
+    // payment, could tap repeatedly and fill her inbox with the same request.
+    // Same claim-then-send shape the reminder jobs use.
+    if (claimed) {
+      await sendCancellationRequestEmail(order.order_number, order.customer_name);
+    }
   }
 
-  await sendCancellationRequestEmail(order.order_number, order.customer_name);
+  // Still ok when it was already recorded, so a customer tapping twice is told
+  // their request is in rather than meeting an error.
   return { ok: true };
 }
 

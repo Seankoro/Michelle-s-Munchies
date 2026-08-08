@@ -11,7 +11,7 @@ import {
   listActiveSubscribers,
   countActiveSubscribers,
 } from "@/lib/newsletter";
-import { EMAIL_RE, escapeHtml } from "@/lib/text";
+import { canonicalEmail, EMAIL_RE, escapeHtml } from "@/lib/text";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /** Plain text to email HTML: blank lines split paragraphs, single newlines break lines. */
@@ -32,7 +32,8 @@ export async function subscribeNewsletterAction(email: string): Promise<SimpleRe
   // confirmation emails. Keyed on the address alone, no client IP, or someone
   // rotating their source address would get a fresh budget for every send.
   if (
-    !(await rateLimit(`newsletter-subscribe:${normalized}`, {
+    // canonicalEmail so an alias cannot mint a fresh budget for the same inbox.
+    !(await rateLimit(`newsletter-subscribe:${canonicalEmail(normalized)}`, {
       limit: 3,
       windowMs: 60 * 60_000,
       scope: "global",

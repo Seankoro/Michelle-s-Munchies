@@ -104,8 +104,13 @@ export async function GET(request: Request) {
       // sendPasswordReset always points its recovery link's `next` at exactly
       // this path, so landing here means the code we just exchanged came from
       // a genuine "forgot password" email, not from a magic link or OAuth.
-      if (target.pathname === "/account/reset") {
-        response.cookies.set(RECOVERY_COOKIE, "1", {
+      if (target.pathname === "/account/reset" && data.user) {
+        // The id, not a bare "1". A flag only says that some recovery happened,
+        // so a cookie minted from the attacker's own reset code authorised a
+        // password change on whichever account the browser's session happened to
+        // hold. Carrying the id means the grant only ever matches the account it
+        // was issued for.
+        response.cookies.set(RECOVERY_COOKIE, data.user.id, {
           httpOnly: true,
           secure: process.env.NODE_ENV === "production",
           sameSite: "lax",

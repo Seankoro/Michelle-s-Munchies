@@ -18,7 +18,7 @@ import { fetchProductById, fetchProducts } from "@/lib/products";
 import type { BoxTemplate, CartItem, SelectedOption } from "@/lib/types";
 import { recordIntent, markConverted } from "@/lib/checkout-intents";
 import { resolveCartLines } from "@/lib/cart-resolve";
-import { EMAIL_RE } from "@/lib/text";
+import { canonicalEmail, EMAIL_RE } from "@/lib/text";
 import { normalizeSgPhone } from "@/lib/phone";
 
 export type PlaceOrderResult =
@@ -285,7 +285,8 @@ export async function recordCheckoutIntentAction(
   // Keyed on the address alone, no client IP, so the cap really is "this many
   // reminders to this inbox" rather than that many per source address.
   if (
-    !(await rateLimit(`checkout-intent:${normalizedEmail}`, {
+    // canonicalEmail so an alias cannot mint a fresh budget for the same inbox.
+    !(await rateLimit(`checkout-intent:${canonicalEmail(normalizedEmail)}`, {
       limit: 3,
       windowMs: 60 * 60_000,
       scope: "global",
@@ -378,7 +379,8 @@ export async function placeOrder(
     const orderEmail = input.email.trim().toLowerCase();
     if (
       EMAIL_RE.test(orderEmail) &&
-      !(await rateLimit(`place-order:${orderEmail}`, {
+      // canonicalEmail so an alias cannot mint a fresh budget for the same inbox.
+      !(await rateLimit(`place-order:${canonicalEmail(orderEmail)}`, {
         limit: 5,
         windowMs: 60 * 60_000,
         scope: "global",

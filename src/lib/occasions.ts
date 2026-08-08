@@ -6,6 +6,16 @@ import { singaporeDateString } from "@/lib/time";
 
 /** Cap per run so a first pass over a long list can't fan out unbounded email. */
 const MAX_PER_RUN = 100;
+/**
+ * And a cap per person inside that, because the global one alone is a shared
+ * pool anyone can drain. Nothing stops a signed-up customer saving occasions,
+ * and each due one is an email the bakery pays to send, so a single account
+ * with enough rows could take the whole hourly budget and use the bakery's own
+ * sending reputation to do it. Two is more than any real person needs on one
+ * day, and it also means one account can never crowd everyone else out of the
+ * run.
+ */
+const MAX_PER_USER_PER_RUN = 2;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 type OccasionRow = {
@@ -70,8 +80,11 @@ export async function sendOccasionReminders(): Promise<number> {
   );
 
   let sent = 0;
+  const sentPerUser = new Map<string, number>();
   for (const { occ, daysBefore, windowOpened } of due) {
     if (sent >= MAX_PER_RUN) break;
+    const already = sentPerUser.get(occ.user_id) ?? 0;
+    if (already >= MAX_PER_USER_PER_RUN) continue;
     const { data: userData } = await admin.auth.admin.getUserById(occ.user_id);
     const email = userData?.user?.email;
     if (!email) continue;
@@ -108,6 +121,7 @@ export async function sendOccasionReminders(): Promise<number> {
       optOutToken,
     );
     sent += 1;
+    sentPerUser.set(occ.user_id, already + 1);
   }
   return sent;
 }

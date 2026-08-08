@@ -4,7 +4,7 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import { fetchStoreSettings } from "@/lib/settings";
 import { rateLimit } from "@/lib/rate-limit";
 import { subscribeBackInStock } from "@/lib/stock-notify";
-import { EMAIL_RE } from "@/lib/text";
+import { canonicalEmail, EMAIL_RE } from "@/lib/text";
 
 export type NotifyResult =
   | { ok: true; confirmed: boolean; alreadySent?: true }
@@ -46,12 +46,13 @@ export async function subscribeBackInStockAction(
   // per product. The looser one caps what a single inbox can get in total.
   if (!preConfirmed) {
     const throttled =
-      !(await rateLimit(`back-in-stock:${resolved}:${productId}`, {
+      // canonicalEmail so an alias cannot mint a fresh budget for the same inbox.
+      !(await rateLimit(`back-in-stock:${canonicalEmail(resolved)}:${productId}`, {
         limit: 3,
         windowMs: 60 * 60_000,
         scope: "global",
       })) ||
-      !(await rateLimit(`back-in-stock:${resolved}`, {
+      !(await rateLimit(`back-in-stock:${canonicalEmail(resolved)}`, {
         limit: 10,
         windowMs: 60 * 60_000,
         scope: "global",

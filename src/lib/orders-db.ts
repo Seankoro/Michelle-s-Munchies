@@ -391,8 +391,11 @@ export type TrackedOrder = {
   time_window: string | null;
   delivery_address: DeliveryAddress | null;
   customer_name: string;
-  email: string;
-  phone: string;
+  // Deliberately no email or phone. The tracking token is meant to be forwarded,
+  // so whoever holds the link is not necessarily the buyer, and their contact
+  // details should not travel with it. Migration 0044 removed them from
+  // get_order_by_token, and leaving them off this type is what makes the build
+  // fail if anything starts expecting them again.
   notes: string | null;
   is_gift: boolean;
   gift_message: string | null;
