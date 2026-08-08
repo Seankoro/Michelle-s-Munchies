@@ -69,7 +69,7 @@ export default function AdminPackingSlipsPage() {
         <div className="mt-6 flex flex-col gap-8">
           {days.map(([date, dayOrders]) => (
             <section key={date} className="slip-day">
-              <h2 className="font-display text-xl font-semibold">{formatLongDate(date)}</h2>
+              <h2 className="font-display text-2xl font-semibold">{formatLongDate(date)}</h2>
               <div className="mt-3 flex flex-col gap-4">
                 {dayOrders.map((order) => (
                   <article

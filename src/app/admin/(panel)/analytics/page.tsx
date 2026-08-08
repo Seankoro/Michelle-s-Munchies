@@ -395,7 +395,7 @@ export default function AdminAnalyticsPage() {
           {/* Revenue chart */}
           <section className="mt-6 rounded-2xl border border-line bg-white p-5">
             <div className="flex flex-wrap items-baseline justify-between gap-3">
-              <h2 className="font-display text-lg font-semibold">Revenue</h2>
+              <h2 className="font-display text-2xl font-semibold">Revenue</h2>
               <span className="text-sm text-muted">tap or hover for daily figures</span>
             </div>
             <div className="mt-4">
@@ -406,7 +406,7 @@ export default function AdminAnalyticsPage() {
           {/* Demand cuts */}
           <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
             <section className="rounded-2xl border border-line bg-white p-5">
-              <h2 className="font-display text-lg font-semibold">Pickup vs delivery</h2>
+              <h2 className="font-display text-2xl font-semibold">Pickup vs delivery</h2>
               <p className="mt-1 text-sm text-muted">Revenue split, this range.</p>
               {splitTotal === 0 ? (
                 <p className="mt-4 text-sm text-muted">No paid orders in this range.</p>
@@ -431,7 +431,7 @@ export default function AdminAnalyticsPage() {
             </section>
 
             <section className="rounded-2xl border border-line bg-white p-5">
-              <h2 className="font-display text-lg font-semibold">Busiest days</h2>
+              <h2 className="font-display text-2xl font-semibold">Busiest days</h2>
               <p className="mt-1 text-sm text-muted">Paid orders by fulfilment weekday.</p>
               <div className="mt-4 flex h-24 items-end justify-between gap-2">
                 {a.weekdayCount.map((count, i) => (
@@ -453,7 +453,7 @@ export default function AdminAnalyticsPage() {
           {/* Best sellers */}
           <section className="mt-6 rounded-2xl border border-line bg-white p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="font-display text-lg font-semibold">Best sellers</h2>
+              <h2 className="font-display text-2xl font-semibold">Best sellers</h2>
               <div className="flex gap-1 rounded-full border border-line p-0.5 text-xs font-semibold">
                 {(["qty", "revenue", "profit"] as const).map((mode) => (
                   <button

@@ -38,7 +38,7 @@ export default async function BuildABoxPage() {
               <span className="text-3xl" aria-hidden="true">
                 🎀
               </span>
-              <h2 className="font-display text-xl font-semibold">{box.name}</h2>
+              <h2 className="font-display text-2xl font-semibold">{box.name}</h2>
               <p className="text-sm text-muted">Pick any {box.itemCount} treats.</p>
               <p className="mt-auto pt-2 font-semibold text-ink">{formatPrice(box.priceCents)}</p>
             </Link>

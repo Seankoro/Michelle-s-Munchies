@@ -89,7 +89,7 @@ export function FlavourBoxPicker({
 
   return (
     <div className={bare ? "" : "rounded-2xl border border-line bg-white p-5"}>
-      {!bare && <h2 className="font-display text-lg font-semibold">Build your own box</h2>}
+      {!bare && <h2 className="font-display text-2xl font-semibold">Build your own box</h2>}
       <p className={cn("text-sm text-muted", !bare && "mt-1")}>Pick a size, then choose your flavours.</p>
 
       {config.sizes.length > 1 && (

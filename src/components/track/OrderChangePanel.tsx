@@ -70,7 +70,7 @@ export function OrderChangePanel({
 
   return (
     <div className="mt-6 rounded-2xl border border-line bg-white p-6">
-      <h2 className="font-display text-xl font-semibold">Need to change something?</h2>
+      <h2 className="font-display text-2xl font-semibold">Need to change something?</h2>
       <p className="mt-1 text-sm text-muted">
         Move your date or time before we start baking, or ask us to cancel.
       </p>

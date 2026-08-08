@@ -74,7 +74,7 @@ export function QuickPick({
               )}
             </div>
             <div>
-              <h2 className="font-display text-lg font-semibold">{product.name}</h2>
+              <h2 className="font-display text-2xl font-semibold">{product.name}</h2>
               <p className="text-sm text-muted">from {formatPrice(product.basePriceCents)}</p>
             </div>
           </div>
@@ -100,7 +100,7 @@ export function QuickPick({
               <p className="text-4xl" aria-hidden="true">
                 🎀
               </p>
-              <p className="mt-2 font-display text-lg font-semibold">Added to your cart!</p>
+              <p className="mt-2 font-display text-2xl font-semibold">Added to your cart!</p>
               <div className="mt-5 flex gap-3">
                 <Button variant="secondary" className="flex-1" onClick={onClose}>
                   Keep browsing

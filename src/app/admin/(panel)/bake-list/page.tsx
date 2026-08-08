@@ -145,7 +145,7 @@ export default function AdminBakeListPage() {
                 className="rounded-2xl border border-line bg-white p-5"
               >
                 <div className="flex flex-wrap items-baseline justify-between gap-3">
-                  <h2 className="font-display text-lg font-semibold">
+                  <h2 className="font-display text-2xl font-semibold">
                     {formatLongDate(day.date)}
                     {day.date < singaporeDateString() && (
                       <span className="ml-2 rounded-full bg-warning-soft px-2 py-0.5 align-middle text-xs font-semibold text-warning-ink">

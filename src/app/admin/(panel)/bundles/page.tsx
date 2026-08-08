@@ -168,7 +168,7 @@ export default function AdminBundlesPage() {
           onClose={() => setDraft(null)}
           ariaLabel={draft.id ? "Edit bundle" : "New bundle"}
           title={
-            <h2 className="font-display text-lg font-semibold">
+            <h2 className="font-display text-2xl font-semibold">
               {draft.id ? "Edit bundle" : "New bundle"}
             </h2>
           }

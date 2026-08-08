@@ -174,7 +174,7 @@ export default function AdminInstagramPage() {
           onClose={() => setDraft(null)}
           ariaLabel={draft.id ? "Edit post" : "New post"}
           title={
-            <h2 className="font-display text-lg font-semibold">
+            <h2 className="font-display text-2xl font-semibold">
               {draft.id ? "Edit post" : "New post"}
             </h2>
           }

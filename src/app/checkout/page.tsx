@@ -665,7 +665,7 @@ export default function CheckoutPage() {
         <div className="flex flex-col gap-8">
           {/* Fulfillment */}
           <section>
-            <h2 className="font-display text-xl font-semibold">How would you like it?</h2>
+            <h2 className="font-display text-2xl font-semibold">How would you like it?</h2>
             <div className="mt-3 grid grid-cols-2 gap-3">
               {(["pickup", "delivery"] as const).map((type) => (
                 <button
@@ -707,7 +707,7 @@ export default function CheckoutPage() {
           {/* Delivery address */}
           {fulfillment === "delivery" && giftSelfSchedule && (
             <section className="flex flex-col gap-2">
-              <h2 className="font-display text-xl font-semibold">Delivery address</h2>
+              <h2 className="font-display text-2xl font-semibold">Delivery address</h2>
               <p className="rounded-xl bg-blush-soft/50 px-4 py-3 text-sm text-rose-ink">
                 💌 The recipient will add their own address using the link we give you to share, so
                 you don&rsquo;t need it here.
@@ -716,7 +716,7 @@ export default function CheckoutPage() {
           )}
           {fulfillment === "delivery" && !giftSelfSchedule && (
             <section className="flex flex-col gap-4">
-              <h2 className="font-display text-xl font-semibold">Delivery address</h2>
+              <h2 className="font-display text-2xl font-semibold">Delivery address</h2>
               <Field label="Address" htmlFor="line1" error={errors.line1}>
                 <input
                   id="line1"
@@ -753,7 +753,7 @@ export default function CheckoutPage() {
 
           {/* Schedule */}
           <section className="flex flex-col gap-4">
-            <h2 className="font-display text-xl font-semibold">When?</h2>
+            <h2 className="font-display text-2xl font-semibold">When?</h2>
             <p className="-mt-2 text-sm text-muted">
               We bake to order. The earliest date is {formatLongDate(earliest)}.
             </p>
@@ -851,7 +851,7 @@ export default function CheckoutPage() {
 
           {/* Contact */}
           <section className="flex flex-col gap-4">
-            <h2 className="font-display text-xl font-semibold">Your details</h2>
+            <h2 className="font-display text-2xl font-semibold">Your details</h2>
             <Field label="Name" htmlFor="name" error={errors.name}>
               <input
                 id="name"
@@ -954,7 +954,7 @@ export default function CheckoutPage() {
                 className="mt-1"
               />
               <span>
-                <span className="block font-display text-xl font-semibold text-ink">
+                <span className="block font-display text-2xl font-semibold text-ink">
                   🎁 Send as a gift
                 </span>
                 <span className="mt-1 block text-sm text-muted">
@@ -1032,7 +1032,7 @@ export default function CheckoutPage() {
         {/* Right: summary */}
         <aside className="lg:sticky lg:top-24 lg:self-start">
           <div className="rounded-2xl border border-line bg-white p-5">
-            <h2 className="font-display text-xl font-semibold">Order summary</h2>
+            <h2 className="font-display text-2xl font-semibold">Order summary</h2>
             <ul className="mt-4 flex flex-col gap-3">
               {items.map((item) => (
                 <li key={item.key} className="flex justify-between gap-3 text-sm">

@@ -166,7 +166,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
       className="flex items-center gap-2 px-4 py-4 transition hover:opacity-80 active:scale-[0.99]"
     >
       <Image src="/logo.png" alt="" width={512} height={512} className="h-8 w-8" />
-      <span className="font-display text-lg font-semibold">Munchies Admin</span>
+      <span className="font-display text-2xl font-semibold">Munchies Admin</span>
     </Link>
   );
 
@@ -214,7 +214,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
                 className="flex items-center gap-2 transition hover:opacity-80 active:scale-[0.99]"
               >
                 <Image src="/logo.png" alt="" width={512} height={512} className="h-8 w-8" />
-                <span className="font-display text-lg font-semibold">Munchies Admin</span>
+                <span className="font-display text-2xl font-semibold">Munchies Admin</span>
               </Link>
               <button
                 type="button"

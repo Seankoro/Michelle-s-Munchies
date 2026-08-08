@@ -183,7 +183,7 @@ export default function AdminBoxesPage() {
           onClose={() => setDraft(null)}
           ariaLabel={draft.id ? "Edit box" : "New box"}
           title={
-            <h2 className="font-display text-lg font-semibold">
+            <h2 className="font-display text-2xl font-semibold">
               {draft.id ? "Edit box" : "New box"}
             </h2>
           }

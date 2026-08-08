@@ -59,7 +59,7 @@ export function FirstRunChecklist() {
     <section className="mt-6 rounded-2xl border border-rose/40 bg-blush-soft/40 p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="font-display text-lg font-semibold">Let&rsquo;s get your bakery ready</h2>
+          <h2 className="font-display text-2xl font-semibold">Let&rsquo;s get your bakery ready</h2>
           <p className="mt-1 text-sm text-muted">A couple of quick steps before your first order.</p>
         </div>
         <button

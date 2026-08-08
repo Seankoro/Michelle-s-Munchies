@@ -73,7 +73,7 @@ export default async function GiftSchedulePage({
         </p>
       ) : scheduled ? (
         <div className="mt-8 rounded-2xl border border-line bg-white p-6 text-center">
-          <p className="font-display text-lg font-semibold text-rose-ink">You&rsquo;re all set! 🎀</p>
+          <p className="font-display text-2xl font-semibold text-rose-ink">You&rsquo;re all set! 🎀</p>
           <p className="mt-2 text-sm text-muted">
             We have your delivery details for {formatLongDate(gift.scheduled_date)}
             {gift.time_window ? ` · ${gift.time_window}` : ""}. Keep an eye out!

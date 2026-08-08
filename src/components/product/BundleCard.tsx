@@ -29,7 +29,7 @@ export function BundleCard({ bundle }: { bundle: Bundle }) {
         )}
       </div>
       <div className="flex flex-1 flex-col gap-1 p-4">
-        <h3 className="font-display text-lg font-semibold">{bundle.name}</h3>
+        <h3 className="font-display text-2xl font-semibold">{bundle.name}</h3>
         {bundle.description && (
           <p className="line-clamp-2 text-sm text-muted">{bundle.description}</p>
         )}

@@ -191,7 +191,7 @@ function SettingsForm({
 
       <div className="mt-6 flex flex-col gap-6">
         <section id="settings-says" className="scroll-mt-24 rounded-2xl border border-line bg-white p-5">
-          <h2 className="font-display text-lg font-semibold">Michelle says</h2>
+          <h2 className="font-display text-2xl font-semibold">Michelle says</h2>
           <p className="mt-1 text-sm font-normal text-muted">
             Lines for the speech bubble next to the mascot on the home page. Add as many as you like.
             The mascot cycles through yours plus a couple of automatic lines, which always stay, so
@@ -233,7 +233,7 @@ function SettingsForm({
         </section>
 
         <section id="settings-delivery" className="scroll-mt-24 rounded-2xl border border-line bg-white p-5">
-          <h2 className="font-display text-lg font-semibold">Delivery &amp; orders</h2>
+          <h2 className="font-display text-2xl font-semibold">Delivery &amp; orders</h2>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-sm font-semibold">
               Delivery fee (S$)
@@ -309,7 +309,7 @@ function SettingsForm({
         </section>
 
         <section id="settings-pickup" className="scroll-mt-24 rounded-2xl border border-line bg-white p-5">
-          <h2 className="font-display text-lg font-semibold">Pickup &amp; scheduling</h2>
+          <h2 className="font-display text-2xl font-semibold">Pickup &amp; scheduling</h2>
           <label className="mt-4 flex flex-col gap-1 text-sm font-semibold">
             Pickup location (shown to customers)
             <input
@@ -329,7 +329,7 @@ function SettingsForm({
         </section>
 
         <section id="settings-blackout" className="scroll-mt-24 rounded-2xl border border-line bg-white p-5">
-          <h2 className="font-display text-lg font-semibold">Blackout dates</h2>
+          <h2 className="font-display text-2xl font-semibold">Blackout dates</h2>
           <p className="mt-1 text-sm text-muted">Days you&rsquo;re away. Customers can&rsquo;t order for these.</p>
           <div className="mt-3 flex flex-wrap gap-2">
             {blackout.length === 0 && <span className="text-sm text-muted">None set.</span>}
@@ -373,7 +373,7 @@ function SettingsForm({
         </section>
 
         <section id="settings-rewards" className="scroll-mt-24 rounded-2xl border border-line bg-white p-5">
-          <h2 className="font-display text-lg font-semibold">Rewards</h2>
+          <h2 className="font-display text-2xl font-semibold">Rewards</h2>
           <p className="mt-1 text-sm text-muted">
             How customers earn and redeem loyalty points.
           </p>
@@ -436,7 +436,7 @@ function SettingsForm({
         </section>
 
         <section id="settings-merch" className="scroll-mt-24 rounded-2xl border border-line bg-white p-5">
-          <h2 className="font-display text-lg font-semibold">Merchandising &amp; lifecycle</h2>
+          <h2 className="font-display text-2xl font-semibold">Merchandising &amp; lifecycle</h2>
           <p className="mt-1 text-sm text-muted">
             Spend-gift, birthday rewards, and abandoned-cart timing (each also has an on/off
             switch below).
@@ -500,7 +500,7 @@ function SettingsForm({
         </section>
 
         <section id="settings-notes" className="scroll-mt-24 rounded-2xl border border-line bg-white p-5">
-          <h2 className="font-display text-lg font-semibold">Structured order notes</h2>
+          <h2 className="font-display text-2xl font-semibold">Structured order notes</h2>
           <p className="mt-1 text-sm text-muted">
             Custom questions shown at checkout (e.g. &ldquo;Occasion?&rdquo;). Requires the
             &ldquo;Structured order notes&rdquo; feature below.
@@ -573,7 +573,7 @@ function SettingsForm({
         </section>
 
         <section id="settings-features" className="scroll-mt-24 rounded-2xl border border-line bg-white p-5">
-          <h2 className="font-display text-lg font-semibold">Features</h2>
+          <h2 className="font-display text-2xl font-semibold">Features</h2>
           <p className="mt-1 text-sm text-muted">
             Turn customer features on or off. Switched off, they disappear from the storefront.
           </p>

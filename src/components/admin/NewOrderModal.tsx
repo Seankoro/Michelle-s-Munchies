@@ -217,7 +217,7 @@ export function NewOrderModal({ onClose }: { onClose: () => void }) {
         {/* Fixed header so the close button stays reachable while the form scrolls. */}
         <div className="flex items-start justify-between gap-4 rounded-t-2xl border-b border-line bg-white px-6 py-4">
           <div>
-            <h2 className="font-display text-xl font-semibold">Log an order</h2>
+            <h2 className="font-display text-2xl font-semibold">Log an order</h2>
             <p className="text-sm text-muted">For an order taken on WhatsApp or the phone.</p>
           </div>
           <button
@@ -505,7 +505,7 @@ export function NewOrderModal({ onClose }: { onClose: () => void }) {
           <div className="flex items-center justify-between border-t border-line pt-4">
             <span className="text-sm text-muted">
               Total{" "}
-              <span className="font-display text-lg font-semibold text-ink">
+              <span className="font-display text-2xl font-semibold text-ink">
                 {formatPrice(subtotalCents)}
               </span>
               {fulfillment === "delivery" && " + delivery"}

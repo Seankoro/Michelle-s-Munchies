@@ -113,7 +113,7 @@ export default function AdminNewsletterPage() {
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-muted">Preview</p>
             <div className="mt-1 rounded-2xl border border-line bg-cream p-5">
-              <p className="font-display text-lg font-semibold text-ink">{subject}</p>
+              <p className="font-display text-2xl font-semibold text-ink">{subject}</p>
               <div className="mt-2 flex flex-col gap-2 text-sm text-ink">
                 {paragraphs.map((para, i) => (
                   <p key={i} className="whitespace-pre-line">

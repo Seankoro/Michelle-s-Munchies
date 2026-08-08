@@ -471,7 +471,7 @@ function ProductFormModal({
       onClose={onClose}
       ariaLabel={isNew ? "Add product" : `Edit ${product.name}`}
       title={
-        <h2 className="font-display text-xl font-semibold">
+        <h2 className="font-display text-2xl font-semibold">
           {isNew ? "Add product" : "Edit product"}
         </h2>
       }

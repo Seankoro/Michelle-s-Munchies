@@ -148,7 +148,7 @@ export default function AdminDashboardPage() {
           </div>
 
           <section className="mt-8">
-            <h2 className="font-display text-xl font-semibold">Week ahead</h2>
+            <h2 className="font-display text-2xl font-semibold">Week ahead</h2>
             <p className="mt-1 text-sm text-muted">
               {dailyCap && dailyCap > 0
                 ? `Orders per day against your daily cap of ${dailyCap}.`
@@ -168,7 +168,7 @@ export default function AdminDashboardPage() {
                   )}
                 >
                   <p className="text-xs text-muted">{shortDay(day.date)}</p>
-                  <p className="mt-1 font-display text-lg font-semibold">
+                  <p className="mt-1 font-display text-2xl font-semibold">
                     {day.count}
                     {dailyCap && dailyCap > 0 && (
                       <span className="text-sm font-normal text-muted">/{dailyCap}</span>
@@ -183,7 +183,7 @@ export default function AdminDashboardPage() {
           </section>
 
           <div className="mt-8 flex items-center justify-between">
-            <h2 className="font-display text-xl font-semibold">Recent orders</h2>
+            <h2 className="font-display text-2xl font-semibold">Recent orders</h2>
             <Link href="/admin/orders" className="text-sm font-semibold text-rose-ink transition hover:text-rose">
               View all →
             </Link>
@@ -246,7 +246,7 @@ function BakeDayCard({
   return (
     <section className="rounded-2xl border border-line bg-white p-5">
       <div className="flex items-baseline justify-between gap-2">
-        <h2 className="font-display text-xl font-semibold">{title}</h2>
+        <h2 className="font-display text-2xl font-semibold">{title}</h2>
         <span className="text-sm text-muted">{dateLabel}</span>
       </div>
       {orders.length === 0 ? (

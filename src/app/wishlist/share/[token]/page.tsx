@@ -54,7 +54,7 @@ export default async function SharedWishlistPage({ params }: Params) {
                   )}
                 </div>
                 <div className="flex flex-1 flex-col gap-1 p-4">
-                  <h3 className="font-display text-lg font-semibold">{fav.name}</h3>
+                  <h3 className="font-display text-2xl font-semibold">{fav.name}</h3>
                   <p className="mt-auto pt-2 font-semibold text-ink">{formatPrice(fav.priceCents)}</p>
                 </div>
               </Link>

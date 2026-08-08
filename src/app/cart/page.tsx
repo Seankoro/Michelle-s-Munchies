@@ -120,7 +120,7 @@ export default function CartPage() {
               <div className="flex items-start justify-between gap-2">
                 <Link
                   href={`/menu/${item.slug}`}
-                  className="font-display text-lg font-semibold transition hover:text-rose-ink"
+                  className="font-display text-2xl font-semibold transition hover:text-rose-ink"
                 >
                   {item.name}
                 </Link>

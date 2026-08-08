@@ -118,7 +118,7 @@ export function AddToOrderPanel({ token, products }: { token: string; products: 
     <div className="mt-6 rounded-2xl border border-line bg-white p-5">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="font-display text-lg font-semibold">Forgot something?</h2>
+          <h2 className="font-display text-2xl font-semibold">Forgot something?</h2>
           <p className="text-sm text-muted">Add more treats to this order, no extra delivery fee.</p>
         </div>
         {!open && (

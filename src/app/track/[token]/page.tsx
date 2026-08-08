@@ -188,7 +188,7 @@ export default async function TrackOrderPage({
 
       {waHref && (
         <div className="mt-6 rounded-2xl border border-rose/30 bg-blush-soft/60 p-5 text-center">
-          <p className="font-display text-lg font-semibold text-rose-ink">One more step</p>
+          <p className="font-display text-2xl font-semibold text-rose-ink">One more step</p>
           <p className="mt-1 text-sm text-rose-ink">
             Send your order to us on WhatsApp. We&rsquo;ll confirm it and reply with PayNow details
             so you can pay by transfer, usually the same day.
@@ -206,7 +206,7 @@ export default async function TrackOrderPage({
 
       {!waHref && needsPayment && (
         <div className="mt-6 rounded-2xl border border-rose/30 bg-blush-soft/60 p-5 text-center">
-          <p className="font-display text-lg font-semibold text-rose-ink">One more step</p>
+          <p className="font-display text-2xl font-semibold text-rose-ink">One more step</p>
           <p className="mt-1 text-sm text-rose-ink">
             We&rsquo;ll message you on WhatsApp to confirm your order and share PayNow details.
             Questions in the meantime?{" "}
@@ -270,7 +270,7 @@ export default async function TrackOrderPage({
 
       {/* Details */}
       <div className="mt-8 rounded-2xl border border-line bg-white p-6">
-        <h2 className="font-display text-xl font-semibold">
+        <h2 className="font-display text-2xl font-semibold">
           {order.fulfillment_type === "pickup" ? "Pickup" : "Delivery"} details
         </h2>
         <dl className="mt-3 grid gap-2 text-sm">
@@ -381,7 +381,7 @@ export default async function TrackOrderPage({
 
       {changeNotices.length > 0 && (
         <div className="mt-6 rounded-2xl border border-line bg-white p-6">
-          <h2 className="font-display text-xl font-semibold">Need to change something?</h2>
+          <h2 className="font-display text-2xl font-semibold">Need to change something?</h2>
           <p className="mt-1 text-sm text-muted">
             {changeNotices.join(" ")} Message us and we&rsquo;ll sort it out, cancelling included.
           </p>

@@ -603,7 +603,7 @@ function OrderDetailModal({
         {/* Fixed header so the close button stays reachable while the details scroll. */}
         <div className="flex items-start justify-between gap-4 rounded-t-2xl border-b border-line bg-white px-6 py-4">
           <div>
-            <h2 className="font-display text-xl font-semibold">{order.orderNumber}</h2>
+            <h2 className="font-display text-2xl font-semibold">{order.orderNumber}</h2>
             <p className="text-sm text-muted">{order.name}</p>
             <p className="mt-1 text-sm text-muted">Ordered {orderedOnFull(order.createdAt)}</p>
             <p className="text-sm font-semibold text-rose-ink">

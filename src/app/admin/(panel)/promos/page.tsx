@@ -135,7 +135,7 @@ export default function AdminPromosPage() {
 
       {/* Create */}
       <section className="mt-6 rounded-2xl border border-line bg-white p-5">
-        <h2 className="font-display text-lg font-semibold">New code</h2>
+        <h2 className="font-display text-2xl font-semibold">New code</h2>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <label className="flex flex-col gap-1 text-sm font-semibold">
             Code
@@ -235,7 +235,7 @@ export default function AdminPromosPage() {
 
       {/* List */}
       <section className="mt-6">
-        <h2 className="font-display text-lg font-semibold">Your codes</h2>
+        <h2 className="font-display text-2xl font-semibold">Your codes</h2>
         {loading ? (
           <p className="mt-3 text-muted">Loading codes…</p>
         ) : promos.length === 0 ? (
@@ -253,7 +253,7 @@ export default function AdminPromosPage() {
                 >
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-display text-lg font-semibold tracking-wide">
+                      <span className="font-display text-2xl font-semibold tracking-wide">
                         {promo.code}
                       </span>
                       <span

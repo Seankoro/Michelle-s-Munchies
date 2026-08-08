@@ -38,7 +38,7 @@ export function GiftScheduleForm({
 
   return (
     <div className="mt-6 flex flex-col gap-3 rounded-2xl border border-line bg-white p-5">
-      <h2 className="font-display text-lg font-semibold">Where should we deliver?</h2>
+      <h2 className="font-display text-2xl font-semibold">Where should we deliver?</h2>
       <div className="grid gap-2 sm:grid-cols-2">
         <input
           className={`${inputClass} sm:col-span-2`}
