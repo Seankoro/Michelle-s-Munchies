@@ -8,6 +8,7 @@ import { allergenMeta, dietaryMeta, formatPrice } from "@/lib/catalog";
 import type { Allergen, DietaryTag, FlavourBoxConfig, IngredientLine, Product } from "@/lib/types";
 import { cn } from "@/lib/cn";
 import { cardImageUrl } from "@/lib/product-images";
+import { assortedFlavours, isAssortedOption } from "@/lib/assorted";
 import { Toggle } from "@/components/ui/Toggle";
 import { AdminModal } from "@/components/admin/AdminModal";
 import { TableStateRow } from "@/components/admin/TableStateRow";
@@ -209,7 +210,12 @@ function ProductFormModal({
   onClose: () => void;
   onSave: (product: Product) => void;
 }) {
-  const [draft, setDraft] = useState<Product>(product);
+  // The generated flavour group of an assorted product is read-only, shown in
+  // the build-your-own box section instead, so it never saves back as a list.
+  const [draft, setDraft] = useState<Product>(() => ({
+    ...product,
+    options: product.options.filter((option) => !isAssortedOption(option)),
+  }));
   const [priceText, setPriceText] = useState((product.basePriceCents / 100).toFixed(2));
   const [costText, setCostText] = useState(
     product.costCents != null ? (product.costCents / 100).toFixed(2) : "",
@@ -217,6 +223,11 @@ function ProductFormModal({
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Live from the product list, so a product added or deleted elsewhere shows
+  // here without reopening the form.
+  const flavourPreview = draft.flavourBox
+    ? assortedFlavours({ ...draft, category: draft.category.trim() }, existingProducts)
+    : [];
 
   function set<K extends keyof Product>(key: K, value: Product[K]) {
     setDraft((prev) => ({ ...prev, [key]: value }));
@@ -415,11 +426,8 @@ function ProductFormModal({
       }))
       .filter((option) => option.name);
     if (draft.flavourBox) {
-      const flavourOption = draft.flavourBox.flavourOption.trim();
-      if (!flavourOption || !options.some((option) => option.name === flavourOption)) {
-        setSaveError(
-          "The build-your-own box's flavour option must match one of the option groups above.",
-        );
+      if (!draft.flavourBox.flavourOption.trim()) {
+        setSaveError("Give the build-your-own box's flavours a heading, usually Flavour.");
         return;
       }
       if (draft.flavourBox.sizes.length === 0) {
@@ -926,8 +934,37 @@ function ProductFormModal({
             </label>
             {draft.flavourBox && (
               <div className="mt-3 flex flex-col gap-3">
+                <div className="text-xs">
+                  <p className="font-semibold">Flavours</p>
+                  <p className="mt-1 text-muted">
+                    Every other product in {draft.category.trim() || "this category"}. Add, sell out
+                    or delete one of those and this list follows.
+                  </p>
+                  {flavourPreview.length > 0 ? (
+                    <ul className="mt-2 flex flex-wrap gap-1.5">
+                      {flavourPreview.map((flavour) => (
+                        <li
+                          key={flavour.id}
+                          className={cn(
+                            "rounded-full border px-2.5 py-1",
+                            flavour.isAvailable
+                              ? "border-line bg-white"
+                              : "border-dashed border-line text-muted line-through",
+                          )}
+                        >
+                          {flavour.label}
+                          {!flavour.isAvailable && <span className="sr-only"> (out of stock)</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 font-semibold text-rose-ink">
+                      No other products in this category yet, so this box stays off the menu.
+                    </p>
+                  )}
+                </div>
                 <label className="flex flex-col gap-1 text-xs font-semibold">
-                  Flavour option to pick from
+                  Heading for the flavours
                   <input
                     className={inputClass}
                     value={draft.flavourBox.flavourOption}
@@ -936,9 +973,6 @@ function ProductFormModal({
                     }
                     placeholder="Flavour"
                   />
-                  <span className="font-normal text-muted">
-                    Must match an option group name above, usually Flavour.
-                  </span>
                 </label>
                 {draft.flavourBox.sizes.map((size, sizeIndex) => (
                   <div key={sizeIndex} className="flex flex-wrap items-center gap-2">

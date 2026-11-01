@@ -9,8 +9,8 @@ import { cn } from "@/lib/cn";
 /**
  * Per-item build-your-own box. Choose a box size, then pick that many flavours
  * of this one product, repeats allowed, for the size's flat price. The choices
- * come from the product's flavour option, so a sold-out flavour is disabled here
- * too. The picks are encoded into the cart key as labels, so checkout can
+ * are the other products in its category (see lib/assorted), and one that is out
+ * of stock stays listed but stamped OOS with no way to add it. The picks are encoded into the cart key as labels, so checkout can
  * re-validate the count, the availability, and the price. This is the per-item
  * counterpart to the assortment Build a Box, which mixes different products.
  */
@@ -134,44 +134,54 @@ export function FlavourBoxPicker({
             <li
               key={value.id}
               className={cn(
-                "flex items-center gap-3 rounded-2xl border border-line bg-white p-3",
-                soldOut && "opacity-50",
+                "flex min-h-14 items-center gap-3 rounded-2xl border p-3",
+                soldOut ? "border-dashed border-line bg-marble/40" : "border-line bg-white",
               )}
             >
-              <span className="flex-1 text-sm font-semibold">
+              <span className={cn("flex-1 text-sm font-semibold", soldOut && "text-muted")}>
                 {value.label}
-                {soldOut && <span className="ml-1 text-xs font-normal text-muted">sold out</span>}
+                {soldOut && <span className="sr-only"> (out of stock)</span>}
               </span>
-              <div className="flex items-center gap-2">
-                {/* Zero-count and box-full use aria-disabled rather than
-                    disabled, because both land on the very button being
-                    pressed, and a button disabled under your finger drops
-                    focus to the page body. Inside the quick-pick dialog that
-                    tips the keyboard user straight out of the modal. bump()
-                    already ignores both cases, so the press does nothing
-                    either way. Sold out never flips mid-use, so it stays a
-                    real disabled and keeps its tab skip. */}
-                <button
-                  type="button"
-                  aria-label={`Remove one ${value.label}`}
-                  onClick={() => bump(value.label, -1)}
-                  aria-disabled={qty === 0}
-                  className="h-8 w-8 rounded-full border border-line text-ink transition active:scale-90 aria-disabled:opacity-40"
+              {soldOut ? (
+                // Out of stock stays on the list rather than vanishing, so a
+                // regular sees their favourite is only away for now. The tag
+                // takes the place of the +/- buttons.
+                <span
+                  aria-hidden="true"
+                  className="rounded-full border border-rose bg-white px-2.5 py-0.5 text-[11px] font-bold tracking-[0.2em] text-rose-ink"
                 >
-                  −
-                </button>
-                <span className="w-5 text-center text-sm font-semibold">{qty}</span>
-                <button
-                  type="button"
-                  aria-label={`Add one ${value.label}`}
-                  onClick={() => bump(value.label, 1)}
-                  disabled={soldOut}
-                  aria-disabled={remaining <= 0}
-                  className="h-8 w-8 rounded-full border border-line text-ink transition active:scale-90 disabled:opacity-40 aria-disabled:opacity-40"
-                >
-                  +
-                </button>
-              </div>
+                  OOS
+                </span>
+              ) : (
+                <div className="flex items-center gap-2">
+                  {/* Zero-count and box-full use aria-disabled rather than
+                      disabled, because both land on the very button being
+                      pressed, and a button disabled under your finger drops
+                      focus to the page body. Inside the quick-pick dialog that
+                      tips the keyboard user straight out of the modal. bump()
+                      already ignores both cases, so the press does nothing
+                      either way. */}
+                  <button
+                    type="button"
+                    aria-label={`Remove one ${value.label}`}
+                    onClick={() => bump(value.label, -1)}
+                    aria-disabled={qty === 0}
+                    className="h-8 w-8 rounded-full border border-line text-ink transition active:scale-90 aria-disabled:opacity-40"
+                  >
+                    −
+                  </button>
+                  <span className="w-5 text-center text-sm font-semibold">{qty}</span>
+                  <button
+                    type="button"
+                    aria-label={`Add one ${value.label}`}
+                    onClick={() => bump(value.label, 1)}
+                    aria-disabled={remaining <= 0}
+                    className="h-8 w-8 rounded-full border border-line text-ink transition active:scale-90 aria-disabled:opacity-40"
+                  >
+                    +
+                  </button>
+                </div>
+              )}
             </li>
           );
         })}

@@ -36,9 +36,9 @@ export type ProductOption = {
 
 /**
  * Per-item build-your-own box. Lets a customer pick `count` flavours of this one
- * product for a flat price, chosen from the values of the option named
- * `flavourOption`. Referenced by name, since the flavour editor regenerates
- * option ids on each save. Null or absent means the item is not sold this way.
+ * product for a flat price. The flavours are the other products in its
+ * category, built on read into an option group named `flavourOption` (see
+ * lib/assorted). Null or absent means the item is not sold this way.
  * This is distinct from a Build a Box template, which mixes different products.
  */
 export type FlavourBoxSize = { label: string; count: number; priceCents: number };

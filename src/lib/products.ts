@@ -3,6 +3,7 @@ import { cache } from "react";
 import type { Allergen, DietaryTag, FlavourBoxConfig, IngredientLine, Product } from "@/lib/types";
 import { createPublicClient } from "@/lib/supabase/public";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { hasPickableFlavour, withAssortedFlavours, type FlavourSource } from "@/lib/assorted";
 
 /**
  * Read the ingredients jsonb. Handles both the new { name, amount, unit } objects
@@ -161,6 +162,41 @@ export function isUpcoming(product: Product): boolean {
   return Boolean(product.availableFrom) && new Date(product.availableFrom as string) > new Date();
 }
 
+/**
+ * Every product, slimmed to what an assorted box builds its flavours from, in
+ * menu order. Read whole rather than per category so one memoised query serves
+ * every assorted product on the page. Sold-out products are included on
+ * purpose, since they still show as out-of-stock flavours.
+ */
+const fetchFlavourSources = cache(async (): Promise<FlavourSource[]> => {
+  const supabase = createPublicClient();
+  const { data, error } = await supabase
+    .from("products")
+    .select("id, name, category, is_available, stock_count, available_from, flavour_box")
+    .order("sort_order", { ascending: true });
+  if (error) throw new Error(`Failed to load flavours: ${error.message}`);
+  type Row = Pick<
+    ProductRow,
+    "id" | "name" | "category" | "is_available" | "stock_count" | "available_from" | "flavour_box"
+  >;
+  return ((data as Row[] | null) ?? []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    category: row.category,
+    isAvailable: row.is_available,
+    stockCount: row.stock_count,
+    availableFrom: row.available_from,
+    flavourBox: row.flavour_box,
+  }));
+});
+
+/** Fill in one assorted product's flavours, or null when it has none left to pick. */
+async function withFlavours(product: Product): Promise<Product | null> {
+  if (!product.flavourBox) return product;
+  const derived = withAssortedFlavours(product, await fetchFlavourSources());
+  return hasPickableFlavour(derived) ? derived : null;
+}
+
 /** All products, ordered as Michelle arranged them. Memoised per request. */
 export const fetchProducts = cache(async (): Promise<Product[]> => {
   const supabase = createPublicClient();
@@ -170,7 +206,9 @@ export const fetchProducts = cache(async (): Promise<Product[]> => {
     .order("sort_order", { ascending: true });
 
   if (error) throw new Error(`Failed to load products: ${error.message}`);
-  return ((data as ProductRow[] | null) ?? []).map(rowToProduct);
+  const products = ((data as ProductRow[] | null) ?? []).map(rowToProduct);
+  // The full catalog is its own flavour source, so no second read here.
+  return products.map((p) => withAssortedFlavours(p, products)).filter(hasPickableFlavour);
 });
 
 export const fetchProductBySlug = cache(async (slug: string): Promise<Product | null> => {
@@ -183,7 +221,8 @@ export const fetchProductBySlug = cache(async (slug: string): Promise<Product | 
 
   if (error) throw new Error(`Failed to load product: ${error.message}`);
   if (!data) return null;
-  const product = rowToProduct(data as ProductRow);
+  const product = await withFlavours(rowToProduct(data as ProductRow));
+  if (!product) return null;
   // Storefront-facing: the detail page passes the product to client components,
   // so never include the admin-only cost, nor the ingredient amounts (the recipe).
   // Customers see the ingredient names only; keep the other detail fields it shows.
@@ -202,7 +241,9 @@ export async function fetchProductById(id: string): Promise<Product | null> {
     .eq("id", id)
     .maybeSingle();
   if (error) throw new Error(`Failed to load product by id: ${error.message}`);
-  return data ? rowToProduct(data as ProductRow) : null;
+  // Checkout re-validates assorted boxes through this read, so a flavour sold
+  // out or deleted since the customer added it is caught here too.
+  return data ? withFlavours(rowToProduct(data as ProductRow)) : null;
 }
 
 /**
@@ -217,7 +258,10 @@ export async function fetchAdminProducts(): Promise<Product[]> {
     .select(PRODUCT_SELECT_ADMIN)
     .order("sort_order", { ascending: true });
   if (error) throw new Error(`Failed to load products: ${error.message}`);
-  return ((data as ProductRow[] | null) ?? []).map(rowToProduct);
+  // Derived but never filtered: Michelle still needs to see and edit an
+  // assorted product whose flavours have all sold out.
+  const products = ((data as ProductRow[] | null) ?? []).map(rowToProduct);
+  return products.map((p) => withAssortedFlavours(p, products));
 }
 
 /**
@@ -234,10 +278,12 @@ const fetchCardCatalog = cache(async (): Promise<Product[]> => {
     .order("sort_order", { ascending: true });
   if (error) throw new Error(`Failed to load product cards: ${error.message}`);
   // The slim rows omit the detail-only columns; rowToProduct defaults them and
-  // toCardProduct strips what cards never read.
-  return ((data as unknown as ProductRow[] | null) ?? []).map((row) =>
-    toCardProduct(rowToProduct(row)),
-  );
+  // toCardProduct strips what cards never read. This read skips sold-out rows,
+  // so assorted flavours come from the full source list instead.
+  const sources = await fetchFlavourSources();
+  return ((data as unknown as ProductRow[] | null) ?? [])
+    .map((row) => withAssortedFlavours(toCardProduct(rowToProduct(row)), sources))
+    .filter(hasPickableFlavour);
 });
 
 /** Best-sellers first, then recommended via the admin toggle, for the home strip. */
