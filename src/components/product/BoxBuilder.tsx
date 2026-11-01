@@ -7,6 +7,7 @@ import { useFeatures } from "@/components/features/FeaturesProvider";
 import { formatPrice } from "@/lib/catalog";
 import { ImagePlaceholder } from "@/components/ui/ImagePlaceholder";
 import { cn } from "@/lib/cn";
+import { cardImageUrl } from "@/lib/product-images";
 import type { BoxTemplate, Product } from "@/lib/types";
 
 // A pickable slot, a product optionally narrowed to one of its flavours.
@@ -46,7 +47,12 @@ export function BoxBuilder({ box }: { box: BoxTemplate }) {
   const [added, setAdded] = useState(false);
 
   const groups = useMemo(
-    () => box.eligibleProducts.map((product) => ({ product, choices: choicesFor(product) })),
+    () =>
+      box.eligibleProducts.map((product) => ({
+        product,
+        image: cardImageUrl(product),
+        choices: choicesFor(product),
+      })),
     [box.eligibleProducts],
   );
 
@@ -111,13 +117,13 @@ export function BoxBuilder({ box }: { box: BoxTemplate }) {
       </div>
 
       <div className="mt-4 flex flex-col gap-5">
-        {groups.map(({ product, choices }) => (
+        {groups.map(({ product, image, choices }) => (
           <div key={product.id}>
             <div className="flex items-center gap-3">
               <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-xl">
-                {product.imageUrls && product.imageUrls.length > 0 ? (
+                {image ? (
                   <Image
-                    src={product.imageUrls[0]}
+                    src={image}
                     alt={product.name}
                     fill
                     sizes="48px"

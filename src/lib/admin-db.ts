@@ -1251,6 +1251,7 @@ function toProductColumns(patch: Partial<Product>) {
   if (patch.storageInfo !== undefined) columns.storage_info = patch.storageInfo;
   if (patch.servingInfo !== undefined) columns.serving_info = patch.servingInfo;
   if (patch.imageUrls !== undefined) columns.image_paths = patch.imageUrls;
+  if (patch.cardImageUrl !== undefined) columns.card_image_path = patch.cardImageUrl;
   if (patch.stockCount !== undefined) columns.stock_count = patch.stockCount;
   if (patch.availableFrom !== undefined) columns.available_from = patch.availableFrom;
   if (patch.flavourBox !== undefined) columns.flavour_box = patch.flavourBox;

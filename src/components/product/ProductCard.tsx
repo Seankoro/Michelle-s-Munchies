@@ -13,6 +13,7 @@ import { useCart } from "@/components/cart/CartContext";
 import { menuCartKey } from "@/lib/cart-key";
 import { useFeatures } from "@/components/features/FeaturesProvider";
 import { formatPrice } from "@/lib/catalog";
+import { cardImageUrl } from "@/lib/product-images";
 import { cn } from "@/lib/cn";
 
 export function ProductCard({
@@ -40,6 +41,7 @@ export function ProductCard({
     );
   }, [drops, product.availableFrom]);
   const detailHref = `/menu/${product.slug}`;
+  const cardImage = cardImageUrl(product);
 
   function handleAdd() {
     if (soldOut || upcoming) return;
@@ -58,7 +60,7 @@ export function ProductCard({
       unitPriceCents: product.basePriceCents,
       quantity: 1,
       selectedOptions: [],
-      imageUrl: product.imageUrls?.[0],
+      imageUrl: cardImage,
     });
     setAdded(true);
     window.setTimeout(() => setAdded(false), 1600);
@@ -73,10 +75,10 @@ export function ProductCard({
           className="absolute right-3 top-3 z-10"
         />
         <Link href={detailHref} className="relative block">
-          {product.imageUrls && product.imageUrls.length > 0 ? (
+          {cardImage ? (
             <div className="relative aspect-square w-full overflow-hidden">
               <Image
-                src={product.imageUrls[0]}
+                src={cardImage}
                 alt={product.name}
                 fill
                 sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 25vw"

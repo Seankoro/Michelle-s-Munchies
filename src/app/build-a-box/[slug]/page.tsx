@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { fetchBoxBySlug } from "@/lib/boxes";
+import { cardImageUrl } from "@/lib/product-images";
 import { fetchStoreSettings } from "@/lib/settings";
 import { BoxBuilder } from "@/components/product/BoxBuilder";
 
@@ -15,7 +16,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   // it. That is what the box actually is, and it beats the generic bakery card
   // this link shows in a WhatsApp chat today.
   const description = `Pick any ${box.itemCount} treats for ${(box.priceCents / 100).toFixed(2)} SGD.`;
-  const cover = box.eligibleProducts.find((p) => p.imageUrls?.length)?.imageUrls?.[0];
+  const cover = box.eligibleProducts.map(cardImageUrl).find(Boolean);
   return {
     title: box.name,
     description,

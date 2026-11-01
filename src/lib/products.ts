@@ -54,6 +54,7 @@ type ProductRow = {
   cost_cents?: number | null;
   category: string;
   image_paths: string[] | null;
+  card_image_path: string | null;
   is_available: boolean;
   is_best_seller: boolean;
   is_recommended: boolean;
@@ -75,7 +76,7 @@ type ProductRow = {
 // and once the anon grant is narrowed a "*" select would fail on that column.
 const PRODUCT_FIELDS_PUBLIC =
   "id, slug, name, short_description, long_description, base_price_cents, category, " +
-  "image_paths, is_available, is_best_seller, is_recommended, allergens, dietary_tags, " +
+  "image_paths, card_image_path, is_available, is_best_seller, is_recommended, allergens, dietary_tags, " +
   "ingredients, storage_info, serving_info, stock_count, available_from, flavour_box, " +
   "personalisation_label, personalisation_allow_photo";
 const PRODUCT_SELECT = `${PRODUCT_FIELDS_PUBLIC}, product_options(*, product_option_values(*))`;
@@ -86,7 +87,7 @@ const PRODUCT_SELECT_ADMIN = "*, product_options(*, product_option_values(*))";
 // nothing the detail page owns (long description, recipe, storage, serving).
 // Options stay nested because quick-pick offers them straight from the card.
 const PRODUCT_SELECT_CARD =
-  "id, slug, name, short_description, base_price_cents, category, image_paths, " +
+  "id, slug, name, short_description, base_price_cents, category, image_paths, card_image_path, " +
   "is_available, is_best_seller, is_recommended, allergens, dietary_tags, stock_count, " +
   "available_from, flavour_box, product_options(*, product_option_values(*))";
 
@@ -125,6 +126,7 @@ function rowToProduct(row: ProductRow): Product {
     storageInfo: row.storage_info ?? undefined,
     servingInfo: row.serving_info ?? undefined,
     imageUrls: row.image_paths ?? [],
+    cardImageUrl: row.card_image_path ?? null,
     stockCount: row.stock_count,
     availableFrom: row.available_from,
     photoCount: 3,

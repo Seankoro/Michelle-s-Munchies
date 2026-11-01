@@ -8,6 +8,7 @@ import { OptionPicker } from "./OptionPicker";
 import { FlavourBoxPicker } from "./FlavourBoxPicker";
 import { Button, buttonClasses } from "@/components/ui/Button";
 import { formatPrice } from "@/lib/catalog";
+import { cardImageUrl } from "@/lib/product-images";
 import { useDialog } from "@/lib/useDialog";
 
 /**
@@ -25,6 +26,7 @@ export function QuickPick({
   onClose: () => void;
 }) {
   const [added, setAdded] = useState(false);
+  const image = cardImageUrl(product);
   const panelRef = useRef<HTMLDivElement>(null);
   const confirmRef = useRef<HTMLDivElement>(null);
 
@@ -61,9 +63,9 @@ export function QuickPick({
         <div className="flex shrink-0 items-start justify-between gap-4 rounded-t-2xl border-b border-line bg-white px-5 py-4">
           <div className="flex items-center gap-3">
             <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-xl bg-blush-soft text-2xl">
-              {product.imageUrls?.[0] ? (
+              {image ? (
                 <Image
-                  src={product.imageUrls[0]}
+                  src={image}
                   alt=""
                   width={56}
                   height={56}

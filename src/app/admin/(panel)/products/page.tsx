@@ -7,6 +7,7 @@ import { uploadProductImageAction } from "@/lib/admin-actions";
 import { allergenMeta, dietaryMeta, formatPrice } from "@/lib/catalog";
 import type { Allergen, DietaryTag, FlavourBoxConfig, IngredientLine, Product } from "@/lib/types";
 import { cn } from "@/lib/cn";
+import { cardImageUrl } from "@/lib/product-images";
 import { Toggle } from "@/components/ui/Toggle";
 import { AdminModal } from "@/components/admin/AdminModal";
 import { TableStateRow } from "@/components/admin/TableStateRow";
@@ -44,6 +45,7 @@ function blankProduct(): Product {
     storageInfo: "",
     servingInfo: "",
     imageUrls: [],
+    cardImageUrl: null,
     photoCount: 1,
     options: [],
     flavourBox: null,
@@ -574,25 +576,51 @@ function ProductFormModal({
 
           <div>
             <span className="text-sm font-semibold">Photos</span>
+            <p className="text-xs text-muted">
+              The first photo leads the product page. Tap the label on a photo to show it on the menu card instead.
+            </p>
             <div className="mt-2 flex flex-wrap gap-3">
-              {(draft.imageUrls ?? []).map((url) => (
-                <div
-                  key={url}
-                  className="relative h-20 w-20 overflow-hidden rounded-xl border border-line"
-                >
-                  <Image src={url} alt="Product photo" fill sizes="80px" className="object-cover" />
-                  <button
-                    type="button"
-                    aria-label="Remove photo"
-                    onClick={() =>
-                      set("imageUrls", (draft.imageUrls ?? []).filter((u) => u !== url))
-                    }
-                    className="absolute right-0 top-0 rounded-bl-lg bg-ink/60 px-1.5 text-xs font-semibold text-white transition hover:bg-ink active:scale-90"
+              {(draft.imageUrls ?? []).map((url) => {
+                const isCard = cardImageUrl(draft) === url;
+                return (
+                  <div
+                    key={url}
+                    className={cn(
+                      "relative h-20 w-20 overflow-hidden rounded-xl border",
+                      isCard ? "border-rose ring-2 ring-rose" : "border-line",
+                    )}
                   >
-                    ✕
-                  </button>
-                </div>
-              ))}
+                    <Image src={url} alt="Product photo" fill sizes="80px" className="object-cover" />
+                    <button
+                      type="button"
+                      aria-label="Remove photo"
+                      onClick={() =>
+                        setDraft((prev) => ({
+                          ...prev,
+                          imageUrls: (prev.imageUrls ?? []).filter((u) => u !== url),
+                          // Removing the chosen card photo falls back to the first one.
+                          cardImageUrl: prev.cardImageUrl === url ? null : prev.cardImageUrl,
+                        }))
+                      }
+                      className="absolute right-0 top-0 rounded-bl-lg bg-ink/60 px-1.5 text-xs font-semibold text-white transition hover:bg-ink active:scale-90"
+                    >
+                      ✕
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={isCard}
+                      aria-label={isCard ? "Menu card photo" : "Use as menu card photo"}
+                      onClick={() => set("cardImageUrl", url)}
+                      className={cn(
+                        "absolute inset-x-0 bottom-0 py-0.5 text-[10px] font-semibold transition",
+                        isCard ? "bg-rose text-white" : "bg-ink/50 text-white hover:bg-ink/70",
+                      )}
+                    >
+                      {isCard ? "Menu card" : "Use on card"}
+                    </button>
+                  </div>
+                );
+              })}
               <label
                 className={cn(
                   "flex h-20 w-20 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-blush text-xs font-semibold text-rose-ink",

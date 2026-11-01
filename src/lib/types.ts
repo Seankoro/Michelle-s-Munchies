@@ -71,6 +71,12 @@ export type Product = {
   servingInfo?: string;
   /** Public URLs of uploaded product photos. Empty shows the placeholder. */
   imageUrls?: string[];
+  /**
+   * The photo for menu cards and small thumbnails, one of imageUrls. null uses
+   * the first photo. Read it through cardImageUrl(), which also guards against
+   * a value left over from a removed photo.
+   */
+  cardImageUrl?: string | null;
   /** Remaining stock. null or undefined means untracked and unlimited. Auto sold-out at 0. */
   stockCount?: number | null;
   /** Seasonal-drop go-live time as an ISO string. A future time means not yet orderable. */

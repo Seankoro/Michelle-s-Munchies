@@ -24,7 +24,9 @@ import { ReviewForm } from "@/components/product/ReviewForm";
 import { fetchReviews, getReviewContext } from "@/lib/reviews";
 import { formatLongDate } from "@/lib/order";
 import { jsonLd } from "@/lib/json-ld";
+import { cardImageUrl } from "@/lib/product-images";
 import { Reveal } from "@/components/ui/Reveal";
+import { ProductGallery } from "@/components/product/ProductGallery";
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -48,7 +50,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
       // undefined strips the image from the preview entirely, which is worse
       // than the generic card it was meant to improve on. No treat carries a
       // photo yet, so today every one of these uses the fallback.
-      images: product.imageUrls?.length ? [product.imageUrls[0]] : ["/og.png"],
+      images: [cardImageUrl(product) ?? "/og.png"],
     },
   };
 }
@@ -156,36 +158,7 @@ export default async function ProductDetailPage({ params }: Params) {
         {/* Gallery */}
         <div>
           {product.imageUrls && product.imageUrls.length > 0 ? (
-            <>
-              <div className="relative aspect-square w-full overflow-hidden rounded-2xl">
-                <Image
-                  src={product.imageUrls[0]}
-                  alt={product.name}
-                  fill
-                  sizes="(max-width: 1024px) 100vw, 50vw"
-                  className="object-cover"
-                  priority
-                />
-              </div>
-              {product.imageUrls.length > 1 && (
-                <div className="mt-3 grid grid-cols-3 gap-3">
-                  {product.imageUrls.slice(1, 4).map((url, index) => (
-                    <div
-                      key={index}
-                      className="relative aspect-square overflow-hidden rounded-2xl"
-                    >
-                      <Image
-                        src={url}
-                        alt={`${product.name} photo ${index + 2}`}
-                        fill
-                        sizes="33vw"
-                        className="object-cover"
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
+            <ProductGallery name={product.name} urls={product.imageUrls} />
           ) : (
             <>
               <ImagePlaceholder aspect="square" label="Main product photo" icon="📷" />

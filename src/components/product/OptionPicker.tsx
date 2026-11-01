@@ -9,6 +9,7 @@ import { uploadPersonalisationImageAction } from "@/lib/personalisation-actions"
 import { Button } from "@/components/ui/Button";
 import { compactInputClass } from "@/lib/ui";
 import { cn } from "@/lib/cn";
+import { cardImageUrl } from "@/lib/product-images";
 
 /**
  * Shared option + quantity selector that adds to the cart. Reused inline on the
@@ -118,7 +119,7 @@ export function OptionPicker({
       unitPriceCents,
       quantity,
       selectedOptions,
-      imageUrl: product.imageUrls?.[0],
+      imageUrl: cardImageUrl(product),
       ...(chosen ? { personalisation: chosen } : {}),
     };
 

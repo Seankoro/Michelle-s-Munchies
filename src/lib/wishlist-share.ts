@@ -2,6 +2,7 @@ import "server-only";
 import { newToken } from "@/lib/tokens";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchProducts } from "@/lib/products";
+import { cardImageUrl } from "@/lib/product-images";
 
 export type SharedFavourite = {
   id: string;
@@ -60,7 +61,7 @@ export async function fetchSharedFavourites(token: string): Promise<SharedFavour
       name: p.name,
       slug: p.slug,
       priceCents: p.basePriceCents,
-      imageUrl: p.imageUrls && p.imageUrls.length > 0 ? p.imageUrls[0] : null,
+      imageUrl: cardImageUrl(p) ?? null,
       hasOptions: p.options.length > 0,
       isAvailable: p.isAvailable,
     }));
