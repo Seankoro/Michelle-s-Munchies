@@ -71,19 +71,26 @@ describe("assortedFlavours", () => {
     expect(assortedFlavours(assorted, [other, product("a", "Choco Chip")], now)).toHaveLength(1);
   });
 
-  it("marks switched-off, out-of-stock and unlaunched products as out of stock", () => {
+  it("marks switched-off and out-of-stock products as out of stock", () => {
     const sources = [
       product("a", "Off", { isAvailable: false }),
       product("b", "Zero stock", { stockCount: 0 }),
-      product("c", "Later", { availableFrom: "2026-12-01T00:00:00Z" }),
-      product("d", "Fine", { stockCount: 4 }),
+      product("c", "Fine", { stockCount: 4 }),
     ];
     expect(assortedFlavours(assorted, sources, now).map((f) => f.isAvailable)).toEqual([
       false,
       false,
-      false,
       true,
     ]);
+  });
+
+  it("leaves out Coming soon products until they launch", () => {
+    const sources = [
+      product("a", "Teaser", { comingSoon: true }),
+      product("b", "Dated", { comingSoon: true, availableFrom: "2026-12-01T00:00:00Z" }),
+      product("c", "Launched", { comingSoon: true, availableFrom: "2026-10-01T00:00:00Z" }),
+    ];
+    expect(assortedFlavours(assorted, sources, now).map((f) => f.label)).toEqual(["Launched"]);
   });
 });
 

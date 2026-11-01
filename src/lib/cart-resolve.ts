@@ -5,6 +5,7 @@ import { fetchActiveBoxTemplates } from "@/lib/boxes";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchCommittedUnits } from "@/lib/stock-availability";
 import { menuCartKey } from "@/lib/cart-key";
+import { isComingSoon } from "@/lib/launch";
 import type { CartItem, Personalisation, Product, SelectedOption } from "@/lib/types";
 
 export type RawSelection = { optionName?: string; valueLabel: string };
@@ -129,7 +130,7 @@ export async function resolveCartLines(
     const product =
       (line.productId ? products.find((p) => p.id === line.productId) : undefined) ??
       (line.productName ? products.find((p) => p.name === line.productName) : undefined);
-    if (!product || !product.isAvailable) {
+    if (!product || !product.isAvailable || isComingSoon(product)) {
       // A found-but-sold-out product links to its own page (browse / waitlist);
       // an unfound name is matched against bundles and boxes after the loop.
       if (product) skipped.push({ name: product.name, href: menuHref(product) });

@@ -4,7 +4,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
 import { allergenMeta, formatPrice } from "@/lib/catalog";
-import { fetchProductBySlug, fetchRelatedProducts, isUpcoming } from "@/lib/products";
+import { fetchProductBySlug, fetchRelatedProducts } from "@/lib/products";
+import { comingSoonLabel, isComingSoon, isTeaser } from "@/lib/launch";
 import { fetchStoreSettings } from "@/lib/settings";
 import { ImagePlaceholder } from "@/components/ui/ImagePlaceholder";
 import { Badge } from "@/components/ui/Badge";
@@ -33,7 +34,7 @@ type Params = { params: Promise<{ slug: string }> };
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params;
   const product = await fetchProductBySlug(slug);
-  if (!product) return { title: "Not found" };
+  if (!product || isTeaser(product)) return { title: "Not found" };
   return {
     title: product.name,
     description: product.shortDescription,
@@ -61,7 +62,12 @@ export default async function ProductDetailPage({ params }: Params) {
   // allowed now that inline scripts without a nonce are refused.
   const nonce = (await headers()).get("x-nonce") ?? undefined;
   const product = await fetchProductBySlug(slug);
-  if (!product) notFound();
+  // A Coming soon teaser has no page until Michelle puts it on sale, so a typed
+  // or shared address lands where a deleted product would.
+  if (!product || isTeaser(product)) notFound();
+  // Dated Coming soon: a countdown page instead of the order form, until the
+  // launch time passes and this same request renders it on sale.
+  const comingSoon = isComingSoon(product);
 
   // Related products and settings both depend only on the product, so fetch them
   // together instead of in series.
@@ -104,9 +110,11 @@ export default async function ProductDetailPage({ params }: Params) {
     // showing a "from" price. Declaring one exact figure to Google invites a
     // rich result quoting a price the customer cannot actually buy at.
     offers: (() => {
-      const availability = product.isAvailable
-        ? "https://schema.org/InStock"
-        : "https://schema.org/OutOfStock";
+      const availability = comingSoon
+        ? "https://schema.org/PreOrder"
+        : product.isAvailable
+          ? "https://schema.org/InStock"
+          : "https://schema.org/OutOfStock";
       const url = `${siteUrl}/menu/${product.slug}`;
       const low = product.basePriceCents;
       // The dearest reachable combination, taking the priciest value in each
@@ -183,14 +191,18 @@ export default async function ProductDetailPage({ params }: Params) {
           <div className="flex flex-wrap gap-2">
             {product.isBestSeller && <Badge tone="bestseller">★ Best seller</Badge>}
             {product.isRecommended && <Badge tone="recommended">Recommended</Badge>}
-            {!product.isAvailable && <Badge tone="soldout">Sold out</Badge>}
+            {comingSoon ? (
+              <Badge tone="recommended">{comingSoonLabel(product)}</Badge>
+            ) : (
+              !product.isAvailable && <Badge tone="soldout">Sold out</Badge>
+            )}
           </div>
 
           <div className="mt-3 flex items-start justify-between gap-3">
             <h1 className="font-display text-4xl font-semibold">{product.name}</h1>
             <FavouriteButton
               productId={product.id}
-              soldOut={!product.isAvailable}
+              soldOut={!product.isAvailable || comingSoon}
               className="mt-1 shrink-0"
             />
           </div>
@@ -215,9 +227,10 @@ export default async function ProductDetailPage({ params }: Params) {
             🎀 Baked to order. Please order at least {leadTime} day{leadTime === 1 ? "" : "s"} ahead.
           </p>
 
-          {settings.features.drops && isUpcoming(product) ? (
+          {comingSoon ? (
             <div className="mt-6 flex flex-col gap-4">
               <DropCountdown availableFrom={product.availableFrom as string} />
+              {/* Hides itself when the drops (waitlist) feature is off. */}
               <NotifyBackInStock productId={product.id} mode="drop" />
             </div>
           ) : (

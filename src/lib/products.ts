@@ -65,6 +65,7 @@ type ProductRow = {
   storage_info: string | null;
   serving_info: string | null;
   stock_count: number | null;
+  coming_soon: boolean;
   available_from: string | null;
   product_options: OptionRow[] | null;
   flavour_box: FlavourBoxConfig | null;
@@ -78,7 +79,7 @@ type ProductRow = {
 const PRODUCT_FIELDS_PUBLIC =
   "id, slug, name, short_description, long_description, base_price_cents, category, " +
   "image_paths, card_image_path, is_available, is_best_seller, is_recommended, allergens, dietary_tags, " +
-  "ingredients, storage_info, serving_info, stock_count, available_from, flavour_box, " +
+  "ingredients, storage_info, serving_info, stock_count, coming_soon, available_from, flavour_box, " +
   "personalisation_label, personalisation_allow_photo";
 const PRODUCT_SELECT = `${PRODUCT_FIELDS_PUBLIC}, product_options(*, product_option_values(*))`;
 // Admin read via the service-role client, which bypasses column grants and can
@@ -90,7 +91,7 @@ const PRODUCT_SELECT_ADMIN = "*, product_options(*, product_option_values(*))";
 const PRODUCT_SELECT_CARD =
   "id, slug, name, short_description, base_price_cents, category, image_paths, card_image_path, " +
   "is_available, is_best_seller, is_recommended, allergens, dietary_tags, stock_count, " +
-  "available_from, flavour_box, product_options(*, product_option_values(*))";
+  "coming_soon, available_from, flavour_box, product_options(*, product_option_values(*))";
 
 function bySortOrder<T extends { sort_order: number }>(a: T, b: T) {
   return a.sort_order - b.sort_order;
@@ -129,6 +130,7 @@ function rowToProduct(row: ProductRow): Product {
     imageUrls: row.image_paths ?? [],
     cardImageUrl: row.card_image_path ?? null,
     stockCount: row.stock_count,
+    comingSoon: row.coming_soon ?? false,
     availableFrom: row.available_from,
     photoCount: 3,
     options,
@@ -157,11 +159,6 @@ export function toCardProduct(product: Product): Product {
   };
 }
 
-/** True when a product has a future go-live time, a seasonal drop not yet open. */
-export function isUpcoming(product: Product): boolean {
-  return Boolean(product.availableFrom) && new Date(product.availableFrom as string) > new Date();
-}
-
 /**
  * Every product, slimmed to what an assorted box builds its flavours from, in
  * menu order. Read whole rather than per category so one memoised query serves
@@ -172,12 +169,19 @@ const fetchFlavourSources = cache(async (): Promise<FlavourSource[]> => {
   const supabase = createPublicClient();
   const { data, error } = await supabase
     .from("products")
-    .select("id, name, category, is_available, stock_count, available_from, flavour_box")
+    .select("id, name, category, is_available, stock_count, coming_soon, available_from, flavour_box")
     .order("sort_order", { ascending: true });
   if (error) throw new Error(`Failed to load flavours: ${error.message}`);
   type Row = Pick<
     ProductRow,
-    "id" | "name" | "category" | "is_available" | "stock_count" | "available_from" | "flavour_box"
+    | "id"
+    | "name"
+    | "category"
+    | "is_available"
+    | "stock_count"
+    | "coming_soon"
+    | "available_from"
+    | "flavour_box"
   >;
   return ((data as Row[] | null) ?? []).map((row) => ({
     id: row.id,
@@ -185,6 +189,7 @@ const fetchFlavourSources = cache(async (): Promise<FlavourSource[]> => {
     category: row.category,
     isAvailable: row.is_available,
     stockCount: row.stock_count,
+    comingSoon: row.coming_soon,
     availableFrom: row.available_from,
     flavourBox: row.flavour_box,
   }));

@@ -17,7 +17,8 @@ import {
   type RawSelection,
   type ReorderResult,
 } from "@/lib/cart-resolve";
-import { fetchProducts, isUpcoming } from "@/lib/products";
+import { fetchProducts } from "@/lib/products";
+import { isComingSoon } from "@/lib/launch";
 import type { SelectedOption } from "@/lib/types";
 
 export type LookupResult = { ok: true; token: string } | { ok: false; error: string };
@@ -273,11 +274,11 @@ export async function addItemsToOrderAction(
   const unavailable: string[] = [];
   for (const line of clean) {
     const product = products.find((p) => p.id === line.productId);
-    // A seasonal drop that hasn't opened yet is blocked at checkout, so it can't
+    // A Coming soon treat is blocked at checkout, so it can't
     // come in through the add-on panel either. Everything else about whether a
     // treat can be sold, unticked products, sold-out flavours and tracked stock,
     // is resolveCartLines' rule below and is not repeated here.
-    if (!product || isUpcoming(product)) {
+    if (!product || isComingSoon(product)) {
       unavailable.push(product?.name ?? "a treat that’s no longer on the menu");
       continue;
     }

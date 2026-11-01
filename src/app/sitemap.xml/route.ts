@@ -2,6 +2,7 @@ import { fetchProducts } from "@/lib/products";
 import { fetchStoreSettings } from "@/lib/settings";
 import { fetchActiveBundles } from "@/lib/bundles";
 import { fetchActiveBoxTemplates } from "@/lib/boxes";
+import { isTeaser } from "@/lib/launch";
 
 // Served as a plain route instead of the sitemap.ts file convention because
 // Next's metadata-route loader breaks on this project's apostrophe path.
@@ -31,7 +32,8 @@ export async function GET() {
   const lastmod = new Date().toISOString().slice(0, 10);
   const entries = [
     ...staticPaths.map(({ path, priority }) => ({ loc: `${SITE_URL}${path}`, priority })),
-    ...products.map((product) => ({
+    // A teaser has no page of its own until it goes on sale.
+    ...products.filter((product) => !isTeaser(product)).map((product) => ({
       loc: `${SITE_URL}/menu/${product.slug}`,
       priority: "0.6",
     })),

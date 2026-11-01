@@ -599,7 +599,7 @@ function SettingsForm({
                 ["structuredNotes", "Structured order notes", "Custom checkout questions you define."],
                 ["orderChanges", "Order changes", "Let customers reschedule or request to cancel."],
                 ["newsletter", "Newsletter", "Collect sign-ups and send updates."],
-                ["drops", "Seasonal drops", "Schedule items to go live with a waitlist."],
+                ["drops", "Launch waitlist", "Let customers join a waitlist on dated Coming soon treats."],
                 ["dietaryPrefs", "Dietary preferences", "Customers save dietary needs for a tailored menu."],
                 ["occasionReminders", "Occasion reminders", "Customers save birthdays and we email a reorder nudge."],
               ] as const

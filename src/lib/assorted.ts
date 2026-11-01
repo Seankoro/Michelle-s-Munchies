@@ -1,3 +1,4 @@
+import { isComingSoon } from "@/lib/launch";
 import type { Product, ProductOption } from "@/lib/types";
 
 /**
@@ -12,7 +13,14 @@ import type { Product, ProductOption } from "@/lib/types";
 /** The product fields a flavour is built from. */
 export type FlavourSource = Pick<
   Product,
-  "id" | "name" | "category" | "isAvailable" | "stockCount" | "availableFrom" | "flavourBox"
+  | "id"
+  | "name"
+  | "category"
+  | "isAvailable"
+  | "stockCount"
+  | "comingSoon"
+  | "availableFrom"
+  | "flavourBox"
 >;
 
 /** Marks the generated flavour group, so the admin editor never saves it back as a typed list. */
@@ -22,26 +30,32 @@ export function isAssortedOption(option: ProductOption): boolean {
   return option.id.startsWith(ASSORTED_OPTION_PREFIX);
 }
 
-/** A flavour can't go in a box when its product is switched off, out of stock, or not launched yet. */
-export function isFlavourSoldOut(source: FlavourSource, now = new Date()): boolean {
+/** A flavour can't go in a box when its product is switched off or out of stock. */
+export function isFlavourSoldOut(source: FlavourSource): boolean {
   if (!source.isAvailable) return true;
-  if (source.stockCount != null && source.stockCount <= 0) return true;
-  return Boolean(source.availableFrom) && new Date(source.availableFrom as string) > now;
+  return source.stockCount != null && source.stockCount <= 0;
 }
 
 /**
  * The flavours for an assorted product: every other product in its category,
  * in menu order. Other assorted products are skipped, so an Assorted box never
- * offers another Assorted box as a flavour.
+ * offers another Assorted box as a flavour, and so is anything still Coming
+ * soon, which joins the list by itself once it launches.
  */
 export function assortedFlavours(product: Product, sources: FlavourSource[], now = new Date()) {
   return sources
-    .filter((s) => s.category === product.category && s.id !== product.id && !s.flavourBox)
+    .filter(
+      (s) =>
+        s.category === product.category &&
+        s.id !== product.id &&
+        !s.flavourBox &&
+        !isComingSoon(s, now),
+    )
     .map((s) => ({
       id: s.id,
       label: s.name.trim(),
       priceDeltaCents: 0,
-      isAvailable: !isFlavourSoldOut(s, now),
+      isAvailable: !isFlavourSoldOut(s),
     }));
 }
 

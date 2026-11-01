@@ -15,6 +15,7 @@ import { validatePromo, type PromoValidation } from "@/lib/promos";
 import { fetchBundleBySlug, validateBundleForCheckout } from "@/lib/bundles";
 import { fetchBoxBySlug, validateBoxForCheckout, validateFlavourBoxForCheckout } from "@/lib/boxes";
 import { fetchProductById, fetchProducts } from "@/lib/products";
+import { isComingSoon } from "@/lib/launch";
 import type { BoxTemplate, CartItem, SelectedOption } from "@/lib/types";
 import { recordIntent, markConverted } from "@/lib/checkout-intents";
 import { resolveCartLines } from "@/lib/cart-resolve";
@@ -469,24 +470,24 @@ export async function placeOrder(
       };
     }
 
-    // Block items that haven't launched yet, the seasonal drops. Server-enforced.
-    if (settings.features.drops) {
-      const uuidRe = /^[0-9a-f-]{36}$/i;
-      const productIds = items.map((i) => i.productId).filter((id) => uuidRe.test(id));
-      if (productIds.length > 0) {
-        const admin = createAdminClient();
-        const { data: notLive } = await admin
-          .from("products")
-          .select("name")
-          .in("id", productIds)
-          .gt("available_from", new Date().toISOString());
-        const rows = notLive as { name: string }[] | null;
-        if (rows && rows.length > 0) {
-          return {
-            ok: false,
-            error: `“${rows[0].name}” hasn’t launched yet. Join the waitlist instead.`,
-          };
-        }
+    // Block anything still Coming soon, teaser or dated. Server-enforced, and
+    // not behind the drops flag: that flag only switches the waitlist, while
+    // Coming soon itself is a product status Michelle sets in the admin.
+    const uuidRe = /^[0-9a-f-]{36}$/i;
+    const productIds = items.map((i) => i.productId).filter((id) => uuidRe.test(id));
+    if (productIds.length > 0) {
+      const admin = createAdminClient();
+      const { data: launchRows } = await admin
+        .from("products")
+        .select("name, coming_soon, available_from")
+        .in("id", productIds)
+        .eq("coming_soon", true);
+      const notLive = (
+        (launchRows as { name: string; coming_soon: boolean; available_from: string | null }[] | null) ??
+        []
+      ).find((row) => isComingSoon({ comingSoon: row.coming_soon, availableFrom: row.available_from }));
+      if (notLive) {
+        return { ok: false, error: `“${notLive.name}” is not on sale yet.` };
       }
     }
 

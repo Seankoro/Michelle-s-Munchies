@@ -9,6 +9,15 @@ import type { Allergen, DietaryTag, FlavourBoxConfig, IngredientLine, Product } 
 import { cn } from "@/lib/cn";
 import { cardImageUrl } from "@/lib/product-images";
 import { assortedFlavours, isAssortedOption } from "@/lib/assorted";
+import {
+  comingSoonLabel,
+  DEFAULT_LAUNCH_TIME,
+  fromSgtParts,
+  isComingSoon,
+  LAUNCH_TIMES,
+  launchTimeLabel,
+  toSgtParts,
+} from "@/lib/launch";
 import { Toggle } from "@/components/ui/Toggle";
 import { AdminModal } from "@/components/admin/AdminModal";
 import { TableStateRow } from "@/components/admin/TableStateRow";
@@ -20,13 +29,18 @@ const ALL_DIETARY = Object.keys(dietaryMeta) as DietaryTag[];
 /** Column count of the products table, so the state-row colSpan is defined once. */
 const TABLE_COLUMNS = 7;
 
-/** ISO timestamp → value for a <input type="datetime-local">, in local time. */
-function isoToLocalInput(iso: string | null | undefined): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
+/**
+ * One status instead of separate Available and Coming soon switches, since a
+ * product is only ever one of these and two switches allow combinations that
+ * mean nothing. Coming soon keeps the product available underneath, so it is
+ * on sale the moment its launch time passes.
+ */
+type Status = "sale" | "sold" | "soon";
+const STATUSES: { value: Status; label: string }[] = [
+  { value: "sale", label: "On sale" },
+  { value: "sold", label: "Sold out" },
+  { value: "soon", label: "Coming soon" },
+];
 
 function blankProduct(): Product {
   return {
@@ -38,6 +52,8 @@ function blankProduct(): Product {
     basePriceCents: 0,
     category: "Cookies",
     isAvailable: true,
+    comingSoon: false,
+    availableFrom: null,
     isBestSeller: false,
     isRecommended: false,
     allergens: [],
@@ -113,11 +129,19 @@ export default function AdminProductsPage() {
                 <td className="px-4 py-3 text-muted">{product.category}</td>
                 <td className="px-4 py-3">{formatPrice(product.basePriceCents)}</td>
                 <td className="px-4 py-3 text-center">
-                  <Toggle
-                    checked={product.isAvailable}
-                    onChange={() => toggleAvailability(product.id)}
-                    label={`Toggle availability for ${product.name}`}
-                  />
+                  {/* A Coming soon treat is switched on sale from its form,
+                      where the launch date lives, not from this quick toggle. */}
+                  {isComingSoon(product) ? (
+                    <span className="whitespace-nowrap rounded-full bg-blush-soft px-2.5 py-1 text-xs font-semibold text-rose-ink">
+                      {comingSoonLabel(product)}
+                    </span>
+                  ) : (
+                    <Toggle
+                      checked={product.isAvailable}
+                      onChange={() => toggleAvailability(product.id)}
+                      label={`Toggle availability for ${product.name}`}
+                    />
+                  )}
                 </td>
                 <td className="px-4 py-3 text-center">
                   <Toggle
@@ -214,8 +238,26 @@ function ProductFormModal({
   // the build-your-own box section instead, so it never saves back as a list.
   const [draft, setDraft] = useState<Product>(() => ({
     ...product,
+    // A launch time that has passed means it is on sale already, so the form
+    // shows it that way and the next save records it.
+    comingSoon: isComingSoon(product),
     options: product.options.filter((option) => !isAssortedOption(option)),
   }));
+  // The launch date and time are edited as Singapore fields and joined into
+  // availableFrom. Kept while another status is chosen, so switching back to
+  // Coming soon brings the old date back.
+  const [launchDate, setLaunchDate] = useState(() =>
+    product.availableFrom ? toSgtParts(product.availableFrom).date : "",
+  );
+  const [launchTime, setLaunchTime] = useState(() =>
+    product.availableFrom ? toSgtParts(product.availableFrom).time : DEFAULT_LAUNCH_TIME,
+  );
+  const [todaySgt] = useState(() => toSgtParts(new Date().toISOString()).date);
+  const status: Status = draft.comingSoon ? "soon" : draft.isAvailable ? "sale" : "sold";
+  // A time saved before the half-hour choices existed still shows as itself.
+  const launchTimes = LAUNCH_TIMES.some((t) => t.value === launchTime)
+    ? LAUNCH_TIMES
+    : [{ value: launchTime, label: launchTimeLabel(launchTime) }, ...LAUNCH_TIMES];
   const [priceText, setPriceText] = useState((product.basePriceCents / 100).toFixed(2));
   const [costText, setCostText] = useState(
     product.costCents != null ? (product.costCents / 100).toFixed(2) : "",
@@ -231,6 +273,16 @@ function ProductFormModal({
 
   function set<K extends keyof Product>(key: K, value: Product[K]) {
     setDraft((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function setStatus(next: Status) {
+    setDraft((prev) => ({ ...prev, comingSoon: next === "soon", isAvailable: next !== "sold" }));
+  }
+
+  function setLaunch(date: string, time: string) {
+    setLaunchDate(date);
+    setLaunchTime(time);
+    set("availableFrom", date ? fromSgtParts(date, time) : null);
   }
 
   async function handleUpload(event: ChangeEvent<HTMLInputElement>) {
@@ -406,6 +458,16 @@ function ProductFormModal({
       setSaveError(`A product with the slug "${slug}" already exists.`);
       return;
     }
+    if (
+      draft.comingSoon &&
+      draft.availableFrom &&
+      new Date(draft.availableFrom) <= new Date()
+    ) {
+      setSaveError(
+        "That launch time has already passed. Pick a later one, or clear the date to show Coming soon with no date.",
+      );
+      return;
+    }
     // Drop blank rows and normalise, so the stored recipe stays tidy.
     const ingredients = (draft.ingredients ?? [])
       .map((ing) => ({
@@ -545,19 +607,77 @@ function ProductFormModal({
                 saves when you change it here.
               </span>
             </label>
-            <label className="flex flex-col gap-1 text-sm font-semibold">
-              Available from (seasonal drop)
-              <input
-                type="datetime-local"
-                className={inputClass}
-                value={isoToLocalInput(draft.availableFrom)}
-                onChange={(e) =>
-                  set("availableFrom", e.target.value ? new Date(e.target.value).toISOString() : null)
-                }
-              />
-              <span className="font-normal text-muted">Blank = available now. A future time shows a countdown and waitlist.</span>
-            </label>
           </div>
+
+          <fieldset className="rounded-xl bg-marble/40 p-3 text-sm">
+            <legend className="px-1 font-semibold">Status</legend>
+            <div
+              role="group"
+              aria-label="Status"
+              className="inline-flex flex-wrap gap-1 rounded-full border border-line bg-white p-1"
+            >
+              {STATUSES.map(({ value, label }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setStatus(value)}
+                  aria-pressed={status === value}
+                  className={cn(
+                    "rounded-full px-4 py-1.5 text-sm font-semibold transition active:scale-95",
+                    status === value ? "bg-blush-soft text-rose-ink" : "text-muted hover:text-ink",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {status === "soon" && (
+              <div className="mt-3 flex flex-col gap-1">
+                <span className="font-semibold">
+                  Launch date <span className="font-normal text-muted">(optional)</span>
+                </span>
+                {/* Sized by grid columns, since inputClass carries w-full and a
+                    width class next to it does not reliably win. */}
+                <div className="grid grid-cols-[minmax(0,11rem)_minmax(0,8rem)_auto] items-center gap-2">
+                  <input
+                    type="date"
+                    aria-label="Launch date"
+                    className={inputClass}
+                    value={launchDate}
+                    min={todaySgt}
+                    onChange={(e) => setLaunch(e.target.value, launchTime)}
+                  />
+                  <select
+                    aria-label="Launch time"
+                    className={inputClass}
+                    value={launchTime}
+                    disabled={!launchDate}
+                    onChange={(e) => setLaunch(launchDate, e.target.value)}
+                  >
+                    {launchTimes.map((t) => (
+                      <option key={t.value} value={t.value}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
+                  {launchDate && (
+                    <button
+                      type="button"
+                      onClick={() => setLaunch("", DEFAULT_LAUNCH_TIME)}
+                      className="justify-self-start rounded-full border border-line px-3 py-1.5 text-xs font-semibold transition hover:border-rose active:scale-95"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <span className="font-normal text-muted">
+                  {launchDate
+                    ? `The menu shows "${comingSoonLabel(draft)}" with a countdown page, and it goes on sale by itself at that time (Singapore time).`
+                    : `The menu shows "Coming soon" with no link and no page, until you set it On sale.`}
+                </span>
+              </div>
+            )}
+          </fieldset>
 
           <label className="flex flex-col gap-1 text-sm font-semibold">
             Short description
@@ -788,14 +908,6 @@ function ProductFormModal({
           </fieldset>
 
           <div className="flex flex-wrap gap-4 rounded-xl bg-marble/40 p-3 text-sm">
-            <div className="flex items-center gap-2 font-semibold">
-              <Toggle
-                checked={draft.isAvailable}
-                onChange={(v) => set("isAvailable", v)}
-                label="Available"
-              />
-              Available
-            </div>
             <div className="flex items-center gap-2 font-semibold">
               <Toggle
                 checked={draft.isBestSeller}

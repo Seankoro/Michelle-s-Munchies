@@ -11,9 +11,9 @@ import { QuickPick } from "./QuickPick";
 import { FavouriteButton } from "@/components/wishlist/FavouriteButton";
 import { useCart } from "@/components/cart/CartContext";
 import { menuCartKey } from "@/lib/cart-key";
-import { useFeatures } from "@/components/features/FeaturesProvider";
 import { formatPrice } from "@/lib/catalog";
 import { cardImageUrl } from "@/lib/product-images";
+import { comingSoonLabel, isComingSoon, isTeaser } from "@/lib/launch";
 import { cn } from "@/lib/cn";
 
 export function ProductCard({
@@ -25,21 +25,22 @@ export function ProductCard({
   rating?: { avg: number; count: number };
 }) {
   const { addItem } = useCart();
-  const { drops } = useFeatures();
   const [quickOpen, setQuickOpen] = useState(false);
   const [added, setAdded] = useState(false);
 
   const hasOptions = product.options.length > 0;
   const soldOut = !product.isAvailable;
-  // Deterministic on first render (server and client both start `false`) so
-  // hydration never disagrees; the real value is computed client-side after
-  // mount, once `new Date()` can no longer diverge from the server's render.
-  const [upcoming, setUpcoming] = useState(false);
+  // A teaser needs no clock, so it is right from the first render and its card
+  // never carries a link, not even for the moment before hydration.
+  const teaser = isTeaser(product);
+  // A dated launch depends on the clock. Deterministic on first render (server
+  // and client both start from the teaser value) so hydration never disagrees;
+  // the real value is computed client-side after mount, once `new Date()` can
+  // no longer diverge from the server's render.
+  const [upcoming, setUpcoming] = useState(teaser);
   useEffect(() => {
-    setUpcoming(
-      drops && Boolean(product.availableFrom) && new Date(product.availableFrom as string) > new Date(),
-    );
-  }, [drops, product.availableFrom]);
+    setUpcoming(isComingSoon(product));
+  }, [product]);
   const detailHref = `/menu/${product.slug}`;
   const cardImage = cardImageUrl(product);
 
@@ -66,52 +67,78 @@ export function ProductCard({
     window.setTimeout(() => setAdded(false), 1600);
   }
 
+  // Photo, badges and banner. A teaser card shows them without a link, and
+  // drops the name link and favourite too, so there is no way in until launch.
+  const media = (
+    <>
+      {cardImage ? (
+        <div className="relative aspect-square w-full overflow-hidden">
+          <Image
+            src={cardImage}
+            alt={product.name}
+            fill
+            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 25vw"
+            className={cn(
+              "object-cover",
+              !teaser && "transition-transform duration-500 group-hover:scale-105",
+            )}
+          />
+        </div>
+      ) : (
+        <ImagePlaceholder aspect="square" label="Product photo" className="rounded-none border-0" />
+      )}
+      <div className="absolute left-3 top-3 flex flex-col items-start gap-1">
+        {product.isBestSeller && <Badge tone="bestseller">★ Best seller</Badge>}
+        {product.isRecommended && !product.isBestSeller && (
+          <Badge tone="recommended">Recommended</Badge>
+        )}
+      </div>
+      {soldOut && !upcoming && (
+        <div className="absolute inset-0 flex items-center justify-center bg-white/55">
+          <Badge tone="soldout">Sold out</Badge>
+        </div>
+      )}
+      {upcoming && (
+        <div className="absolute inset-0 flex items-center justify-center bg-white/55">
+          <Badge tone="recommended">{comingSoonLabel(product)}</Badge>
+        </div>
+      )}
+    </>
+  );
+
   return (
     <>
-      <article className="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-card transition duration-300 hover:-translate-y-1 hover:shadow-soft">
-        <FavouriteButton
-          productId={product.id}
-          soldOut={!product.isAvailable}
-          className="absolute right-3 top-3 z-10"
-        />
-        <Link href={detailHref} className="relative block">
-          {cardImage ? (
-            <div className="relative aspect-square w-full overflow-hidden">
-              <Image
-                src={cardImage}
-                alt={product.name}
-                fill
-                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 25vw"
-                className="object-cover transition-transform duration-500 group-hover:scale-105"
-              />
-            </div>
-          ) : (
-            <ImagePlaceholder aspect="square" label="Product photo" className="rounded-none border-0" />
-          )}
-          <div className="absolute left-3 top-3 flex flex-col items-start gap-1">
-            {product.isBestSeller && <Badge tone="bestseller">★ Best seller</Badge>}
-            {product.isRecommended && !product.isBestSeller && (
-              <Badge tone="recommended">Recommended</Badge>
-            )}
-          </div>
-          {soldOut && !upcoming && (
-            <div className="absolute inset-0 flex items-center justify-center bg-white/55">
-              <Badge tone="soldout">Sold out</Badge>
-            </div>
-          )}
-          {upcoming && (
-            <div className="absolute inset-0 flex items-center justify-center bg-white/55">
-              <Badge tone="recommended">Coming soon</Badge>
-            </div>
-          )}
-        </Link>
+      <article
+        className={cn(
+          "group relative flex h-full flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-card",
+          !teaser && "transition duration-300 hover:-translate-y-1 hover:shadow-soft",
+        )}
+      >
+        {!teaser && (
+          <FavouriteButton
+            productId={product.id}
+            soldOut={!product.isAvailable || upcoming}
+            className="absolute right-3 top-3 z-10"
+          />
+        )}
+        {teaser ? (
+          <div className="relative block">{media}</div>
+        ) : (
+          <Link href={detailHref} className="relative block">
+            {media}
+          </Link>
+        )}
 
         <div className="flex flex-1 flex-col gap-3 p-4">
           <div className="flex items-start justify-between gap-2">
             <h3 className="font-display text-3xl font-semibold leading-snug">
-              <Link href={detailHref} className="transition hover:text-rose-ink">
-                {product.name}
-              </Link>
+              {teaser ? (
+                product.name
+              ) : (
+                <Link href={detailHref} className="transition hover:text-rose-ink">
+                  {product.name}
+                </Link>
+              )}
             </h3>
             <AllergenChips allergens={product.allergens} />
           </div>

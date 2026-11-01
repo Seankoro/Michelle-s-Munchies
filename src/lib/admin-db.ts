@@ -1253,6 +1253,7 @@ function toProductColumns(patch: Partial<Product>) {
   if (patch.imageUrls !== undefined) columns.image_paths = patch.imageUrls;
   if (patch.cardImageUrl !== undefined) columns.card_image_path = patch.cardImageUrl;
   if (patch.stockCount !== undefined) columns.stock_count = patch.stockCount;
+  if (patch.comingSoon !== undefined) columns.coming_soon = patch.comingSoon;
   if (patch.availableFrom !== undefined) columns.available_from = patch.availableFrom;
   if (patch.flavourBox !== undefined) columns.flavour_box = patch.flavourBox;
   if (patch.personalisation !== undefined) {
@@ -1362,14 +1363,20 @@ export async function updateProduct(id: string, patch: Partial<Product>) {
   // actually changed it, though: the product editor saves the whole draft, so
   // a description-only edit would otherwise wipe the sold-itself-out marker and
   // quietly stop a later restock from putting the product back on the menu.
-  if (patch.isAvailable !== undefined) {
+  // Read before the write, so a launch by hand (Coming soon switched off) can
+  // be told apart from a save that merely repeats the status.
+  let wasComingSoon = false;
+  if (patch.isAvailable !== undefined || patch.comingSoon !== undefined) {
     const { data: current } = await supabase
       .from("products")
-      .select("is_available")
+      .select("is_available, coming_soon")
       .eq("id", id)
       .maybeSingle();
-    const stored = (current as { is_available: boolean } | null)?.is_available;
-    if (stored !== patch.isAvailable) columns.auto_disabled = false;
+    const stored = current as { is_available: boolean; coming_soon: boolean } | null;
+    if (patch.isAvailable !== undefined && stored?.is_available !== patch.isAvailable) {
+      columns.auto_disabled = false;
+    }
+    wasComingSoon = stored?.coming_soon ?? false;
   }
   if (Object.keys(columns).length > 0) {
     const { error } = await supabase
@@ -1387,6 +1394,12 @@ export async function updateProduct(id: string, patch: Partial<Product>) {
   if (patch.isAvailable === true) {
     const { features } = await fetchStoreSettings();
     if (features.backInStock) await notifySubscribers(id);
+  }
+  // Michelle putting a dated Coming soon treat on sale early: tell its waitlist
+  // now rather than at the original launch time, when the hourly job would.
+  if (wasComingSoon && patch.comingSoon === false) {
+    const { features } = await fetchStoreSettings();
+    if (features.drops) await notifySubscribers(id);
   }
 }
 

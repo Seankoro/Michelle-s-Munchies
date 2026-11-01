@@ -19,7 +19,8 @@ import { OrderChangePanel } from "@/components/track/OrderChangePanel";
 import { AddToOrderPanel } from "@/components/track/AddToOrderPanel";
 import { GiftShareLink } from "@/components/track/GiftShareLink";
 import { TrackReorderButton } from "@/components/track/TrackReorderButton";
-import { fetchProducts, isUpcoming, toCardProduct } from "@/lib/products";
+import { fetchProducts, toCardProduct } from "@/lib/products";
+import { isComingSoon } from "@/lib/launch";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { getShopWhatsAppNumber, buildOrderWhatsAppUrl, buildFulfillmentLabel } from "@/lib/whatsapp";
 import { singaporeNow } from "@/lib/time";
@@ -120,7 +121,7 @@ export default async function TrackOrderPage({
   // that hasn't opened yet is left out, because addItemsToOrderAction refuses
   // those too and offering them would only produce an error.
   const addableProducts = canAddItems
-    ? (await fetchProducts()).filter((p) => p.isAvailable && !isUpcoming(p)).map(toCardProduct)
+    ? (await fetchProducts()).filter((p) => p.isAvailable && !isComingSoon(p)).map(toCardProduct)
     : [];
 
   // WhatsApp handoff. While an order is unpaid, offer a pre-filled message to the

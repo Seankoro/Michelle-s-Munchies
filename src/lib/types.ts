@@ -79,7 +79,15 @@ export type Product = {
   cardImageUrl?: string | null;
   /** Remaining stock. null or undefined means untracked and unlimited. Auto sold-out at 0. */
   stockCount?: number | null;
-  /** Seasonal-drop go-live time as an ISO string. A future time means not yet orderable. */
+  /**
+   * Set to Coming soon in the admin. Ask isComingSoon() rather than reading
+   * this, since a launch date that has passed means it is on sale already.
+   */
+  comingSoon?: boolean;
+  /**
+   * Optional launch time for a Coming soon product, as an ISO string. Kept but
+   * ignored while comingSoon is off. See lib/launch.
+   */
   availableFrom?: string | null;
   /** Number of placeholder photo slots to show in the detail gallery. */
   photoCount?: number;

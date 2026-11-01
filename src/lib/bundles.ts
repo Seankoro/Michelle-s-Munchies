@@ -1,13 +1,27 @@
 import "server-only";
 import { cache } from "react";
 import { createPublicClient } from "@/lib/supabase/public";
+import { isComingSoon } from "@/lib/launch";
 import type { Bundle } from "@/lib/types";
 
 type BundleItemRow = {
   quantity: number;
   product_id: string | null;
-  products: { name: string; is_available: boolean } | null;
+  products: ProductStatus | null;
 };
+
+type ProductStatus = {
+  name: string;
+  is_available: boolean;
+  coming_soon: boolean;
+  available_from: string | null;
+};
+
+/** A bundle can only be bought while every treat in it can. */
+function canSell(product: Omit<ProductStatus, "name"> | null): boolean {
+  if (!product || !product.is_available) return false;
+  return !isComingSoon({ comingSoon: product.coming_soon, availableFrom: product.available_from });
+}
 
 type BundleRow = {
   id: string;
@@ -21,7 +35,7 @@ type BundleRow = {
 };
 
 const BUNDLE_SELECT =
-  "id, name, slug, description, price_cents, image_path, sort_order, bundle_items(quantity, product_id, products(name, is_available))";
+  "id, name, slug, description, price_cents, image_path, sort_order, bundle_items(quantity, product_id, products(name, is_available, coming_soon, available_from))";
 
 function rowToBundle(row: BundleRow): Bundle {
   const items = row.bundle_items ?? [];
@@ -37,7 +51,7 @@ function rowToBundle(row: BundleRow): Bundle {
       productName: item.products?.name ?? "Treat",
       quantity: item.quantity,
     })),
-    soldOut: items.some((item) => item.products?.is_available === false),
+    soldOut: items.some((item) => item.products != null && !canSell(item.products)),
   };
 }
 
@@ -76,16 +90,18 @@ export async function validateBundleForCheckout(
   const supabase = createPublicClient();
   const { data, error } = await supabase
     .from("bundles")
-    .select("price_cents, is_active, bundle_items(products(is_available))")
+    .select(
+      "price_cents, is_active, bundle_items(products(is_available, coming_soon, available_from))",
+    )
     .eq("slug", slug)
     .maybeSingle();
   if (error || !data) return null;
   const row = data as unknown as {
     price_cents: number;
     is_active: boolean;
-    bundle_items: { products: { is_available: boolean } | null }[] | null;
+    bundle_items: { products: Omit<ProductStatus, "name"> | null }[] | null;
   };
   if (!row.is_active) return null;
-  const available = (row.bundle_items ?? []).every((i) => i.products?.is_available ?? false);
+  const available = (row.bundle_items ?? []).every((i) => canSell(i.products));
   return { priceCents: row.price_cents, available };
 }

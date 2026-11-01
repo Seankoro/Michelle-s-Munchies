@@ -2,6 +2,7 @@ import "server-only";
 import { newToken } from "@/lib/tokens";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendBackInStockEmail, sendSubscriptionConfirmEmail } from "@/lib/email";
+import { isComingSoon } from "@/lib/launch";
 
 /**
  * Records a back-in-stock subscription and sends the double-opt-in
@@ -99,7 +100,7 @@ export async function notifySubscribers(productId: string): Promise<void> {
 
   const { data: product } = await supabase
     .from("products")
-    .select("name, slug, is_available, stock_count")
+    .select("name, slug, is_available, stock_count, coming_soon, available_from")
     .eq("id", productId)
     .maybeSingle();
   const p = product as {
@@ -107,8 +108,13 @@ export async function notifySubscribers(productId: string): Promise<void> {
     slug: string;
     is_available: boolean;
     stock_count: number | null;
+    coming_soon: boolean;
+    available_from: string | null;
   } | null;
   if (!p) return;
+  // Moving a sold-out treat to Coming soon switches it available too, and that
+  // must not tell its waitlist it is back before it can actually be bought.
+  if (isComingSoon({ comingSoon: p.coming_soon, availableFrom: p.available_from })) return;
   // Never say "it's back" about something nobody can buy. The drops job below
   // re-scans every product that ever had a launch time, so without this it
   // would fire on a drop that launched and then sold out, and stamp that
@@ -130,14 +136,17 @@ export async function notifySubscribers(productId: string): Promise<void> {
 }
 
 /**
- * Notify waitlists for any seasonal drop whose go-live time has passed. Safe to
- * run repeatedly, since notifySubscribers only emails un-notified subscribers.
+ * Notify waitlists for any dated Coming soon treat whose launch time has
+ * passed. Safe to run repeatedly, since notifySubscribers only emails
+ * un-notified subscribers. A treat Michelle puts on sale early is told at that
+ * moment instead, by updateProduct.
  */
 export async function notifyLaunchedDrops(): Promise<number> {
   const supabase = createAdminClient();
   const { data } = await supabase
     .from("products")
     .select("id")
+    .eq("coming_soon", true)
     .not("available_from", "is", null)
     .lte("available_from", new Date().toISOString());
   const ids = (data as { id: string }[] | null) ?? [];

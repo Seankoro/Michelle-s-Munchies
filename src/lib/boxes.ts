@@ -2,6 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { createPublicClient } from "@/lib/supabase/public";
 import { fetchProducts, fetchProductById } from "@/lib/products";
+import { isComingSoon } from "@/lib/launch";
 import type { BoxTemplate, Product } from "@/lib/types";
 
 type BoxRow = {
@@ -21,15 +22,17 @@ const BOX_SELECT =
 
 /** Resolve the eligible product pool for a box, the explicit allowlist or else the category. */
 function resolveEligible(row: BoxRow, allProducts: Product[]): Product[] {
+  // Coming soon treats wait until they launch, like a sold-out one.
+  const products = allProducts.filter((p) => !isComingSoon(p));
   const explicitIds = (row.box_template_items ?? []).map((i) => i.product_id);
   if (explicitIds.length > 0) {
     const set = new Set(explicitIds);
-    return allProducts.filter((p) => set.has(p.id) && p.isAvailable);
+    return products.filter((p) => set.has(p.id) && p.isAvailable);
   }
   if (row.eligible_category) {
-    return allProducts.filter((p) => p.category === row.eligible_category && p.isAvailable);
+    return products.filter((p) => p.category === row.eligible_category && p.isAvailable);
   }
-  return allProducts.filter((p) => p.isAvailable);
+  return products.filter((p) => p.isAvailable);
 }
 
 function rowToBox(row: BoxRow, allProducts: Product[]): BoxTemplate {
@@ -132,7 +135,9 @@ export async function validateFlavourBoxForCheckout(
   chosenLabels: string[],
 ): Promise<{ priceCents: number } | { error: string } | null> {
   const product = await fetchProductById(productId);
-  if (!product || !product.flavourBox || !product.isAvailable) return null;
+  if (!product || !product.flavourBox || !product.isAvailable || isComingSoon(product)) {
+    return null;
+  }
   const size = product.flavourBox.sizes.find((s) => s.count === count);
   if (!size) return { error: "That box size is no longer available." };
   if (chosenLabels.length !== count) {
