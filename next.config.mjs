@@ -42,9 +42,8 @@ const nextConfig = {
       },
     ];
   },
-  // Stop the dev file-watcher from reacting to tool-written artifacts
-  // (Playwright snapshots/console logs and screenshots), which otherwise
-  // triggers an endless recompile loop.
+  // Stop the dev file-watcher from reacting to screenshots saved in the
+  // project, which otherwise triggers an endless recompile loop.
   webpack: (config, { dev }) => {
     if (dev) {
       config.watchOptions = {
@@ -53,7 +52,6 @@ const nextConfig = {
           "**/node_modules/**",
           "**/.next/**",
           "**/.git/**",
-          "**/.playwright-mcp/**",
           "**/*.png",
         ],
       };

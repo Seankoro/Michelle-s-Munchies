@@ -32,14 +32,7 @@ next-env.d.ts
 .idea/
 Thumbs.db
 
-# brainstorming scratch (visual companion)
-.superpowers/
-
-# claude code local settings (personal; keep out of the shared repo)
-.claude/settings.local.json
-
-# browser-tooling artifacts (Playwright MCP) + verification screenshots
-.playwright-mcp/
+# screenshots dropped in the project root
 /*.png
 
 # supabase local
