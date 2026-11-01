@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, type ChangeEvent } from "react";
-import Image from "next/image";
 import { useAdmin } from "@/components/admin/AdminStore";
 import { uploadProductImageAction } from "@/lib/admin-actions";
 import { allergenMeta, dietaryMeta, formatPrice } from "@/lib/catalog";
@@ -21,6 +20,8 @@ import {
 import { Toggle } from "@/components/ui/Toggle";
 import { AdminModal } from "@/components/admin/AdminModal";
 import { TableStateRow } from "@/components/admin/TableStateRow";
+import { PhotoOrderGrid } from "@/components/admin/PhotoOrderGrid";
+import { AdminTabs, tabButtonId, tabPanelId, type AdminTab } from "@/components/admin/AdminTabs";
 import { slugify } from "@/lib/text";
 import { compactInputClass as inputClass } from "@/lib/ui";
 
@@ -36,6 +37,15 @@ const TABLE_COLUMNS = 7;
  * on sale the moment its launch time passes.
  */
 type Status = "sale" | "sold" | "soon";
+
+/** The product form in four short tabs instead of one long scroll. */
+type ProductTab = "basics" | "photos" | "recipe" | "options";
+const PRODUCT_TABS: AdminTab<ProductTab>[] = [
+  { id: "basics", label: "Basics" },
+  { id: "photos", label: "Photos & text" },
+  { id: "recipe", label: "Recipe" },
+  { id: "options", label: "Options" },
+];
 const STATUSES: { value: Status; label: string }[] = [
   { value: "sale", label: "On sale" },
   { value: "sold", label: "Sold out" },
@@ -265,6 +275,7 @@ function ProductFormModal({
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [tab, setTab] = useState<ProductTab>("basics");
   // Live from the product list, so a product added or deleted elsewhere shows
   // here without reopening the form.
   const flavourPreview = draft.flavourBox
@@ -428,6 +439,12 @@ function ProductFormModal({
     );
   }
 
+  // A save error names a field on one tab, so open that tab with it.
+  function fail(message: string, on: ProductTab) {
+    setSaveError(message);
+    setTab(on);
+  }
+
   function handleSave() {
     setSaveError(null);
     // parseFloat("") is NaN, and Math.max(0, NaN) is NaN, which used to write
@@ -436,7 +453,7 @@ function ProductFormModal({
     // land as an innocent looking null.
     const price = parseFloat(priceText);
     if (!Number.isFinite(price) || price <= 0) {
-      setSaveError("Give this treat a price above zero.");
+      fail("Give this treat a price above zero.", "basics");
       return;
     }
     const cents = Math.round(price * 100);
@@ -444,18 +461,18 @@ function ProductFormModal({
     if (costText.trim()) {
       const cost = parseFloat(costText);
       if (!Number.isFinite(cost) || cost < 0) {
-        setSaveError("That cost is not a number. Clear it or type what it costs you to make.");
+        fail("That cost is not a number. Clear it or type what it costs you to make.", "basics");
         return;
       }
       costCents = Math.round(cost * 100);
     }
     const slug = draft.slug.trim() || slugify(draft.name);
     if (!SLUG_PATTERN.test(slug)) {
-      setSaveError("Slug must be 3–40 lowercase letters, numbers, and dashes.");
+      fail("Slug must be 3–40 lowercase letters, numbers, and dashes.", "basics");
       return;
     }
     if (existingProducts.some((p) => p.id !== draft.id && p.slug === slug)) {
-      setSaveError(`A product with the slug "${slug}" already exists.`);
+      fail(`A product with the slug "${slug}" already exists.`, "basics");
       return;
     }
     if (
@@ -463,8 +480,9 @@ function ProductFormModal({
       draft.availableFrom &&
       new Date(draft.availableFrom) <= new Date()
     ) {
-      setSaveError(
+      fail(
         "That launch time has already passed. Pick a later one, or clear the date to show Coming soon with no date.",
+        "basics",
       );
       return;
     }
@@ -489,11 +507,11 @@ function ProductFormModal({
       .filter((option) => option.name);
     if (draft.flavourBox) {
       if (!draft.flavourBox.flavourOption.trim()) {
-        setSaveError("Give the build-your-own box's flavours a heading, usually Flavour.");
+        fail("Give the build-your-own box's flavours a heading, usually Flavour.", "options");
         return;
       }
       if (draft.flavourBox.sizes.length === 0) {
-        setSaveError("Add at least one box size, or turn off the build-your-own box.");
+        fail("Add at least one box size, or turn off the build-your-own box.", "options");
         return;
       }
       // Checkout finds the size by its count and nothing else, so two sizes
@@ -502,8 +520,9 @@ function ProductFormModal({
       const counts = draft.flavourBox.sizes.map((size) => size.count);
       const repeated = counts.find((count, i) => counts.indexOf(count) !== i);
       if (repeated != null) {
-        setSaveError(
+        fail(
           `Two box sizes both hold ${repeated} treats. Give each size its own number, otherwise an order for one is priced as the other.`,
+          "options",
         );
         return;
       }
@@ -548,621 +567,641 @@ function ProductFormModal({
         </h2>
       }
     >
-        <div className="flex flex-col gap-4">
-          <label className="flex flex-col gap-1 text-sm font-semibold">
-            Name
-            <input
-              className={inputClass}
-              value={draft.name}
-              onChange={(e) => set("name", e.target.value)}
-            />
-          </label>
+        {/* Pinned under the title while the body scrolls, so switching
+            section never means scrolling back up first. */}
+        <AdminTabs
+          tabs={PRODUCT_TABS}
+          active={tab}
+          onChange={setTab}
+          idPrefix="product"
+          label="Product sections"
+          className="sticky -top-5 z-10 -mx-6 -mt-5 mb-4 border-b border-line bg-white px-6 py-3"
+        />
+        <div
+          role="tabpanel"
+          id={tabPanelId("product", "basics")}
+          aria-labelledby={tabButtonId("product", "basics")}
+          hidden={tab !== "basics"}
+          className={cn("flex flex-col gap-4", tab !== "basics" && "hidden")}
+        >
+            <label className="flex flex-col gap-1 text-sm font-semibold">
+              Name
+              <input
+                className={inputClass}
+                value={draft.name}
+                onChange={(e) => set("name", e.target.value)}
+              />
+            </label>
 
-          <div className="grid grid-cols-2 gap-3">
-            <label className="flex flex-col gap-1 text-sm font-semibold">
-              Category
-              <input
-                className={inputClass}
-                value={draft.category}
-                onChange={(e) => set("category", e.target.value)}
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-sm font-semibold">
-              Base price (S$)
-              <input
-                className={inputClass}
-                value={priceText}
-                onChange={(e) => setPriceText(e.target.value)}
-                inputMode="decimal"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-sm font-semibold">
-              Cost to make (S$)
-              <input
-                className={inputClass}
-                value={costText}
-                onChange={(e) => setCostText(e.target.value)}
-                inputMode="decimal"
-                placeholder="Optional"
-              />
-              <span className="font-normal text-muted">
-                Ingredients + packaging, just for your margin figures. Never shown to customers.
-              </span>
-            </label>
-            <label className="flex flex-col gap-1 text-sm font-semibold">
-              Stock count
-              <input
-                className={inputClass}
-                value={draft.stockCount == null ? "" : String(draft.stockCount)}
-                onChange={(e) => {
-                  const v = e.target.value.trim();
-                  const n = parseInt(v, 10);
-                  set("stockCount", v === "" || !Number.isFinite(n) ? null : Math.max(0, n));
-                }}
-                inputMode="numeric"
-                placeholder="Untracked"
-              />
-              <span className="font-normal text-muted">
-                Blank = untracked. Auto sold-out at 0. Orders count it down for you, so it only
-                saves when you change it here.
-              </span>
-            </label>
-          </div>
-
-          <fieldset className="rounded-xl bg-marble/40 p-3 text-sm">
-            <legend className="px-1 font-semibold">Status</legend>
-            <div
-              role="group"
-              aria-label="Status"
-              className="inline-flex flex-wrap gap-1 rounded-full border border-line bg-white p-1"
-            >
-              {STATUSES.map(({ value, label }) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setStatus(value)}
-                  aria-pressed={status === value}
-                  className={cn(
-                    "rounded-full px-4 py-1.5 text-sm font-semibold transition active:scale-95",
-                    status === value ? "bg-blush-soft text-rose-ink" : "text-muted hover:text-ink",
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            {status === "soon" && (
-              <div className="mt-3 flex flex-col gap-1">
-                <span className="font-semibold">
-                  Launch date <span className="font-normal text-muted">(optional)</span>
-                </span>
-                {/* Sized by grid columns, since inputClass carries w-full and a
-                    width class next to it does not reliably win. */}
-                <div className="grid grid-cols-[minmax(0,11rem)_minmax(0,8rem)_auto] items-center gap-2">
-                  <input
-                    type="date"
-                    aria-label="Launch date"
-                    className={inputClass}
-                    value={launchDate}
-                    min={todaySgt}
-                    onChange={(e) => setLaunch(e.target.value, launchTime)}
-                  />
-                  <select
-                    aria-label="Launch time"
-                    className={inputClass}
-                    value={launchTime}
-                    disabled={!launchDate}
-                    onChange={(e) => setLaunch(launchDate, e.target.value)}
-                  >
-                    {launchTimes.map((t) => (
-                      <option key={t.value} value={t.value}>
-                        {t.label}
-                      </option>
-                    ))}
-                  </select>
-                  {launchDate && (
-                    <button
-                      type="button"
-                      onClick={() => setLaunch("", DEFAULT_LAUNCH_TIME)}
-                      className="justify-self-start rounded-full border border-line px-3 py-1.5 text-xs font-semibold transition hover:border-rose active:scale-95"
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="flex flex-col gap-1 text-sm font-semibold">
+                Category
+                <input
+                  className={inputClass}
+                  value={draft.category}
+                  onChange={(e) => set("category", e.target.value)}
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm font-semibold">
+                Base price (S$)
+                <input
+                  className={inputClass}
+                  value={priceText}
+                  onChange={(e) => setPriceText(e.target.value)}
+                  inputMode="decimal"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm font-semibold">
+                Cost to make (S$)
+                <input
+                  className={inputClass}
+                  value={costText}
+                  onChange={(e) => setCostText(e.target.value)}
+                  inputMode="decimal"
+                  placeholder="Optional"
+                />
                 <span className="font-normal text-muted">
-                  {launchDate
-                    ? `The menu shows "${comingSoonLabel(draft)}" with a countdown page, and it goes on sale by itself at that time (Singapore time).`
-                    : `The menu shows "Coming soon" with no link and no page, until you set it On sale.`}
+                  Ingredients + packaging, just for your margin figures. Never shown to customers.
                 </span>
-              </div>
-            )}
-          </fieldset>
+              </label>
+              <label className="flex flex-col gap-1 text-sm font-semibold">
+                Stock count
+                <input
+                  className={inputClass}
+                  value={draft.stockCount == null ? "" : String(draft.stockCount)}
+                  onChange={(e) => {
+                    const v = e.target.value.trim();
+                    const n = parseInt(v, 10);
+                    set("stockCount", v === "" || !Number.isFinite(n) ? null : Math.max(0, n));
+                  }}
+                  inputMode="numeric"
+                  placeholder="Untracked"
+                />
+                <span className="font-normal text-muted">
+                  Blank = untracked. Auto sold-out at 0. Orders count it down for you, so it only
+                  saves when you change it here.
+                </span>
+              </label>
+            </div>
 
-          <label className="flex flex-col gap-1 text-sm font-semibold">
-            Short description
-            <input
-              className={inputClass}
-              value={draft.shortDescription}
-              onChange={(e) => set("shortDescription", e.target.value)}
-              placeholder="e.g. Crustless burnt Basque cheesecake, 15 cm round"
-            />
-          </label>
-
-          <label className="flex flex-col gap-1 text-sm font-semibold">
-            Full description
-            <textarea
-              className={cn(inputClass, "min-h-20 resize-y")}
-              value={draft.longDescription}
-              onChange={(e) => set("longDescription", e.target.value)}
-              placeholder="Describe the treat. Use metric for sizes and weights, like 20 cm round or 500 g."
-            />
-            <span className="text-xs font-normal text-muted">
-              Use metric units like cm, g, and ml for any sizes or weights.
-            </span>
-          </label>
-
-          <div>
-            <span className="text-sm font-semibold">Photos</span>
-            <p className="text-xs text-muted">
-              The first photo leads the product page. Tap the label on a photo to show it on the menu card instead.
-            </p>
-            <div className="mt-2 flex flex-wrap gap-3">
-              {(draft.imageUrls ?? []).map((url) => {
-                const isCard = cardImageUrl(draft) === url;
-                return (
-                  <div
-                    key={url}
+            <fieldset className="rounded-xl bg-marble/40 p-3 text-sm">
+              <legend className="px-1 font-semibold">Status</legend>
+              <div
+                role="group"
+                aria-label="Status"
+                className="inline-flex flex-wrap gap-1 rounded-full border border-line bg-white p-1"
+              >
+                {STATUSES.map(({ value, label }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setStatus(value)}
+                    aria-pressed={status === value}
                     className={cn(
-                      "relative h-20 w-20 overflow-hidden rounded-xl border",
-                      isCard ? "border-rose ring-2 ring-rose" : "border-line",
+                      "rounded-full px-4 py-1.5 text-sm font-semibold transition active:scale-95",
+                      status === value ? "bg-blush-soft text-rose-ink" : "text-muted hover:text-ink",
                     )}
                   >
-                    <Image src={url} alt="Product photo" fill sizes="80px" className="object-cover" />
-                    <button
-                      type="button"
-                      aria-label="Remove photo"
-                      onClick={() =>
-                        setDraft((prev) => ({
-                          ...prev,
-                          imageUrls: (prev.imageUrls ?? []).filter((u) => u !== url),
-                          // Removing the chosen card photo falls back to the first one.
-                          cardImageUrl: prev.cardImageUrl === url ? null : prev.cardImageUrl,
-                        }))
-                      }
-                      className="absolute right-0 top-0 rounded-bl-lg bg-ink/60 px-1.5 text-xs font-semibold text-white transition hover:bg-ink active:scale-90"
-                    >
-                      ✕
-                    </button>
-                    <button
-                      type="button"
-                      aria-pressed={isCard}
-                      aria-label={isCard ? "Menu card photo" : "Use as menu card photo"}
-                      onClick={() => set("cardImageUrl", url)}
-                      className={cn(
-                        "absolute inset-x-0 bottom-0 py-0.5 text-[10px] font-semibold transition",
-                        isCard ? "bg-rose text-white" : "bg-ink/50 text-white hover:bg-ink/70",
-                      )}
-                    >
-                      {isCard ? "Menu card" : "Use on card"}
-                    </button>
-                  </div>
-                );
-              })}
-              <label
-                className={cn(
-                  "flex h-20 w-20 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-blush text-xs font-semibold text-rose-ink",
-                  uploading && "opacity-60",
-                )}
-              >
-                {uploading ? "Uploading…" : "+ Add"}
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleUpload}
-                  disabled={uploading}
-                />
-              </label>
-            </div>
-            {uploadError && <p className="mt-1 text-sm text-danger">{uploadError}</p>}
-          </div>
-
-          <fieldset>
-            <legend className="text-sm font-semibold">Allergens</legend>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {ALL_ALLERGENS.map((allergen) => (
-                <button
-                  key={allergen}
-                  type="button"
-                  onClick={() => set("allergens", toggleArray(draft.allergens, allergen))}
-                  className={cn(
-                    "rounded-full border px-3 py-1.5 text-xs font-semibold transition active:scale-95",
-                    draft.allergens.includes(allergen)
-                      ? "border-rose-deep bg-blush-soft text-rose-ink"
-                      : "border-line bg-white text-ink hover:border-rose",
-                  )}
-                >
-                  {allergenMeta[allergen].icon} {allergenMeta[allergen].label}
-                </button>
-              ))}
-            </div>
-          </fieldset>
-
-          <fieldset>
-            <legend className="text-sm font-semibold">Dietary tags</legend>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {ALL_DIETARY.map((tag) => (
-                <button
-                  key={tag}
-                  type="button"
-                  onClick={() => set("dietaryTags", toggleArray(draft.dietaryTags, tag))}
-                  className={cn(
-                    "rounded-full border px-3 py-1.5 text-xs font-semibold transition active:scale-95",
-                    draft.dietaryTags.includes(tag)
-                      ? "border-rose-deep bg-blush-soft text-rose-ink"
-                      : "border-line bg-white text-ink hover:border-rose",
-                  )}
-                >
-                  {dietaryMeta[tag].label}
-                </button>
-              ))}
-            </div>
-          </fieldset>
-
-          <fieldset>
-            <legend className="text-sm font-semibold">Ingredients</legend>
-            <p className="mt-1 text-xs text-muted">
-              Customers see the names on the product page. The amount and unit are just for you, so
-              the shopping list can total how much to buy. Leave the amount blank to skip totalling.
-            </p>
-            <div className="mt-3 flex flex-col gap-2">
-              {(draft.ingredients ?? []).map((ing, index) => (
-                <div key={index} className="flex flex-wrap items-center gap-2">
-                  <input
-                    className={cn(inputClass, "min-w-32 flex-1")}
-                    value={ing.name}
-                    onChange={(e) => updateIngredient(index, { name: e.target.value })}
-                    placeholder="Ingredient, e.g. flour"
-                  />
-                  <input
-                    type="number"
-                    step="any"
-                    min="0"
-                    className={cn(inputClass, "w-20")}
-                    value={ing.amount ?? ""}
-                    onChange={(e) =>
-                      updateIngredient(index, {
-                        amount: e.target.value.trim()
-                          ? Math.max(0, parseFloat(e.target.value) || 0)
-                          : null,
-                      })
-                    }
-                    placeholder="Amt"
-                    aria-label="Amount per treat"
-                  />
-                  <input
-                    className={cn(inputClass, "w-24")}
-                    value={ing.unit ?? ""}
-                    onChange={(e) => updateIngredient(index, { unit: e.target.value })}
-                    placeholder="Unit, e.g. g"
-                    aria-label="Unit"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removeIngredient(index)}
-                    aria-label="Remove ingredient"
-                    className="rounded-full p-2 text-muted transition hover:bg-blush-soft active:scale-90"
-                  >
-                    ✕
+                    {label}
                   </button>
+                ))}
+              </div>
+              {status === "soon" && (
+                <div className="mt-3 flex flex-col gap-1">
+                  <span className="font-semibold">
+                    Launch date <span className="font-normal text-muted">(optional)</span>
+                  </span>
+                  {/* Sized by grid columns, since inputClass carries w-full and a
+                      width class next to it does not reliably win. */}
+                  <div className="grid grid-cols-[minmax(0,11rem)_minmax(0,8rem)_auto] items-center gap-2">
+                    <input
+                      type="date"
+                      aria-label="Launch date"
+                      className={inputClass}
+                      value={launchDate}
+                      min={todaySgt}
+                      onChange={(e) => setLaunch(e.target.value, launchTime)}
+                    />
+                    <select
+                      aria-label="Launch time"
+                      className={inputClass}
+                      value={launchTime}
+                      disabled={!launchDate}
+                      onChange={(e) => setLaunch(launchDate, e.target.value)}
+                    >
+                      {launchTimes.map((t) => (
+                        <option key={t.value} value={t.value}>
+                          {t.label}
+                        </option>
+                      ))}
+                    </select>
+                    {launchDate && (
+                      <button
+                        type="button"
+                        onClick={() => setLaunch("", DEFAULT_LAUNCH_TIME)}
+                        className="justify-self-start rounded-full border border-line px-3 py-1.5 text-xs font-semibold transition hover:border-rose active:scale-95"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  <span className="font-normal text-muted">
+                    {launchDate
+                      ? `The menu shows "${comingSoonLabel(draft)}" with a countdown page, and it goes on sale by itself at that time (Singapore time).`
+                      : `The menu shows "Coming soon" with no link and no page, until you set it On sale.`}
+                  </span>
                 </div>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={addIngredientRow}
-              className="mt-2 rounded-full border border-line px-4 py-1.5 text-sm font-semibold transition hover:border-rose active:scale-95"
-            >
-              + Add ingredient
-            </button>
-          </fieldset>
+              )}
+            </fieldset>
 
-          <fieldset>
-            <legend className="text-sm font-semibold">Personalisation</legend>
-            <p className="mt-1 text-xs text-muted">
-              Let customers add a short message to this treat, like a name to pipe on a cake. Leave
-              the prompt blank to keep it off.
-            </p>
-            <label className="mt-2 flex flex-col gap-1 text-sm font-semibold">
-              Prompt shown to customers
+            <div className="flex flex-wrap gap-4 rounded-xl bg-marble/40 p-3 text-sm">
+              <div className="flex items-center gap-2 font-semibold">
+                <Toggle
+                  checked={draft.isBestSeller}
+                  onChange={(v) => set("isBestSeller", v)}
+                  label="Best seller"
+                />
+                Best seller
+              </div>
+              <div className="flex items-center gap-2 font-semibold">
+                <Toggle
+                  checked={draft.isRecommended}
+                  onChange={(v) => set("isRecommended", v)}
+                  label="Recommended"
+                />
+                Recommended
+              </div>
+            </div>
+        </div>
+        <div
+          role="tabpanel"
+          id={tabPanelId("product", "photos")}
+          aria-labelledby={tabButtonId("product", "photos")}
+          hidden={tab !== "photos"}
+          className={cn("flex flex-col gap-4", tab !== "photos" && "hidden")}
+        >
+            <label className="flex flex-col gap-1 text-sm font-semibold">
+              Short description
               <input
                 className={inputClass}
-                value={draft.personalisation?.label ?? ""}
-                onChange={(e) =>
-                  set(
-                    "personalisation",
-                    e.target.value.trim()
-                      ? { label: e.target.value, allowPhoto: draft.personalisation?.allowPhoto ?? false }
-                      : null,
-                  )
-                }
-                placeholder="e.g. Message to pipe on top"
+                value={draft.shortDescription}
+                onChange={(e) => set("shortDescription", e.target.value)}
+                placeholder="e.g. Crustless burnt Basque cheesecake, 15 cm round"
               />
             </label>
-            {draft.personalisation && (
-              <label className="mt-3 flex items-center gap-2 text-sm font-semibold">
-                <Toggle
-                  checked={draft.personalisation.allowPhoto}
-                  onChange={(v) =>
-                    set("personalisation", {
-                      label: draft.personalisation?.label ?? "",
-                      allowPhoto: v,
-                    })
-                  }
-                  label="Allow a reference photo"
-                />
-                Allow a reference photo
-              </label>
-            )}
-          </fieldset>
 
-          <div className="flex flex-wrap gap-4 rounded-xl bg-marble/40 p-3 text-sm">
-            <div className="flex items-center gap-2 font-semibold">
-              <Toggle
-                checked={draft.isBestSeller}
-                onChange={(v) => set("isBestSeller", v)}
-                label="Best seller"
+            <label className="flex flex-col gap-1 text-sm font-semibold">
+              Full description
+              <textarea
+                className={cn(inputClass, "min-h-20 resize-y")}
+                value={draft.longDescription}
+                onChange={(e) => set("longDescription", e.target.value)}
+                placeholder="Describe the treat. Use metric for sizes and weights, like 20 cm round or 500 g."
               />
-              Best seller
-            </div>
-            <div className="flex items-center gap-2 font-semibold">
-              <Toggle
-                checked={draft.isRecommended}
-                onChange={(v) => set("isRecommended", v)}
-                label="Recommended"
-              />
-              Recommended
-            </div>
-          </div>
+              <span className="text-xs font-normal text-muted">
+                Use metric units like cm, g, and ml for any sizes or weights.
+              </span>
+            </label>
 
-          <fieldset>
-            <legend className="text-sm font-semibold">Options and flavours</legend>
-            <p className="mt-1 text-xs text-muted">
-              Add a group like Flavour or Size, then its choices. Turn a choice off to mark it sold
-              out on the menu without removing it.
-            </p>
-            <div className="mt-3 flex flex-col gap-4">
-              {draft.options.map((option, optionIndex) => (
-                <div key={option.id} className="rounded-xl border border-line p-3">
-                  <div className="flex items-center gap-2">
+            <div>
+              <span className="text-sm font-semibold">
+                Photos
+                {(draft.imageUrls ?? []).length > 0 && (
+                  <span className="font-normal text-muted"> ({(draft.imageUrls ?? []).length})</span>
+                )}
+              </span>
+              <p className="text-xs text-muted">
+                The product page shows the photos in this order, so photo 1 leads it. Scroll the row
+                sideways to see them all. Drag a photo to move it; on a phone, press and hold it
+                first. Tap &ldquo;Use on card&rdquo; under a photo to show it on the menu card.
+              </p>
+              <PhotoOrderGrid
+                urls={draft.imageUrls ?? []}
+                cardUrl={cardImageUrl(draft)}
+                onReorder={(urls) => set("imageUrls", urls)}
+                onRemove={(url) =>
+                  setDraft((prev) => ({
+                    ...prev,
+                    imageUrls: (prev.imageUrls ?? []).filter((u) => u !== url),
+                    // Removing the chosen card photo falls back to the first one.
+                    cardImageUrl: prev.cardImageUrl === url ? null : prev.cardImageUrl,
+                  }))
+                }
+                onPickCard={(url) => set("cardImageUrl", url)}
+                addTile={
+                  <label
+                    className={cn(
+                      "flex h-24 w-24 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-blush text-xs font-semibold text-rose-ink",
+                      uploading && "opacity-60",
+                    )}
+                  >
+                    {uploading ? "Uploading…" : "+ Add"}
                     <input
-                      className={inputClass}
-                      value={option.name}
-                      onChange={(e) => updateOption(optionIndex, { name: e.target.value })}
-                      placeholder="Group name, e.g. Flavour"
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleUpload}
+                      disabled={uploading}
+                    />
+                  </label>
+                }
+              />
+              {uploadError && <p className="mt-1 text-sm text-danger">{uploadError}</p>}
+            </div>
+        </div>
+        <div
+          role="tabpanel"
+          id={tabPanelId("product", "recipe")}
+          aria-labelledby={tabButtonId("product", "recipe")}
+          hidden={tab !== "recipe"}
+          className={cn("flex flex-col gap-4", tab !== "recipe" && "hidden")}
+        >
+            <fieldset>
+              <legend className="text-sm font-semibold">Allergens</legend>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {ALL_ALLERGENS.map((allergen) => (
+                  <button
+                    key={allergen}
+                    type="button"
+                    onClick={() => set("allergens", toggleArray(draft.allergens, allergen))}
+                    className={cn(
+                      "rounded-full border px-3 py-1.5 text-xs font-semibold transition active:scale-95",
+                      draft.allergens.includes(allergen)
+                        ? "border-rose-deep bg-blush-soft text-rose-ink"
+                        : "border-line bg-white text-ink hover:border-rose",
+                    )}
+                  >
+                    {allergenMeta[allergen].icon} {allergenMeta[allergen].label}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend className="text-sm font-semibold">Dietary tags</legend>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {ALL_DIETARY.map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => set("dietaryTags", toggleArray(draft.dietaryTags, tag))}
+                    className={cn(
+                      "rounded-full border px-3 py-1.5 text-xs font-semibold transition active:scale-95",
+                      draft.dietaryTags.includes(tag)
+                        ? "border-rose-deep bg-blush-soft text-rose-ink"
+                        : "border-line bg-white text-ink hover:border-rose",
+                    )}
+                  >
+                    {dietaryMeta[tag].label}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend className="text-sm font-semibold">Ingredients</legend>
+              <p className="mt-1 text-xs text-muted">
+                Customers see the names on the product page. The amount and unit are just for you, so
+                the shopping list can total how much to buy. Leave the amount blank to skip totalling.
+              </p>
+              <div className="mt-3 flex flex-col gap-2">
+                {(draft.ingredients ?? []).map((ing, index) => (
+                  <div key={index} className="flex flex-wrap items-center gap-2">
+                    <input
+                      className={cn(inputClass, "min-w-32 flex-1")}
+                      value={ing.name}
+                      onChange={(e) => updateIngredient(index, { name: e.target.value })}
+                      placeholder="Ingredient, e.g. flour"
+                    />
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      className={cn(inputClass, "w-20")}
+                      value={ing.amount ?? ""}
+                      onChange={(e) =>
+                        updateIngredient(index, {
+                          amount: e.target.value.trim()
+                            ? Math.max(0, parseFloat(e.target.value) || 0)
+                            : null,
+                        })
+                      }
+                      placeholder="Amt"
+                      aria-label="Amount per treat"
+                    />
+                    <input
+                      className={cn(inputClass, "w-24")}
+                      value={ing.unit ?? ""}
+                      onChange={(e) => updateIngredient(index, { unit: e.target.value })}
+                      placeholder="Unit, e.g. g"
+                      aria-label="Unit"
                     />
                     <button
                       type="button"
-                      onClick={() => removeOption(optionIndex)}
-                      aria-label="Remove group"
+                      onClick={() => removeIngredient(index)}
+                      aria-label="Remove ingredient"
                       className="rounded-full p-2 text-muted transition hover:bg-blush-soft active:scale-90"
                     >
                       ✕
                     </button>
                   </div>
-                  <label className="mt-2 flex items-center gap-2 text-xs font-semibold">
-                    <Toggle
-                      checked={option.required}
-                      onChange={(v) => updateOption(optionIndex, { required: v })}
-                      label="Required choice"
-                    />
-                    Required choice
-                  </label>
-
-                  <div className="mt-3 flex flex-col gap-2">
-                    {option.values.map((value, valueIndex) => (
-                      <div key={value.id} className="flex flex-wrap items-center gap-2">
-                        <input
-                          className={cn(inputClass, "min-w-32 flex-1")}
-                          value={value.label}
-                          onChange={(e) =>
-                            updateValue(optionIndex, valueIndex, { label: e.target.value })
-                          }
-                          placeholder="Choice, e.g. Pistachio"
-                        />
-                        <div className="flex items-center gap-1 text-sm">
-                          <span className="text-muted">+ S$</span>
-                          <input
-                            type="number"
-                            step="0.5"
-                            min="0"
-                            className={cn(inputClass, "w-20")}
-                            value={value.priceDeltaCents / 100}
-                            onChange={(e) =>
-                              updateValue(optionIndex, valueIndex, {
-                                priceDeltaCents: Math.max(
-                                  0,
-                                  Math.round((parseFloat(e.target.value) || 0) * 100),
-                                ),
-                              })
-                            }
-                          />
-                        </div>
-                        <label className="flex items-center gap-1 text-xs font-semibold">
-                          <Toggle
-                            checked={value.isAvailable !== false}
-                            onChange={(v) =>
-                              updateValue(optionIndex, valueIndex, { isAvailable: v })
-                            }
-                            label={`In stock ${value.label || "choice"}`}
-                          />
-                          In stock
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => removeValue(optionIndex, valueIndex)}
-                          aria-label="Remove choice"
-                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-blush-soft active:scale-90"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() => addValue(optionIndex)}
-                      className="self-start rounded-full border border-line px-3 py-1.5 text-xs font-semibold transition hover:border-rose active:scale-95"
-                    >
-                      + Add choice
-                    </button>
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
               <button
                 type="button"
-                onClick={addOption}
-                className="self-start rounded-full border border-dashed border-blush px-4 py-2 text-xs font-semibold text-rose-ink transition hover:border-rose active:scale-95"
+                onClick={addIngredientRow}
+                className="mt-2 rounded-full border border-line px-4 py-1.5 text-sm font-semibold transition hover:border-rose active:scale-95"
               >
-                + Add option group
+                + Add ingredient
               </button>
-            </div>
-          </fieldset>
+            </fieldset>
+        </div>
+        <div
+          role="tabpanel"
+          id={tabPanelId("product", "options")}
+          aria-labelledby={tabButtonId("product", "options")}
+          hidden={tab !== "options"}
+          className={cn("flex flex-col gap-4", tab !== "options" && "hidden")}
+        >
+            <fieldset>
+              <legend className="text-sm font-semibold">Options and flavours</legend>
+              <p className="mt-1 text-xs text-muted">
+                Add a group like Flavour or Size, then its choices. Turn a choice off to mark it sold
+                out on the menu without removing it.
+              </p>
+              <div className="mt-3 flex flex-col gap-4">
+                {draft.options.map((option, optionIndex) => (
+                  <div key={option.id} className="rounded-xl border border-line p-3">
+                    <div className="flex items-center gap-2">
+                      <input
+                        className={inputClass}
+                        value={option.name}
+                        onChange={(e) => updateOption(optionIndex, { name: e.target.value })}
+                        placeholder="Group name, e.g. Flavour"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeOption(optionIndex)}
+                        aria-label="Remove group"
+                        className="rounded-full p-2 text-muted transition hover:bg-blush-soft active:scale-90"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <label className="mt-2 flex items-center gap-2 text-xs font-semibold">
+                      <Toggle
+                        checked={option.required}
+                        onChange={(v) => updateOption(optionIndex, { required: v })}
+                        label="Required choice"
+                      />
+                      Required choice
+                    </label>
 
-          <fieldset className="rounded-xl bg-marble/40 p-3">
-            <legend className="px-1 text-sm font-semibold">Build your own box</legend>
-            <p className="text-xs text-muted">
-              A box of this one item where the customer picks their own flavours.
-            </p>
-            <label className="mt-2 flex items-center gap-2 text-xs font-semibold">
-              <Toggle
-                checked={!!draft.flavourBox}
-                onChange={(v) =>
-                  set("flavourBox", v ? draft.flavourBox ?? { flavourOption: "Flavour", sizes: [] } : null)
-                }
-                label="Sell as a build-your-own box"
-              />
-              Let customers pick their own flavours
-            </label>
-            {draft.flavourBox && (
-              <div className="mt-3 flex flex-col gap-3">
-                <div className="text-xs">
-                  <p className="font-semibold">Flavours</p>
-                  <p className="mt-1 text-muted">
-                    Every other product in {draft.category.trim() || "this category"}. Add, sell out
-                    or delete one of those and this list follows.
-                  </p>
-                  {flavourPreview.length > 0 ? (
-                    <ul className="mt-2 flex flex-wrap gap-1.5">
-                      {flavourPreview.map((flavour) => (
-                        <li
-                          key={flavour.id}
-                          className={cn(
-                            "rounded-full border px-2.5 py-1",
-                            flavour.isAvailable
-                              ? "border-line bg-white"
-                              : "border-dashed border-line text-muted line-through",
-                          )}
-                        >
-                          {flavour.label}
-                          {!flavour.isAvailable && <span className="sr-only"> (out of stock)</span>}
-                        </li>
+                    <div className="mt-3 flex flex-col gap-2">
+                      {option.values.map((value, valueIndex) => (
+                        <div key={value.id} className="flex flex-wrap items-center gap-2">
+                          <input
+                            className={cn(inputClass, "min-w-32 flex-1")}
+                            value={value.label}
+                            onChange={(e) =>
+                              updateValue(optionIndex, valueIndex, { label: e.target.value })
+                            }
+                            placeholder="Choice, e.g. Pistachio"
+                          />
+                          <div className="flex items-center gap-1 text-sm">
+                            <span className="text-muted">+ S$</span>
+                            <input
+                              type="number"
+                              step="0.5"
+                              min="0"
+                              className={cn(inputClass, "w-20")}
+                              value={value.priceDeltaCents / 100}
+                              onChange={(e) =>
+                                updateValue(optionIndex, valueIndex, {
+                                  priceDeltaCents: Math.max(
+                                    0,
+                                    Math.round((parseFloat(e.target.value) || 0) * 100),
+                                  ),
+                                })
+                              }
+                            />
+                          </div>
+                          <label className="flex items-center gap-1 text-xs font-semibold">
+                            <Toggle
+                              checked={value.isAvailable !== false}
+                              onChange={(v) =>
+                                updateValue(optionIndex, valueIndex, { isAvailable: v })
+                              }
+                              label={`In stock ${value.label || "choice"}`}
+                            />
+                            In stock
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => removeValue(optionIndex, valueIndex)}
+                            aria-label="Remove choice"
+                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-blush-soft active:scale-90"
+                          >
+                            ✕
+                          </button>
+                        </div>
                       ))}
-                    </ul>
-                  ) : (
-                    <p className="mt-2 font-semibold text-rose-ink">
-                      No other products in this category yet, so this box stays off the menu.
-                    </p>
-                  )}
-                </div>
-                <label className="flex flex-col gap-1 text-xs font-semibold">
-                  Heading for the flavours
-                  <input
-                    className={inputClass}
-                    value={draft.flavourBox.flavourOption}
-                    onChange={(e) =>
-                      set("flavourBox", { ...draft.flavourBox!, flavourOption: e.target.value })
-                    }
-                    placeholder="Flavour"
-                  />
-                </label>
-                {draft.flavourBox.sizes.map((size, sizeIndex) => (
-                  <div key={sizeIndex} className="flex flex-wrap items-center gap-2">
-                    <input
-                      className={cn(inputClass, "min-w-28 flex-1")}
-                      value={size.label}
-                      onChange={(e) => updateBoxSize(sizeIndex, { label: e.target.value })}
-                      placeholder="Size label, e.g. Box of 6"
-                    />
-                    <label className="flex items-center gap-1 text-xs text-muted">
-                      Count
-                      <input
-                        type="number"
-                        min="1"
-                        step="1"
-                        className={cn(inputClass, "w-16")}
-                        value={size.count}
-                        onChange={(e) =>
-                          updateBoxSize(sizeIndex, {
-                            count: Math.max(1, Math.round(parseFloat(e.target.value) || 1)),
-                          })
-                        }
-                      />
-                    </label>
-                    <label className="flex items-center gap-1 text-xs text-muted">
-                      S$
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.5"
-                        className={cn(inputClass, "w-20")}
-                        value={size.priceCents / 100}
-                        onChange={(e) =>
-                          updateBoxSize(sizeIndex, {
-                            priceCents: Math.max(0, Math.round((parseFloat(e.target.value) || 0) * 100)),
-                          })
-                        }
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => removeBoxSize(sizeIndex)}
-                      aria-label="Remove size"
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-blush-soft active:scale-90"
-                    >
-                      ✕
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => addValue(optionIndex)}
+                        className="self-start rounded-full border border-line px-3 py-1.5 text-xs font-semibold transition hover:border-rose active:scale-95"
+                      >
+                        + Add choice
+                      </button>
+                    </div>
                   </div>
                 ))}
                 <button
                   type="button"
-                  onClick={addBoxSize}
-                  className="self-start rounded-full border border-line px-3 py-1.5 text-xs font-semibold transition hover:border-rose active:scale-95"
+                  onClick={addOption}
+                  className="self-start rounded-full border border-dashed border-blush px-4 py-2 text-xs font-semibold text-rose-ink transition hover:border-rose active:scale-95"
                 >
-                  + Add box size
+                  + Add option group
                 </button>
               </div>
-            )}
-          </fieldset>
+            </fieldset>
+
+            <fieldset className="rounded-xl bg-marble/40 p-3">
+              <legend className="px-1 text-sm font-semibold">Build your own box</legend>
+              <p className="text-xs text-muted">
+                A box of this one item where the customer picks their own flavours.
+              </p>
+              <label className="mt-2 flex items-center gap-2 text-xs font-semibold">
+                <Toggle
+                  checked={!!draft.flavourBox}
+                  onChange={(v) =>
+                    set("flavourBox", v ? draft.flavourBox ?? { flavourOption: "Flavour", sizes: [] } : null)
+                  }
+                  label="Sell as a build-your-own box"
+                />
+                Let customers pick their own flavours
+              </label>
+              {draft.flavourBox && (
+                <div className="mt-3 flex flex-col gap-3">
+                  <div className="text-xs">
+                    <p className="font-semibold">Flavours</p>
+                    <p className="mt-1 text-muted">
+                      Every other product in {draft.category.trim() || "this category"}. Add, sell out
+                      or delete one of those and this list follows.
+                    </p>
+                    {flavourPreview.length > 0 ? (
+                      <ul className="mt-2 flex flex-wrap gap-1.5">
+                        {flavourPreview.map((flavour) => (
+                          <li
+                            key={flavour.id}
+                            className={cn(
+                              "rounded-full border px-2.5 py-1",
+                              flavour.isAvailable
+                                ? "border-line bg-white"
+                                : "border-dashed border-line text-muted line-through",
+                            )}
+                          >
+                            {flavour.label}
+                            {!flavour.isAvailable && <span className="sr-only"> (out of stock)</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-2 font-semibold text-rose-ink">
+                        No other products in this category yet, so this box stays off the menu.
+                      </p>
+                    )}
+                  </div>
+                  <label className="flex flex-col gap-1 text-xs font-semibold">
+                    Heading for the flavours
+                    <input
+                      className={inputClass}
+                      value={draft.flavourBox.flavourOption}
+                      onChange={(e) =>
+                        set("flavourBox", { ...draft.flavourBox!, flavourOption: e.target.value })
+                      }
+                      placeholder="Flavour"
+                    />
+                  </label>
+                  {draft.flavourBox.sizes.map((size, sizeIndex) => (
+                    <div key={sizeIndex} className="flex flex-wrap items-center gap-2">
+                      <input
+                        className={cn(inputClass, "min-w-28 flex-1")}
+                        value={size.label}
+                        onChange={(e) => updateBoxSize(sizeIndex, { label: e.target.value })}
+                        placeholder="Size label, e.g. Box of 6"
+                      />
+                      <label className="flex items-center gap-1 text-xs text-muted">
+                        Count
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          className={cn(inputClass, "w-16")}
+                          value={size.count}
+                          onChange={(e) =>
+                            updateBoxSize(sizeIndex, {
+                              count: Math.max(1, Math.round(parseFloat(e.target.value) || 1)),
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="flex items-center gap-1 text-xs text-muted">
+                        S$
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          className={cn(inputClass, "w-20")}
+                          value={size.priceCents / 100}
+                          onChange={(e) =>
+                            updateBoxSize(sizeIndex, {
+                              priceCents: Math.max(0, Math.round((parseFloat(e.target.value) || 0) * 100)),
+                            })
+                          }
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => removeBoxSize(sizeIndex)}
+                        aria-label="Remove size"
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-blush-soft active:scale-90"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={addBoxSize}
+                    className="self-start rounded-full border border-line px-3 py-1.5 text-xs font-semibold transition hover:border-rose active:scale-95"
+                  >
+                    + Add box size
+                  </button>
+                </div>
+              )}
+            </fieldset>
+
+            <fieldset>
+              <legend className="text-sm font-semibold">Personalisation</legend>
+              <p className="mt-1 text-xs text-muted">
+                Let customers add a short message to this treat, like a name to pipe on a cake. Leave
+                the prompt blank to keep it off.
+              </p>
+              <label className="mt-2 flex flex-col gap-1 text-sm font-semibold">
+                Prompt shown to customers
+                <input
+                  className={inputClass}
+                  value={draft.personalisation?.label ?? ""}
+                  onChange={(e) =>
+                    set(
+                      "personalisation",
+                      e.target.value.trim()
+                        ? { label: e.target.value, allowPhoto: draft.personalisation?.allowPhoto ?? false }
+                        : null,
+                    )
+                  }
+                  placeholder="e.g. Message to pipe on top"
+                />
+              </label>
+              {draft.personalisation && (
+                <label className="mt-3 flex items-center gap-2 text-sm font-semibold">
+                  <Toggle
+                    checked={draft.personalisation.allowPhoto}
+                    onChange={(v) =>
+                      set("personalisation", {
+                        label: draft.personalisation?.label ?? "",
+                        allowPhoto: v,
+                      })
+                    }
+                    label="Allow a reference photo"
+                  />
+                  Allow a reference photo
+                </label>
+              )}
+            </fieldset>
         </div>
 
-        {saveError && <p className="mt-4 text-sm text-danger">{saveError}</p>}
-        <div className="mt-6 flex gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex-1 rounded-full border border-line px-4 py-2.5 text-sm font-semibold transition hover:border-rose active:scale-95"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={!draft.name.trim()}
-            className="flex-1 rounded-full bg-rose-deep px-4 py-2.5 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:brightness-110 active:scale-95 disabled:opacity-50"
-          >
-            {isNew ? "Add product" : "Save changes"}
-          </button>
+        {/* Pinned to the bottom too, so Save is in reach from any tab. */}
+        <div className="sticky -bottom-5 z-10 -mx-6 -mb-5 mt-6 border-t border-line bg-white px-6 pb-5 pt-3">
+          {saveError && <p className="mb-3 text-sm text-danger">{saveError}</p>}
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 rounded-full border border-line px-4 py-2.5 text-sm font-semibold transition hover:border-rose active:scale-95"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={!draft.name.trim()}
+              className="flex-1 rounded-full bg-rose-deep px-4 py-2.5 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:brightness-110 active:scale-95 disabled:opacity-50"
+            >
+              {isNew ? "Add product" : "Save changes"}
+            </button>
+          </div>
         </div>
     </AdminModal>
   );

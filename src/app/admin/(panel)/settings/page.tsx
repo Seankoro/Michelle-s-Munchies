@@ -8,9 +8,22 @@ import { formatLongDate } from "@/lib/order";
 import { cn } from "@/lib/cn";
 import { Toggle } from "@/components/ui/Toggle";
 import { PanelLoading } from "@/components/admin/PanelLoading";
+import { AdminTabs, tabButtonId, tabPanelId, type AdminTab } from "@/components/admin/AdminTabs";
 import { compactInputClass as inputClass } from "@/lib/ui";
 import { loadDeliveryConfigAction, saveDeliveryConfigAction } from "@/lib/admin-actions";
 import type { DistanceTier } from "@/lib/delivery-fee";
+
+type SettingsTab = "says" | "delivery" | "pickup" | "blackout" | "rewards" | "merch" | "notes" | "features";
+const SETTINGS_TABS: AdminTab<SettingsTab>[] = [
+  { id: "says", label: "Michelle says" },
+  { id: "delivery", label: "Delivery" },
+  { id: "pickup", label: "Pickup" },
+  { id: "blackout", label: "Blackout" },
+  { id: "rewards", label: "Rewards" },
+  { id: "merch", label: "Merchandising" },
+  { id: "notes", label: "Order notes" },
+  { id: "features", label: "Features" },
+];
 
 export default function AdminSettingsPage() {
   const { settings, updateSettings, hydrated, products } = useAdmin();
@@ -160,37 +173,45 @@ function SettingsForm({
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
-  const sections: [string, string][] = [
-    ["says", "Michelle says"],
-    ["delivery", "Delivery"],
-    ["pickup", "Pickup"],
-    ["blackout", "Blackout"],
-    ["rewards", "Rewards"],
-    ["merch", "Merchandising"],
-    ["notes", "Order notes"],
-    ["features", "Features"],
-  ];
+  const [tab, setTab] = useState<SettingsTab>("says");
+  // The first-run checklist links straight to a section, as #settings-pickup,
+  // so a hash like that opens its tab.
+  useEffect(() => {
+    function fromHash() {
+      const id = window.location.hash.replace("#settings-", "");
+      const match = SETTINGS_TABS.find((t) => t.id === id);
+      if (match) setTab(match.id);
+    }
+    fromHash();
+    window.addEventListener("hashchange", fromHash);
+    return () => window.removeEventListener("hashchange", fromHash);
+  }, []);
+  // Panel props for one section: shown only while its tab is open.
+  const panel = (id: SettingsTab) => ({
+    role: "tabpanel",
+    id: tabPanelId("settings", id),
+    "aria-labelledby": tabButtonId("settings", id),
+    hidden: tab !== id,
+  });
 
   return (
     <div className="max-w-2xl pb-24">
       <h1 className="font-display text-3xl font-semibold">Settings</h1>
       <p className="mt-1 text-muted">Delivery, scheduling, and pickup details.</p>
 
-      {/* Quick jump to a section, so a long form is not all scrolling. */}
-      <div className="-mx-6 mt-4 flex gap-2 overflow-x-auto px-6 pb-1 no-scrollbar sm:mx-0 sm:flex-wrap sm:px-0">
-        {sections.map(([id, label]) => (
-          <a
-            key={id}
-            href={`#settings-${id}`}
-            className="shrink-0 rounded-full border border-line bg-white px-3 py-1.5 text-xs font-semibold text-ink transition hover:border-rose"
-          >
-            {label}
-          </a>
-        ))}
-      </div>
+      {/* One section at a time, so the page is never a long scroll. The save
+          bar below covers every tab, so switching tabs loses nothing. */}
+      <AdminTabs
+        tabs={SETTINGS_TABS}
+        active={tab}
+        onChange={setTab}
+        idPrefix="settings"
+        label="Settings sections"
+        className="-mx-6 mt-4 px-6 pb-1 sm:mx-0 sm:flex-wrap sm:px-0"
+      />
 
       <div className="mt-6 flex flex-col gap-6">
-        <section id="settings-says" className="scroll-mt-24 rounded-2xl border border-line bg-white p-5">
+        <section {...panel("says")} className="rounded-2xl border border-line bg-white p-5 [&[hidden]]:hidden">
           <h2 className="font-display text-2xl font-semibold">Michelle says</h2>
           <p className="mt-1 text-sm font-normal text-muted">
             Lines for the speech bubble next to the mascot on the home page. Add as many as you like.
@@ -232,7 +253,7 @@ function SettingsForm({
           )}
         </section>
 
-        <section id="settings-delivery" className="scroll-mt-24 rounded-2xl border border-line bg-white p-5">
+        <section {...panel("delivery")} className="rounded-2xl border border-line bg-white p-5 [&[hidden]]:hidden">
           <h2 className="font-display text-2xl font-semibold">Delivery &amp; orders</h2>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-sm font-semibold">
@@ -308,7 +329,7 @@ function SettingsForm({
           <DeliveryZones />
         </section>
 
-        <section id="settings-pickup" className="scroll-mt-24 rounded-2xl border border-line bg-white p-5">
+        <section {...panel("pickup")} className="rounded-2xl border border-line bg-white p-5 [&[hidden]]:hidden">
           <h2 className="font-display text-2xl font-semibold">Pickup &amp; scheduling</h2>
           <label className="mt-4 flex flex-col gap-1 text-sm font-semibold">
             Pickup location (shown to customers)
@@ -328,7 +349,7 @@ function SettingsForm({
           </label>
         </section>
 
-        <section id="settings-blackout" className="scroll-mt-24 rounded-2xl border border-line bg-white p-5">
+        <section {...panel("blackout")} className="rounded-2xl border border-line bg-white p-5 [&[hidden]]:hidden">
           <h2 className="font-display text-2xl font-semibold">Blackout dates</h2>
           <p className="mt-1 text-sm text-muted">Days you&rsquo;re away. Customers can&rsquo;t order for these.</p>
           <div className="mt-3 flex flex-wrap gap-2">
@@ -372,7 +393,7 @@ function SettingsForm({
           </div>
         </section>
 
-        <section id="settings-rewards" className="scroll-mt-24 rounded-2xl border border-line bg-white p-5">
+        <section {...panel("rewards")} className="rounded-2xl border border-line bg-white p-5 [&[hidden]]:hidden">
           <h2 className="font-display text-2xl font-semibold">Rewards</h2>
           <p className="mt-1 text-sm text-muted">
             How customers earn and redeem loyalty points.
@@ -435,7 +456,7 @@ function SettingsForm({
           </div>
         </section>
 
-        <section id="settings-merch" className="scroll-mt-24 rounded-2xl border border-line bg-white p-5">
+        <section {...panel("merch")} className="rounded-2xl border border-line bg-white p-5 [&[hidden]]:hidden">
           <h2 className="font-display text-2xl font-semibold">Merchandising &amp; lifecycle</h2>
           <p className="mt-1 text-sm text-muted">
             Spend-gift, birthday rewards, and abandoned-cart timing (each also has an on/off
@@ -499,7 +520,7 @@ function SettingsForm({
           </div>
         </section>
 
-        <section id="settings-notes" className="scroll-mt-24 rounded-2xl border border-line bg-white p-5">
+        <section {...panel("notes")} className="rounded-2xl border border-line bg-white p-5 [&[hidden]]:hidden">
           <h2 className="font-display text-2xl font-semibold">Structured order notes</h2>
           <p className="mt-1 text-sm text-muted">
             Custom questions shown at checkout (e.g. &ldquo;Occasion?&rdquo;). Requires the
@@ -572,7 +593,7 @@ function SettingsForm({
           </div>
         </section>
 
-        <section id="settings-features" className="scroll-mt-24 rounded-2xl border border-line bg-white p-5">
+        <section {...panel("features")} className="rounded-2xl border border-line bg-white p-5 [&[hidden]]:hidden">
           <h2 className="font-display text-2xl font-semibold">Features</h2>
           <p className="mt-1 text-sm text-muted">
             Turn customer features on or off. Switched off, they disappear from the storefront.
