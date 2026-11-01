@@ -128,7 +128,7 @@ export default function AdminProductsPage() {
               <th className="px-4 py-3 font-semibold">Price</th>
               <th className="px-4 py-3 text-center font-semibold">Available</th>
               <th className="px-4 py-3 text-center font-semibold">Best seller</th>
-              <th className="px-4 py-3 text-center font-semibold">Recommended</th>
+              <th className="px-4 py-3 text-center font-semibold">Michelle&rsquo;s pick</th>
               <th className="px-4 py-3 font-semibold"></th>
             </tr>
           </thead>
@@ -164,7 +164,7 @@ export default function AdminProductsPage() {
                   <Toggle
                     checked={product.isRecommended}
                     onChange={() => toggleRecommended(product.id)}
-                    label={`Toggle recommended for ${product.name}`}
+                    label={`Toggle Michelle's pick for ${product.name}`}
                   />
                 </td>
                 <td className="px-4 py-3 text-right">
@@ -727,9 +727,9 @@ function ProductFormModal({
                 <Toggle
                   checked={draft.isRecommended}
                   onChange={(v) => set("isRecommended", v)}
-                  label="Recommended"
+                  label="Michelle's pick"
                 />
-                Recommended
+                Michelle&rsquo;s pick
               </div>
             </div>
         </div>

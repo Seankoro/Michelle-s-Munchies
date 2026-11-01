@@ -55,3 +55,19 @@ Two extra steps the dashboard won't remind you about:
 - Distance-based delivery is configured in Admin → Settings → Delivery zones (kitchen postal code + distance tiers). It requires `ONEMAP_EMAIL` and `ONEMAP_PASSWORD`; without them, delivery falls back to the flat fee.
 
 If you point the app at a different Supabase project, `next.config.mjs` derives the image host from `NEXT_PUBLIC_SUPABASE_URL` automatically.
+
+## Staging
+
+There are two Supabase projects in the same organisation, both in Singapore:
+
+| | Supabase project | Used by |
+|---|---|---|
+| Production | `michelles-munchies` (`ddwesutmtlytbcluqcuc`) | Vercel Production, from `main` |
+| Staging | `michelles-munchies-staging` (`btqmxtfiyubmqaaozuvt`) | `npm run dev` and Vercel Preview deployments |
+
+Staging has the same schema, settings and products as production, but no customers, accounts or orders. Test orders, sign-ups and admin edits made locally land there.
+
+- `.env.local` points at staging. The production keys live in Vercel, and a local copy sits in `.env.prod-backup.local`. Both files are git-ignored.
+- In Vercel, the three Supabase variables are set separately for Production and for Preview, so every branch other than `main` gets a preview link on staging.
+- Staging accounts are separate. Sign up on the local site with an address in `ADMIN_EMAILS` to reach `/admin` there.
+- A schema change goes to staging first, then production: write the numbered file in `supabase/migrations`, apply it to staging, test, apply it to production, then merge.

@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { useCart } from "@/components/cart/CartContext";
 import { useFeatures } from "@/components/features/FeaturesProvider";
 import { ShareCartButton } from "@/components/cart/ShareCartButton";
+import { CartSuggestions } from "@/components/cart/CartSuggestions";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import { fetchClientSettingsRow } from "@/lib/client-settings";
 import { formatPrice, mockSettings } from "@/lib/catalog";
@@ -199,6 +200,8 @@ export default function CartPage() {
           </li>
         ))}
       </ul>
+
+      <CartSuggestions className="mt-10" />
 
       {/* Free-delivery nudge. Nothing to say when the threshold is zero, since
           that is how the settings screen switches free delivery off. */}

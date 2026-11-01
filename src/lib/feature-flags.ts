@@ -30,6 +30,8 @@ export type FeatureFlags = {
   drops: boolean;
   dietaryPrefs: boolean;
   occasionReminders: boolean;
+  // Cart page
+  cartSuggestions: boolean;
 };
 
 export const ALL_FEATURES_ON: FeatureFlags = {
@@ -55,6 +57,7 @@ export const ALL_FEATURES_ON: FeatureFlags = {
   drops: true,
   dietaryPrefs: true,
   occasionReminders: true,
+  cartSuggestions: true,
 };
 
 /**
@@ -85,6 +88,7 @@ export const FEATURE_COLUMNS: readonly (readonly [column: string, flag: keyof Fe
   ["feature_drops", "drops"],
   ["feature_dietary_prefs", "dietaryPrefs"],
   ["feature_occasion_reminders", "occasionReminders"],
+  ["feature_cart_suggestions", "cartSuggestions"],
 ];
 
 /** The comma-joined feature columns for a settings SELECT. */

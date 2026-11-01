@@ -333,7 +333,7 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
     persist(
       updateProductAction(id, { isRecommended }),
       () => patchProductLocal(id, { isRecommended: target.isRecommended }),
-      "Recommended flag",
+      "Michelle's pick flag",
     );
   }
 

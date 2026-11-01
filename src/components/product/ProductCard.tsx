@@ -90,7 +90,7 @@ export function ProductCard({
       <div className="absolute left-3 top-3 flex flex-col items-start gap-1">
         {product.isBestSeller && <Badge tone="bestseller">★ Best seller</Badge>}
         {product.isRecommended && !product.isBestSeller && (
-          <Badge tone="recommended">Recommended</Badge>
+          <Badge tone="recommended">Michelle&rsquo;s pick</Badge>
         )}
       </div>
       {soldOut && !upcoming && (

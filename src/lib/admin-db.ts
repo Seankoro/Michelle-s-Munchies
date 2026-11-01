@@ -1454,6 +1454,7 @@ type SettingsRow = {
   feature_drops: boolean | null;
   feature_dietary_prefs: boolean | null;
   feature_occasion_reminders: boolean | null;
+  feature_cart_suggestions: boolean | null;
 };
 
 export async function fetchAdminSettings(): Promise<AdminSettings> {
@@ -1549,6 +1550,7 @@ export async function updateSettings(patch: Partial<AdminSettings>) {
     columns.feature_drops = patch.features.drops;
     columns.feature_dietary_prefs = patch.features.dietaryPrefs;
     columns.feature_occasion_reminders = patch.features.occasionReminders;
+    columns.feature_cart_suggestions = patch.features.cartSuggestions;
   }
 
   const { error } = await supabase.from("settings").update(columns).eq("id", 1);

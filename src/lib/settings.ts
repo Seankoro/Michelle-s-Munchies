@@ -97,6 +97,7 @@ type SettingsRow = {
   feature_birthday_rewards: boolean | null;
   feature_abandoned_cart: boolean | null;
   feature_structured_notes: boolean | null;
+  feature_cart_suggestions: boolean | null;
 };
 
 // Non-feature columns plus every feature_* column from the shared list, so a new

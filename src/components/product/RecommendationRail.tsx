@@ -10,7 +10,7 @@ import { ScrollRail } from "@/components/ui/ScrollRail";
 export function RecommendationRail({ products }: { products: Product[] }) {
   return (
     <ScrollRail
-      label="Recommended treats"
+      label="Our favourites"
       trackClassName="relative -mx-6 flex gap-4 overflow-x-auto px-6 pb-2 no-scrollbar xl:mx-0 xl:grid xl:grid-cols-4 xl:gap-6 xl:overflow-visible xl:px-0 xl:pb-0"
     >
       {products.map((product) => (

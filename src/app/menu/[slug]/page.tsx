@@ -93,7 +93,6 @@ export default async function ProductDetailPage({ params }: Params) {
   const avgRating = reviews.length
     ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length
     : 0;
-  const photoCount = product.photoCount ?? 1;
   const allergenText = product.allergens.map((a) => allergenMeta[a].label.toLowerCase());
   const leadTime = settings.leadTimeDays;
 
@@ -168,21 +167,7 @@ export default async function ProductDetailPage({ params }: Params) {
           {product.imageUrls && product.imageUrls.length > 0 ? (
             <ProductGallery name={product.name} urls={product.imageUrls} />
           ) : (
-            <>
-              <ImagePlaceholder aspect="square" label="Main product photo" icon="📷" />
-              {photoCount > 1 && (
-                <div className="mt-3 grid grid-cols-3 gap-3">
-                  {Array.from({ length: Math.min(photoCount, 3) }).map((_, index) => (
-                    <ImagePlaceholder
-                      key={index}
-                      aspect="square"
-                      label={`Photo ${index + 1}`}
-                      icon="📷"
-                    />
-                  ))}
-                </div>
-              )}
-            </>
+            <ImagePlaceholder aspect="square" label="Main product photo" icon="📷" />
           )}
         </div>
 
@@ -190,7 +175,7 @@ export default async function ProductDetailPage({ params }: Params) {
         <div>
           <div className="flex flex-wrap gap-2">
             {product.isBestSeller && <Badge tone="bestseller">★ Best seller</Badge>}
-            {product.isRecommended && <Badge tone="recommended">Recommended</Badge>}
+            {product.isRecommended && <Badge tone="recommended">Michelle&rsquo;s pick</Badge>}
             {comingSoon ? (
               <Badge tone="recommended">{comingSoonLabel(product)}</Badge>
             ) : (
@@ -253,7 +238,7 @@ export default async function ProductDetailPage({ params }: Params) {
           {/* Allergens, icons and a written line, safety-critical and never hidden */}
           {product.allergens.length > 0 && (
             <div className="mt-6">
-              <h2 className="text-sm font-semibold text-ink">Allergens</h2>
+              <h2 className="text-2xl font-semibold text-ink">Allergens</h2>
               <div className="mt-2 flex items-center gap-3">
                 <AllergenChips allergens={product.allergens} size="md" />
               </div>

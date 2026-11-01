@@ -7,7 +7,7 @@ import { cn } from "@/lib/cn";
  * A horizontal product rail every input method can browse: finger-swipe on
  * touch, arrow buttons and a draggable slider for mouse and trackpad. One
  * layout for all devices; at xl the caller's track classes switch to a grid
- * and the controls hide themselves.
+ * and the controls hide themselves, unless the caller keeps it a row there.
   *
  * The cards deliberately carry no scroll-snap class. Snapping was tried and
  * measured against the live rail: with either `mandatory` or `proximity` set on
@@ -18,12 +18,15 @@ import { cn } from "@/lib/cn";
 export function ScrollRail({
   label,
   trackClassName,
+  gridAtXl = true,
   children,
 }: {
   /** Accessible name for the rail and its controls, e.g. the category name. */
   label: string;
   /** Full class set for the scroll track, including the xl grid switch. */
   trackClassName: string;
+  /** False when the track stays a row at xl, so the arrows and slider stay too. */
+  gridAtXl?: boolean;
   children: ReactNode;
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
@@ -124,7 +127,7 @@ export function ScrollRail({
   }
 
   const arrowClass =
-    "absolute top-[40%] z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-line bg-white/95 text-lg font-bold text-ink shadow-soft transition hover:border-rose active:scale-95 disabled:pointer-events-none disabled:opacity-0 xl:hidden";
+    "absolute top-[40%] z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-line bg-white/95 text-lg font-bold text-ink shadow-soft transition hover:border-rose active:scale-95 disabled:pointer-events-none disabled:opacity-0";
 
   return (
     <div role="region" aria-label={label} className="relative">
@@ -136,7 +139,7 @@ export function ScrollRail({
         onPointerCancel={onPointerEnd}
         onClickCapture={onClickCapture}
         onDragStart={(event) => event.preventDefault()}
-        className={cn(trackClassName, "cursor-grab xl:cursor-auto")}
+        className={cn(trackClassName, "cursor-grab", gridAtXl && "xl:cursor-auto")}
       >
         {children}
       </div>
@@ -148,7 +151,7 @@ export function ScrollRail({
             aria-label={`Scroll ${label} back`}
             onClick={() => page(-1)}
             disabled={pos <= 8}
-            className={cn(arrowClass, "left-0")}
+            className={cn(arrowClass, "left-0", gridAtXl && "xl:hidden")}
           >
             ‹
           </button>
@@ -157,13 +160,13 @@ export function ScrollRail({
             aria-label={`Scroll ${label} forward`}
             onClick={() => page(1)}
             disabled={pos >= max - 8}
-            className={cn(arrowClass, "right-0")}
+            className={cn(arrowClass, "right-0", gridAtXl && "xl:hidden")}
           >
             ›
           </button>
           <div
             style={{ "--rail-progress": `${max > 0 ? (Math.min(pos, max) / max) * 100 : 0}%` } as CSSProperties}
-            className="relative mx-auto mt-4 h-5 w-48 max-w-[70%] xl:hidden"
+            className={cn("relative mx-auto mt-4 h-5 w-48 max-w-[70%]", gridAtXl && "xl:hidden")}
           >
             <input
               type="range"

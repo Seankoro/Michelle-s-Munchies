@@ -139,7 +139,7 @@ export default async function HomePage() {
         <Reveal>
           <div className="text-center">
             <h2 className="font-display text-3xl font-semibold sm:text-4xl">Our favourites</h2>
-            <p className="mt-3 text-muted">Our best-sellers and a few of Michelle&rsquo;s picks.</p>
+            <p className="mt-3 text-muted">Our best sellers and a few of Michelle&rsquo;s picks.</p>
           </div>
           <RibbonDivider className="my-8" />
 

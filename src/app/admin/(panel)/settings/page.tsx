@@ -623,6 +623,7 @@ function SettingsForm({
                 ["drops", "Launch waitlist", "Let customers join a waitlist on dated Coming soon treats."],
                 ["dietaryPrefs", "Dietary preferences", "Customers save dietary needs for a tailored menu."],
                 ["occasionReminders", "Occasion reminders", "Customers save birthdays and we email a reorder nudge."],
+                ["cartSuggestions", "Cart suggestions", "A row of extra treats on the cart page, with past buys first."],
               ] as const
             ).map(([key, label, desc]) => (
               <div key={key} className="flex items-start gap-3">

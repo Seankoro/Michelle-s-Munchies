@@ -4,6 +4,7 @@ import type { Allergen, DietaryTag, FlavourBoxConfig, IngredientLine, Product } 
 import { createPublicClient } from "@/lib/supabase/public";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasPickableFlavour, withAssortedFlavours, type FlavourSource } from "@/lib/assorted";
+import { isComingSoon } from "@/lib/launch";
 
 /**
  * Read the ingredients jsonb. Handles both the new { name, amount, unit } objects
@@ -298,6 +299,19 @@ export async function fetchFeatured(limit = 6): Promise<Product[]> {
   // Best-sellers ahead of recommended-only items.
   featured.sort((a, b) => Number(b.isBestSeller) - Number(a.isBestSeller));
   return featured.slice(0, limit);
+}
+
+/**
+ * Everything the cart's "Add a little something" row may offer: on sale now,
+ * so no sold-out or coming-soon treats. Ranked in the browser, where the cart
+ * lives, so the row reorders the moment the cart changes.
+ */
+export async function fetchSuggestionPool(): Promise<Product[]> {
+  const products = await fetchCardCatalog();
+  const now = new Date();
+  return products.filter(
+    (p) => !isComingSoon(p, now) && !(p.stockCount != null && p.stockCount <= 0),
+  );
 }
 
 /** "You might also like", same category first, then other available products. */
