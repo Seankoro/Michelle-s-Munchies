@@ -10,6 +10,7 @@ import {
   uploadProductImageAction,
 } from "@/lib/admin-actions";
 import type { AdminInstagramPost } from "@/lib/admin-content";
+import { uploadPhoto } from "@/lib/photo-upload";
 import { compactInputClass as inputClass } from "@/lib/ui";
 import { Toggle } from "@/components/ui/Toggle";
 import { PanelLoading } from "@/components/admin/PanelLoading";
@@ -62,9 +63,7 @@ export default function AdminInstagramPage() {
     if (!file) return;
     setError("");
     setUploading(true);
-    const fd = new FormData();
-    fd.append("file", file);
-    const result = await uploadProductImageAction(fd);
+    const result = await uploadPhoto(file, uploadProductImageAction);
     setUploading(false);
     if (!result.ok) {
       setError(result.error);

@@ -13,7 +13,8 @@ const ALLOWED_IMAGE_TYPES: Record<string, string> = {
   "image/gif": "gif",
 };
 
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+/** Kept under the server action body limit in next.config.mjs. */
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 
 type ValidatedImage =
   | { ok: true; ext: string; contentType: string }
@@ -28,7 +29,7 @@ type ValidatedImage =
  */
 export function validateImageUpload(file: File): ValidatedImage {
   if (file.size === 0) return { ok: false, error: "No file provided." };
-  if (file.size > MAX_IMAGE_BYTES) return { ok: false, error: "Image must be under 5 MB." };
+  if (file.size > MAX_IMAGE_BYTES) return { ok: false, error: "Image must be under 4 MB." };
   const contentType = file.type.toLowerCase();
   const ext = ALLOWED_IMAGE_TYPES[contentType];
   if (!ext) {

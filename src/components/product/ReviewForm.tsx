@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Button } from "@/components/ui/Button";
 import { submitReview, uploadReviewImageAction } from "@/lib/review-actions";
+import { uploadPhoto } from "@/lib/photo-upload";
 import { useFeatures } from "@/components/features/FeaturesProvider";
 import { cn } from "@/lib/cn";
 
@@ -33,9 +34,7 @@ export function ReviewForm({
   async function handleUpload(file: File) {
     setError("");
     setUploading(true);
-    const data = new FormData();
-    data.set("file", file);
-    const result = await uploadReviewImageAction(data);
+    const result = await uploadPhoto(file, uploadReviewImageAction);
     setUploading(false);
     if (result.ok) setImageUrls((prev) => [...prev, result.url]);
     else setError(result.error);

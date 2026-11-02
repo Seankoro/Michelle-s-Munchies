@@ -6,6 +6,7 @@ import { formatPrice } from "@/lib/catalog";
 import { useCart } from "@/components/cart/CartContext";
 import { menuCartKey } from "@/lib/cart-key";
 import { uploadPersonalisationImageAction } from "@/lib/personalisation-actions";
+import { uploadPhoto } from "@/lib/photo-upload";
 import { Button } from "@/components/ui/Button";
 import { compactInputClass } from "@/lib/ui";
 import { cn } from "@/lib/cn";
@@ -76,10 +77,9 @@ export function OptionPicker({
     if (!file) return;
     setPhotoError("");
     setUploading(true);
-    const fd = new FormData();
-    fd.append("file", file);
-    fd.append("productId", product.id);
-    const result = await uploadPersonalisationImageAction(fd);
+    const result = await uploadPhoto(file, uploadPersonalisationImageAction, {
+      productId: product.id,
+    });
     setUploading(false);
     if (result.ok) setPhotoUrl(result.url);
     else setPhotoError(result.error);

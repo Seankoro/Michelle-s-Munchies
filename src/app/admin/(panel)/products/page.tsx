@@ -3,6 +3,7 @@
 import { useState, type ChangeEvent } from "react";
 import { useAdmin } from "@/components/admin/AdminStore";
 import { uploadProductImageAction } from "@/lib/admin-actions";
+import { uploadPhoto } from "@/lib/photo-upload";
 import { allergenMeta, dietaryMeta, formatPrice } from "@/lib/catalog";
 import type { Allergen, DietaryTag, FlavourBoxConfig, IngredientLine, Product } from "@/lib/types";
 import { cn } from "@/lib/cn";
@@ -302,9 +303,7 @@ function ProductFormModal({
     if (!file) return;
     setUploadError(null);
     setUploading(true);
-    const fd = new FormData();
-    fd.append("file", file);
-    const result = await uploadProductImageAction(fd);
+    const result = await uploadPhoto(file, uploadProductImageAction);
     setUploading(false);
     if (!result.ok) {
       setUploadError(result.error);

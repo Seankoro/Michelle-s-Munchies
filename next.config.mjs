@@ -15,6 +15,13 @@ const nextConfig = {
   // ship walks from there, which means the whole home folder rather than this
   // project. Point it at the project and it only ever looks here.
   outputFileTracingRoot: import.meta.dirname,
+  // Photo uploads go through server actions, which refuse anything over 1 MB by
+  // default. Photos are shrunk in the browser first (src/lib/photo-upload.ts);
+  // this is the backstop for one that could not be. It allows a 4 MB photo plus
+  // the form around it and stays under Vercel's 4.5 MB cap on any request.
+  experimental: {
+    serverActions: { bodySizeLimit: "4.4mb" },
+  },
   images: {
     // Product images will be served from Supabase Storage.
     remotePatterns: [{ protocol: "https", hostname: supabaseHost }],
