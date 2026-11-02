@@ -7,6 +7,7 @@ import { dietaryMeta } from "@/lib/catalog";
 import { ProductCard } from "@/components/product/ProductCard";
 import { MascotSays } from "@/components/ui/MascotSays";
 import { ScrollRail } from "@/components/ui/ScrollRail";
+import { isReturningTo } from "@/lib/nav-history";
 import { cn } from "@/lib/cn";
 
 /** Allergens that contradict each dietary filter, used to cross-check the
@@ -22,9 +23,6 @@ const DIETARY_ALLERGEN_CONFLICTS: Partial<Record<DietaryTag, Allergen[]>> = {
 /** Per-tab memory of the menu's filters and scroll, so returning from a product
  *  feels like you never left. Cleared when the browser tab closes. */
 const VIEW_KEY = "mm-menu-view";
-/** One-shot flag the product page's "back to menu" link sets to request a
- *  restore. A plain nav to the menu leaves it unset, so the menu starts fresh. */
-const RESTORE_FLAG = "mm-menu-restore";
 
 /**
  * One category's products as a horizontal scrolling rail on phones and tablets,
@@ -43,6 +41,7 @@ function ProductRail({
   return (
     <ScrollRail
       label={label}
+      restoreKey={label}
       trackClassName="-mx-6 flex gap-4 overflow-x-auto px-6 pb-2 no-scrollbar xl:mx-0 xl:grid xl:grid-cols-4 xl:gap-6 xl:overflow-visible xl:px-0 xl:pb-0"
     >
       {products.map((product) => (
@@ -79,10 +78,9 @@ export function MenuBrowser({
   // effect (not initial state) to keep the server and client render in sync.
   useEffect(() => {
     try {
-      // Only restore when arriving via the product page's "back to menu" link,
-      // which sets this one-shot flag. A plain nav to the menu starts fresh.
-      if (sessionStorage.getItem(RESTORE_FLAG) === "1") {
-        sessionStorage.removeItem(RESTORE_FLAG);
+      // Only restore when coming back, with the browser's back button or the
+      // product page's back link. A plain nav to the menu starts fresh.
+      if (isReturningTo("/menu")) {
         const raw = sessionStorage.getItem(VIEW_KEY);
         if (raw) {
           const v = JSON.parse(raw) as {

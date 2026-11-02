@@ -13,6 +13,7 @@ import { SiteChrome } from "@/components/layout/SiteChrome";
 import { getStripe } from "@/lib/stripe";
 import type { FooterChannel } from "@/components/layout/SiteFooter";
 import { CartProvider } from "@/components/cart/CartContext";
+import { NavigationTracker } from "@/components/layout/NavigationTracker";
 import { fetchFeatureFlags } from "@/lib/settings";
 import { getShopWhatsAppNumber } from "@/lib/whatsapp";
 
@@ -102,6 +103,7 @@ export default async function RootLayout({
   return (
     <html lang="en" className={`${fraunces.variable} ${nunito.variable} ${handwriting.variable}`}>
       <body>
+        <NavigationTracker />
         <CartProvider>
           <SiteChrome features={features} footerChannels={footerChannels} paymentsEnabled={paymentsEnabled}>
             {children}

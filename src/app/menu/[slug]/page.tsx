@@ -11,7 +11,7 @@ import { ImagePlaceholder } from "@/components/ui/ImagePlaceholder";
 import { Badge } from "@/components/ui/Badge";
 import { OptionPicker } from "@/components/product/OptionPicker";
 import { FlavourBoxPicker } from "@/components/product/FlavourBoxPicker";
-import { BackToMenuLink } from "@/components/product/BackToMenuLink";
+import { BackLink } from "@/components/product/BackLink";
 import { AllergenChips } from "@/components/product/AllergenChips";
 import { DietaryTags } from "@/components/product/DietaryTags";
 import { SubstitutionNote } from "@/components/product/SubstitutionNote";
@@ -159,7 +159,7 @@ export default async function ProductDetailPage({ params }: Params) {
         nonce={nonce}
         dangerouslySetInnerHTML={{ __html: jsonLd(productJsonLd) }}
       />
-      <BackToMenuLink />
+      <BackLink />
 
       <div className="mt-6 grid gap-10 lg:grid-cols-2">
         {/* Gallery */}

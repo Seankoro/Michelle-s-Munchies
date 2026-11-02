@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
+import { isReturningTo } from "@/lib/nav-history";
 import { cn } from "@/lib/cn";
 
 /**
@@ -19,6 +21,7 @@ export function ScrollRail({
   label,
   trackClassName,
   gridAtXl = true,
+  restoreKey,
   children,
 }: {
   /** Accessible name for the rail and its controls, e.g. the category name. */
@@ -27,11 +30,45 @@ export function ScrollRail({
   trackClassName: string;
   /** False when the track stays a row at xl, so the arrows and slider stay too. */
   gridAtXl?: boolean;
+  /**
+   * Remembers how far the row was swiped, so coming back to this page with the
+   * back button reopens it on the same card. Unique among the page's rows.
+   */
+  restoreKey?: string;
   children: ReactNode;
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState(0);
   const [max, setMax] = useState(0);
+  const pathname = usePathname();
+
+  // The swipe position, per page and row, for the length of the browser tab.
+  // Restored only on a return; a fresh visit records its own start instead, so
+  // an old position can never come back later.
+  useEffect(() => {
+    const track = trackRef.current;
+    if (!track || !restoreKey) return;
+    const storageKey = `mm-rail:${pathname}:${restoreKey}`;
+    const save = () => {
+      try {
+        sessionStorage.setItem(storageKey, String(Math.round(track.scrollLeft)));
+      } catch {
+        // Storage blocked; the row just reopens at its start.
+      }
+    };
+    if (isReturningTo(pathname)) {
+      try {
+        const saved = Number(sessionStorage.getItem(storageKey));
+        if (saved > 0) track.scrollLeft = saved;
+      } catch {
+        // Storage blocked; the row just reopens at its start.
+      }
+    } else {
+      save();
+    }
+    track.addEventListener("scroll", save, { passive: true });
+    return () => track.removeEventListener("scroll", save);
+  }, [pathname, restoreKey]);
 
   // Native listener because scroll doesn't bubble; ResizeObserver keeps the
   // slider range correct across viewport changes and the xl grid switch.
