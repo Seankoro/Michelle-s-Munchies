@@ -1,9 +1,31 @@
 import "server-only";
 import { computeDeliveryFeeCents } from "@/lib/order";
 import type { fetchStoreSettings } from "@/lib/settings";
-import { fetchDeliveryConfig } from "@/lib/delivery-config";
+import { fetchDeliveryConfig, type DeliveryConfig } from "@/lib/delivery-config";
 import { resolveDeliveryDistanceKm } from "@/lib/delivery-distance";
 import { computeZonedDeliveryFeeCents } from "@/lib/delivery-fee";
+
+/** Distance pricing is on only with tiers and a located kitchen. Otherwise every
+ *  delivery pays the flat fee from settings. */
+function zonesReady(config: DeliveryConfig): boolean {
+  return (
+    config.tiers.length > 0 &&
+    config.kitchenPostal != null &&
+    config.kitchenLat != null &&
+    config.kitchenLng != null
+  );
+}
+
+/**
+ * How delivery is priced, for wording shown to shoppers (the FAQ and the
+ * checkout's delivery option). The cheapest band when distance pricing is on,
+ * null when it is a flat fee. Only tier fees leave here, never the kitchen
+ * location.
+ */
+export async function fetchZonedFromCents(): Promise<number | null> {
+  const config = await fetchDeliveryConfig();
+  return zonesReady(config) ? Math.min(...config.tiers.map((t) => t.feeCents)) : null;
+}
 
 /**
  * Delivery fee, authoritative and shared by online checkout (placeOrder + the
@@ -22,12 +44,7 @@ export async function resolveDeliveryFeeCents(
     // Kitchen origin + tiers are server-only (delivery_config), never on the
     // public settings row, because the coordinates are the owner's address.
     const config = await fetchDeliveryConfig();
-    const zonesReady =
-      config.tiers.length > 0 &&
-      config.kitchenPostal != null &&
-      config.kitchenLat != null &&
-      config.kitchenLng != null;
-    if (zonesReady) {
+    if (zonesReady(config)) {
       const km = await resolveDeliveryDistanceKm(postalCode, {
         postal: config.kitchenPostal!,
         lat: config.kitchenLat!,

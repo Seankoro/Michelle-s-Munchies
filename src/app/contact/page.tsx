@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { RibbonDivider } from "@/components/ui/RibbonDivider";
 import { fetchStoreSettings } from "@/lib/settings";
-import { fetchDeliveryConfig } from "@/lib/delivery-config";
+import { fetchZonedFromCents } from "@/lib/delivery-pricing";
 import { getShopWhatsAppNumber } from "@/lib/whatsapp";
 import { formatPrice } from "@/lib/catalog";
 
@@ -16,17 +16,12 @@ export const dynamic = "force-dynamic";
 
 export default async function ContactPage() {
   // Live settings so the FAQ never contradicts what admin has configured.
-  const [settings, deliveryConfig] = await Promise.all([fetchStoreSettings(), fetchDeliveryConfig()]);
+  const [settings, zonedFromCents] = await Promise.all([fetchStoreSettings(), fetchZonedFromCents()]);
 
-  // Only the tier fees leave this function, never the kitchen coordinates. The
-  // zones count as on under the same test checkout uses (delivery-pricing.ts).
-  const zoned =
-    deliveryConfig.tiers.length > 0 &&
-    deliveryConfig.kitchenLat != null &&
-    deliveryConfig.kitchenLng != null;
-  const deliveryPrice = zoned
-    ? `priced by distance from our kitchen, from ${formatPrice(Math.min(...deliveryConfig.tiers.map((t) => t.feeCents)))}`
-    : `a flat ${formatPrice(settings.deliveryFeeCents)}`;
+  const deliveryPrice =
+    zonedFromCents != null
+      ? `priced by distance from our kitchen, from ${formatPrice(zonedFromCents)}`
+      : `a flat ${formatPrice(settings.deliveryFeeCents)}`;
   const freeDelivery =
     settings.freeDeliveryMinCents > 0
       ? `, and free for orders of ${formatPrice(settings.freeDeliveryMinCents)} or more`

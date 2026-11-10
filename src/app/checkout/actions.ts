@@ -8,7 +8,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { computeDeliveryFeeCents, earliestFulfillmentDate } from "@/lib/order";
 import { singaporeNow } from "@/lib/time";
 import { fetchStoreSettings, type FeatureFlags } from "@/lib/settings";
-import { resolveDeliveryFeeCents } from "@/lib/delivery-pricing";
+import { fetchZonedFromCents, resolveDeliveryFeeCents } from "@/lib/delivery-pricing";
 import { formatPrice } from "@/lib/catalog";
 import { rateLimit } from "@/lib/rate-limit";
 import { validatePromo, type PromoValidation } from "@/lib/promos";
@@ -102,6 +102,16 @@ export async function getPointsBalanceAction(): Promise<{ balance: number }> {
     0,
   );
   return { balance: Math.max(0, total - held) };
+}
+
+/** The cheapest distance band when delivery is priced by distance, null for a
+ *  flat fee, so the delivery option only says "by distance" when it is. */
+export async function deliveryZonedFromAction(): Promise<number | null> {
+  try {
+    return await fetchZonedFromCents();
+  } catch {
+    return null;
+  }
 }
 
 /** Checkout "delivery fee" preview, called as the customer fills in their postal

@@ -21,6 +21,7 @@ import {
 } from "@/lib/order";
 import {
   applyPromo,
+  deliveryZonedFromAction,
   estimateDeliveryFeeAction,
   getDayCapacityAction,
   getPointsBalanceAction,
@@ -153,6 +154,14 @@ export default function CheckoutPage() {
   const [deliveryFeePending, setDeliveryFeePending] = useState(false);
   const deliveryFeeCents =
     fulfillment === "delivery" && zonedFeeCents !== null ? zonedFeeCents : flatDeliveryFeeCents;
+  // The cheapest distance band, or null while delivery is a flat fee, so the
+  // delivery option only promises "by distance" when that is how it is priced.
+  const [zonedFromCents, setZonedFromCents] = useState<number | null>(null);
+  useEffect(() => {
+    deliveryZonedFromAction()
+      .then(setZonedFromCents)
+      .catch(() => {});
+  }, []);
 
   // Rewards, load the signed-in customer's points balance if any.
   const [pointsBalance, setPointsBalance] = useState(0);
@@ -689,7 +698,9 @@ export default function CheckoutPage() {
                       : settings.freeDeliveryMinCents > 0 &&
                           subtotalCents >= settings.freeDeliveryMinCents
                         ? "Free delivery!"
-                        : `from ${formatPrice(settings.deliveryFeeCents)} · by distance`}
+                        : zonedFromCents != null
+                          ? `from ${formatPrice(zonedFromCents)} · by distance`
+                          : formatPrice(settings.deliveryFeeCents)}
                   </span>
                 </button>
               ))}
