@@ -65,8 +65,8 @@ export type AdminSettings = {
 };
 
 const defaultSettings: AdminSettings = {
-  deliveryFeeCents: 800,
-  freeDeliveryMinCents: 5000,
+  deliveryFeeCents: 1500,
+  freeDeliveryMinCents: 6000,
   minOrderCents: 0,
   leadTimeDays: 2,
   timeWindows: ["Morning (9am–12pm)", "Afternoon (12–4pm)", "Evening (4–8pm)"],

@@ -33,8 +33,8 @@ export function formatPrice(cents: number): string {
 // src/lib/settings.ts is the source of truth. These only fill missing values.
 // ---------------------------------------------------------------------------
 export const mockSettings = {
-  deliveryFeeCents: 800,
-  freeDeliveryMinCents: 5000,
+  deliveryFeeCents: 1500,
+  freeDeliveryMinCents: 6000,
   minOrderCents: 0,
   leadTimeDays: 2,
   timeWindows: ["Morning (9am–12pm)", "Afternoon (12–4pm)", "Evening (4–8pm)"],
